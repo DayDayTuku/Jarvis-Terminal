@@ -1,0 +1,13 @@
+{
+  "name": "Jarvis Personal Research Terminal",
+  "short_name": "Jarvis",
+  "description": "Personal macro, market, positioning and geopolitical research workspace.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#000000",
+  "theme_color": "#000000",
+  "orientation": "any",
+  "icons": [
+    { "src": "/jarvis-logo.png", "sizes": "1920x1920", "type": "image/png", "purpose": "any maskable" }
+  ]
+}
