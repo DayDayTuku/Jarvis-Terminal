@@ -1,4 +1,4 @@
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 import { Geist, Geist_Mono } from 'next/font/google';
 import './globals.css';
 
@@ -10,6 +10,8 @@ export const metadata: Metadata = {
   description: 'A focused workspace for macro regimes, market signals, geopolitical risk, and research notes.',
   metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL ?? 'http://localhost:3000'),
   icons: { icon: '/jarvis-logo.png', apple: '/jarvis-logo.png' },
+  manifest: '/manifest.webmanifest',
+  appleWebApp: { capable: true, title: 'Jarvis', statusBarStyle: 'black-translucent' },
   openGraph: {
     title: 'Jarvis | Personal Macro Terminal',
     description: 'Macro regimes, market signals, geopolitical risk, and research notes in one focused workspace.',
@@ -21,6 +23,13 @@ export const metadata: Metadata = {
     description: 'Macro regimes, market signals, geopolitical risk, and research notes in one focused workspace.',
     images: ['/og.png'],
   },
+};
+
+// Keep Safari's browser chrome and overscroll area aligned with the terminal.
+export const viewport: Viewport = {
+  themeColor: '#000000',
+  colorScheme: 'dark',
+  viewportFit: 'cover',
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
