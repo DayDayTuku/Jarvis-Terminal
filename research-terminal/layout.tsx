@@ -9,7 +9,7 @@ export const metadata: Metadata = {
   title: 'Jarvis | Personal Macro Terminal',
   description: 'A focused workspace for macro regimes, market signals, geopolitical risk, and research notes.',
   metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL ?? 'http://localhost:3000'),
-  icons: { icon: '/jarvis-logo.png', apple: '/jarvis-logo.png' },
+  icons: { icon: '/jarvis-icon.png', apple: '/jarvis-icon.png' },
   manifest: '/manifest.webmanifest',
   appleWebApp: { capable: true, title: 'Jarvis', statusBarStyle: 'black-translucent' },
   openGraph: {
