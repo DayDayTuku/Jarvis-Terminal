@@ -140,3 +140,17 @@ button:focus-visible, textarea:focus-visible { outline: 1px solid var(--blue); o
 
 @media (max-width: 1050px) { .overview-grid,.macro-grid,.markets-grid { grid-template-columns: 1fr; }.macro-grid .regime-panel { grid-row: auto; }.markets-grid .calendar-panel { grid-column: auto; }.risk-grid { grid-template-columns: 1fr; }.global-date { display: none; }.regime-canvas-wrap { height: 420px; }.signal-strip { display: flex; overflow-x: auto; }.signal-strip .metric-card { flex: 0 0 220px; } }
 @media (max-width: 720px) { .terminal-shell { grid-template-columns: 58px minmax(0,1fr); }.side-brand { height: 58px; }.side-nav nav { padding: 10px 6px; }.side-nav nav button,.side-tools button { width: 44px; }.app-column { padding: 0 8px 18px; }.global-bar { grid-template-columns: 1fr auto; gap: 8px; }.feed-summary small { display: none; }.view-heading { align-items: flex-start; flex-direction: column; justify-content: center; gap: 9px; padding: 15px 0; }.view-heading p { width: 100%; text-align: left; }.regime-canvas-wrap { height: 330px; }.gpr-summary { grid-template-columns: 1fr; }.gpr-moves { grid-column: auto; }.matrix-intro { align-items: flex-start; flex-direction: column; }.matrix-footnotes { grid-template-columns: 1fr 1fr; }.actual-matrix { overflow: hidden; }.correlation-only { overflow-x: auto; }.correlation-only .matrix-row { min-width: 620px; }.season-summary { grid-template-columns: 1fr; gap: 10px; }.season-summary > b { text-align: left; }.season-grid { grid-template-columns: repeat(2,1fr); }.ticker-switcher { max-width: 220px; overflow-x: auto; }.cot-row { grid-template-columns: 80px repeat(3,130px); }.cot-table { overflow-x: auto; }.cot-row { min-width: 470px; } }
+
+/* iPhone-specific terminal and heatmap layout */
+html { min-height: 100%; background: #000; color-scheme: dark; }
+body { min-height: 100%; background: #000; -webkit-text-size-adjust: 100%; overscroll-behavior-y: none; }
+@media (max-width: 720px) {
+  .heatmap { height: auto; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: none; grid-auto-flow: row; gap: 4px; padding: 4px; }
+  .heat-tile, .heat-tile.xl, .heat-tile.lg, .heat-tile.md, .heat-tile.sm { grid-column: span 1; grid-row: span 1; min-height: 84px; padding: 8px 5px; }
+  .heat-tile span { font-size: 7px; line-height: 1.25; }
+  .heat-tile strong { margin-top: 5px; font-size: 12px; }
+  .heat-tile small { display: none; }
+  .heat-drilldown { grid-template-columns: 1fr; }
+  .heat-drilldown > div { border-right: 0; border-bottom: 1px solid var(--line); }
+  .heat-drilldown > div:last-child { border-bottom: 0; }
+}
