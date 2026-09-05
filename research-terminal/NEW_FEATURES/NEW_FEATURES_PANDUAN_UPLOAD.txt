@@ -1,0 +1,41 @@
+========================================================================
+PANDUAN UPLOAD FILE "NEW FEATURES" KE GITHUB & VERCEL
+========================================================================
+
+Fitur Baru yang Ditambahkan & Diperbaiki:
+1. Search Bar Saham (StockSearch) bertema Bloomberg Terminal gelap, elegan, dan responsive.
+2. Dropdown hasil pencarian rapi (tidak lagi berantakan/kebesaran warna biru).
+3. Navigasi Keyboard lengkap: Panah Atas/Bawah (↑ / ↓), Enter (↵), Escape (Esc).
+4. Klik di luar dropdown (Click-Outside) otomatis menutup dropdown.
+5. Tombol silang (×) untuk reset text pencarian.
+6. Rekomendasi saham populer IHSG saat input diklik pertama kali (BBCA, BBRI, BUMI, AMMN, ADRO, TLKM, ASII).
+7. Memilih saham otomatis membuka tab "SEASONALITY" dengan ticker saham tersebut.
+8. API Seasonality dinamis mendukung seluruh saham IDX (.JK) via Yahoo Finance.
+
+------------------------------------------------------------------------
+PILIHAN CARA UPLOAD:
+------------------------------------------------------------------------
+
+OPSI 1: UPLOAD DARI FOLDER "UPLOAD_LANGSUNG_KE_GITHUB" (DRAG & DROP)
+1. Buka repo Anda di web GitHub (misal: github.com/username/repo-name).
+2. Masuk ke folder proyek Anda (misal `research-terminal/`).
+3. Klik "Add file" -> "Upload files".
+4. Drag folder `app` dan `components` yang ada di dalam:
+   /Users/iggerzefanyasurbakti/Documents/ANTIGRAVITY/NEW_FEATURES/UPLOAD_LANGSUNG_KE_GITHUB/
+5. Tulis commit message: "NEW FEATURES: Fix search UI and dynamic seasonality"
+6. Klik "Commit changes".
+
+OPSI 2: COPY-PASTE DARI FILE "NEW_FEATURES_*"
+Jika Anda ingin copy-paste isi kodenya satu per satu lewat tombol edit (ikon pensil ✏️) di GitHub:
+1. NEW_FEATURES_StockSearch.tsx    -> Timpa isi file `components/StockSearch.tsx`
+2. NEW_FEATURES_globals.css        -> Timpa isi file `app/globals.css`
+3. NEW_FEATURES_page.tsx           -> Timpa isi file `app/page.tsx`
+4. NEW_FEATURES_route_seasonality.ts -> Timpa isi file `app/api/seasonality/route.ts`
+
+------------------------------------------------------------------------
+SETELAH UPLOAD:
+------------------------------------------------------------------------
+Vercel akan otomatis melakukan auto-deploy. Setelah deploy selesai (sekitar 1-2 menit), buka website di:
+https://jarvis-terminal-eight.vercel.app/
+dan tekan Cmd + Shift + R (Hard Refresh) untuk memuat styling baru.
+========================================================================
