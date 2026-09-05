@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
+import StockSearch from '@/components/StockSearch';
 
 type Scheme = 'default' | 'deuteranopia' | 'protanopia' | 'tritanopia';
 type Section = 'OVERVIEW' | 'MACRO' | 'MARKETS' | 'GPR INDEX' | 'CORRELATIONS' | 'SEASONALITY' | 'MARKET PARTICIPANT';
@@ -100,7 +101,15 @@ export default function Home() {
 
       <div className="app-column">
         <header className="topbar global-bar">
-          <label className="global-search"><span>⌕</span><input aria-label="Search terminal" placeholder="Search tickers, indicators, notes" /></label>
+          <div className="global-search">
+  <span>⌕</span>
+  <StockSearch
+    placeholder="Search tickers, indicators, notes"
+    onSelect={(stock) => {
+      console.log("Selected stock:", stock);
+    }}
+  />
+</div>
           <div className="global-date"><span>THU</span><strong>03 SEP 2026</strong><b>WIB</b></div>
           <div className="feed-summary"><span className={liveCount ? 'live-dot' : 'stale-dot'} /><strong>{liveCount}/4 FEEDS LIVE</strong><small>DAILY CLOSE</small></div>
         </header>
