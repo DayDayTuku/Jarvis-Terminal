@@ -4,184 +4,4250 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 
 type Scheme = 'default' | 'deuteranopia' | 'protanopia' | 'tritanopia';
 type Section = 'OVERVIEW' | 'MACRO' | 'MARKETS' | 'GPR INDEX' | 'CORRELATIONS' | 'SEASONALITY' | 'MARKET PARTICIPANT';
-type RegimePoint = { date: string; growth: number; inflation: number };
-type FredData = { status: string; freshness: string; indicators: Array<{ name: string; actual: number; mean: number; z: number; unit: string }>; yields: Array<{ maturity: string; value: number }>; regime: RegimePoint[] };
-type Constituent = { ticker: string; price: number; daily: number | null; weekly: number | null };
-type MarketData = { status: string; freshness: string; failures?: string[]; watchlist: Array<{ ticker: string; price: number; change: number }>; heatmap: Array<{ label: string; symbol: string; daily: number | null; weekly: number | null; constituents: Constituent[]; method?: string; validCount?: number; memberCount?: number; confidence?: string }>; assets: Array<{ name: string; timestamps: number[]; closes: Array<number | null> }> };
-type GdeltData = { status: string; freshness: string; frequencyScore: number; severityStatus: string; regions: Array<{ region: string; score: number; timeline: Array<{ date: string; value: number }> }> };
-type CalendarData = { status: string; freshness: string; events: Array<{ date: string; country: string; event: string; forecast: string; prior: string; importance: number }> };
-type SeasonalityData = { status: string; ticker: string; symbol: string; years: number; from: number; through: number; months: Array<{ month: number; average: number; positiveRate: number; observations: number }> };
-type CotSeries = { key: string; label: string; groups: string[]; latest: string; points: Array<{ date: string; values: Record<string,number> }> };
-type CotData = { status: string; source: string; freshness: string; series: CotSeries[]; failures: string[] };
+
+type RegimePoint = {
+  date: string;
+  growth: number;
+  inflation: number;
+};
+
+type FredData = {
+  status: string;
+  freshness: string;
+  indicators: Array<{
+    name: string;
+    actual: number;
+    mean: number;
+    z: number;
+    unit: string;
+  }>;
+  yields: Array<{
+    maturity: string;
+    value: number;
+  }>;
+  regime: RegimePoint[];
+};
+
+type Constituent = {
+  ticker: string;
+  price: number;
+  daily: number | null;
+  weekly: number | null;
+};
+
+type MarketData = {
+  status: string;
+  freshness: string;
+  failures?: string[];
+  watchlist: Array<{
+    ticker: string;
+    price: number;
+    change: number;
+  }>;
+  heatmap: Array<{
+    label: string;
+    symbol: string;
+    daily: number | null;
+    weekly: number | null;
+    constituents: Constituent[];
+    method?: string;
+    validCount?: number;
+    memberCount?: number;
+    confidence?: string;
+  }>;
+  assets: Array<{
+    name: string;
+    timestamps: number[];
+    closes: Array<number | null>;
+  }>;
+};
+
+type GdeltData = {
+  status: string;
+  freshness: string;
+  frequencyScore: number;
+  severityStatus: string;
+  regions: Array<{
+    region: string;
+    score: number;
+    timeline: Array<{
+      date: string;
+      value: number;
+    }>;
+  }>;
+};
+
+type CalendarData = {
+  status: string;
+  freshness: string;
+  events: Array<{
+    date: string;
+    country: string;
+    event: string;
+    forecast: string;
+    prior: string;
+    importance: number;
+  }>;
+};
+
+type SeasonalityData = {
+  status: string;
+  ticker: string;
+  symbol: string;
+  years: number;
+  from: number;
+  through: number;
+  months: Array<{
+    month: number;
+    average: number;
+    positiveRate: number;
+    observations: number;
+  }>;
+};
+
+type CotSeries = {
+  key: string;
+  label: string;
+  groups: string[];
+  latest: string;
+  points: Array<{
+    date: string;
+    values: Record<string, number>;
+  }>;
+};
+
+type CotData = {
+  status: string;
+  source: string;
+  freshness: string;
+  series: CotSeries[];
+  failures: string[];
+};
+
+/* =========================
+   SEARCH TYPE
+========================= */
+
+type SearchStock = {
+  ticker: string;
+  name: string;
+  sector: string;
+};
 
 const releases = [
-  { time: '08:30', country: 'US', event: 'Core PCE Price Index', forecast: '0.3%', prior: '0.2%', status: 'HIGH' },
-  { time: '10:00', country: 'CN', event: 'NBS Manufacturing PMI', forecast: '49.8', prior: '49.5', status: 'HIGH' },
-  { time: '14:00', country: 'ID', event: 'Consumer Confidence', forecast: '121.2', prior: '121.7', status: 'MED' },
-  { time: '19:30', country: 'US', event: 'Initial Jobless Claims', forecast: '232K', prior: '229K', status: 'MED' },
+  {
+    time: '08:30',
+    country: 'US',
+    event: 'Core PCE Price Index',
+    forecast: '0.3%',
+    prior: '0.2%',
+    status: 'HIGH',
+  },
+  {
+    time: '10:00',
+    country: 'CN',
+    event: 'NBS Manufacturing PMI',
+    forecast: '49.8',
+    prior: '49.5',
+    status: 'HIGH',
+  },
+  {
+    time: '14:00',
+    country: 'ID',
+    event: 'Consumer Confidence',
+    forecast: '121.2',
+    prior: '121.7',
+    status: 'MED',
+  },
+  {
+    time: '19:30',
+    country: 'US',
+    event: 'Initial Jobless Claims',
+    forecast: '232K',
+    prior: '229K',
+    status: 'MED',
+  },
 ];
 
 const fallbackIndicators = [
-  { name: 'CPI', actual: 2.7, mean: 2.9, z: .82, unit: '%' }, { name: 'Core PCE', actual: 2.9, mean: 2.5, z: 1.14, unit: '%' },
-  { name: 'PPI', actual: 3.3, mean: 2.6, z: .66, unit: '%' }, { name: 'Retail Sales', actual: .5, mean: .3, z: .31, unit: '%' },
-  { name: 'Consumer Sentiment', actual: 61.7, mean: 68.4, z: -.73, unit: '' }, { name: 'ISM Manufacturing', actual: 48.4, mean: 51.2, z: -.58, unit: '' },
+  {
+    name: 'CPI',
+    actual: 2.7,
+    mean: 2.9,
+    z: 0.82,
+    unit: '%',
+  },
+  {
+    name: 'Core PCE',
+    actual: 2.9,
+    mean: 2.5,
+    z: 1.14,
+    unit: '%',
+  },
+  {
+    name: 'PPI',
+    actual: 3.3,
+    mean: 2.6,
+    z: 0.66,
+    unit: '%',
+  },
+  {
+    name: 'Retail Sales',
+    actual: 0.5,
+    mean: 0.3,
+    z: 0.31,
+    unit: '%',
+  },
+  {
+    name: 'Consumer Sentiment',
+    actual: 61.7,
+    mean: 68.4,
+    z: -0.73,
+    unit: '',
+  },
+  {
+    name: 'ISM Manufacturing',
+    actual: 48.4,
+    mean: 51.2,
+    z: -0.58,
+    unit: '',
+  },
 ];
 
 const fallbackWatch = [
-  { ticker: 'BUMI', price: 153, change: 2.68 }, { ticker: 'AMMN', price: 7350, change: -1.34 }, { ticker: 'ADRO', price: 1955, change: .77 },
+  {
+    ticker: 'BUMI',
+    price: 153,
+    change: 2.68,
+  },
+  {
+    ticker: 'AMMN',
+    price: 7350,
+    change: -1.34,
+  },
+  {
+    ticker: 'ADRO',
+    price: 1955,
+    change: 0.77,
+  },
 ];
+
 const fallbackHeat: MarketData['heatmap'] = [
-  { label: 'ENERGY', symbol: 'IDXENERGY.JK', daily: 1.8, weekly: 4.2, constituents: [{ticker:'ADRO',price:1955,daily:.77,weekly:2.1},{ticker:'BUMI',price:153,daily:2.68,weekly:5.2}] },
-  { label: 'BASIC MATERIALS', symbol: 'IDXBASIC.JK', daily: .9, weekly: 2.1, constituents: [{ticker:'AMMN',price:7350,daily:-1.34,weekly:.8},{ticker:'ANTM',price:1920,daily:.52,weekly:1.7}] },
-  { label: 'FINANCIALS', symbol: 'IDXFINANCE.JK', daily: .4, weekly: -.6, constituents: [] }, { label: 'TECHNOLOGY', symbol: 'IDXTECHNO.JK', daily: -.7, weekly: -2.4, constituents: [] },
-  { label: 'INDUSTRIALS', symbol: 'IDXINDUST.JK', daily: .2, weekly: 1.3, constituents: [] }, { label: 'CYCLICALS', symbol: 'IDXCYCLIC.JK', daily: -.3, weekly: -1.2, constituents: [] }, { label: 'HEALTHCARE', symbol: 'IDXHEALTH.JK', daily: -1.1, weekly: .4, constituents: [] },
+  {
+    label: 'ENERGY',
+    symbol: 'IDXENERGY.JK',
+    daily: 1.8,
+    weekly: 4.2,
+    constituents: [
+      {
+        ticker: 'ADRO',
+        price: 1955,
+        daily: 0.77,
+        weekly: 2.1,
+      },
+      {
+        ticker: 'BUMI',
+        price: 153,
+        daily: 2.68,
+        weekly: 5.2,
+      },
+    ],
+  },
+  {
+    label: 'BASIC MATERIALS',
+    symbol: 'IDXBASIC.JK',
+    daily: 0.9,
+    weekly: 2.1,
+    constituents: [
+      {
+        ticker: 'AMMN',
+        price: 7350,
+        daily: -1.34,
+        weekly: 0.8,
+      },
+      {
+        ticker: 'ANTM',
+        price: 1920,
+        daily: 0.52,
+        weekly: 1.7,
+      },
+    ],
+  },
+  {
+    label: 'FINANCIALS',
+    symbol: 'IDXFINANCE.JK',
+    daily: 0.4,
+    weekly: -0.6,
+    constituents: [],
+  },
+  {
+    label: 'TECHNOLOGY',
+    symbol: 'IDXTECHNO.JK',
+    daily: -0.7,
+    weekly: -2.4,
+    constituents: [],
+  },
+  {
+    label: 'INDUSTRIALS',
+    symbol: 'IDXINDUST.JK',
+    daily: 0.2,
+    weekly: 1.3,
+    constituents: [],
+  },
+  {
+    label: 'CYCLICALS',
+    symbol: 'IDXCYCLIC.JK',
+    daily: -0.3,
+    weekly: -1.2,
+    constituents: [],
+  },
+  {
+    label: 'HEALTHCARE',
+    symbol: 'IDXHEALTH.JK',
+    daily: -1.1,
+    weekly: 0.4,
+    constituents: [],
+  },
 ];
-const fallbackYield = [4.41, 4.29, 4.12, 4.03, 4.06, 4.18, 4.36];
-const fallbackTrail: RegimePoint[] = Array.from({ length: 36 }, (_, index) => { const date = new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth() - (35 - index), 1)); return { date: date.toISOString().slice(0,10), growth: 1.1 - index * .045 + Math.sin(index * .7) * .3, inflation: -.7 + index * .04 + Math.cos(index * .5) * .34 }; });
+
+const fallbackYield = [
+  4.41,
+  4.29,
+  4.12,
+  4.03,
+  4.06,
+  4.18,
+  4.36,
+];
+
+const fallbackTrail: RegimePoint[] = Array.from(
+  { length: 36 },
+  (_, index) => {
+    const date = new Date(
+      Date.UTC(
+        new Date().getUTCFullYear(),
+        new Date().getUTCMonth() - (35 - index),
+        1
+      )
+    );
+
+    return {
+      date: date.toISOString().slice(0, 10),
+      growth:
+        1.1 -
+        index * 0.045 +
+        Math.sin(index * 0.7) * 0.3,
+      inflation:
+        -0.7 +
+        index * 0.04 +
+        Math.cos(index * 0.5) * 0.34,
+    };
+  }
+);
 
 const correlationRows = [
   ['SEA GPR', '.34', '.41', '.29', '-.18', '-.26'],
   ['CHINA GPR', '.47', '.58', '.36', '.33', '-.31'],
   ['US GPR', '.12', '.08', '.44', '.51', '-.22'],
 ];
-const gprBars = [25,29,27,34,31,38,41,37,46,43,52,49,55,61,57,64];
-const navigation: Array<{ label: Section; icon: string }> = [
-  { label: 'OVERVIEW', icon: '⌂' }, { label: 'MACRO', icon: '∿' }, { label: 'MARKETS', icon: '◇' },
-  { label: 'GPR INDEX', icon: '◎' }, { label: 'CORRELATIONS', icon: '⠿' }, { label: 'SEASONALITY', icon: '▦' }, { label: 'MARKET PARTICIPANT', icon: '≋' },
+
+const gprBars = [
+  25,
+  29,
+  27,
+  34,
+  31,
+  38,
+  41,
+  37,
+  46,
+  43,
+  52,
+  49,
+  55,
+  61,
+  57,
+  64,
+];
+
+const navigation: Array<{
+  label: Section;
+  icon: string;
+}> = [
+  {
+    label: 'OVERVIEW',
+    icon: '⌂',
+  },
+  {
+    label: 'MACRO',
+    icon: '∿',
+  },
+  {
+    label: 'MARKETS',
+    icon: '◇',
+  },
+  {
+    label: 'GPR INDEX',
+    icon: '◎',
+  },
+  {
+    label: 'CORRELATIONS',
+    icon: '⠿',
+  },
+  {
+    label: 'SEASONALITY',
+    icon: '▦',
+  },
+  {
+    label: 'MARKET PARTICIPANT',
+    icon: '≋',
+  },
 ];
 
 export default function Home() {
-  const [active, setActive] = useState<Section>('OVERVIEW');
-  const [range, setRange] = useState<'6M' | '1Y' | '3Y'>('1Y');
-  const [heatPeriod, setHeatPeriod] = useState<'1D' | '1W'>('1D');
-  const [selectedSector, setSelectedSector] = useState('ENERGY');
-  const [seasonTicker, setSeasonTicker] = useState('BUMI'); const [seasonality, setSeasonality] = useState<SeasonalityData|null>(null);
-  const [cot, setCot] = useState<CotData|null>(null); const [cotAsset, setCotAsset] = useState('USD');
-  const [notesOpen, setNotesOpen] = useState(false); const [settingsOpen, setSettingsOpen] = useState(false);
-  const [scheme, setScheme] = useState<Scheme>('default'); const [note, setNote] = useState('');
-  const [savedNote, setSavedNote] = useState('Watch the next Core PCE print. A second upside surprise would strengthen the higher-for-longer rates case.');
-  const [fred, setFred] = useState<FredData | null>(null); const [markets, setMarkets] = useState<MarketData | null>(null); const [gdelt, setGdelt] = useState<GdeltData | null>(null); const [calendar, setCalendar] = useState<CalendarData | null>(null);
+  const [active, setActive] =
+    useState<Section>('OVERVIEW');
+
+  const [range, setRange] =
+    useState<'6M' | '1Y' | '3Y'>('1Y');
+
+  const [heatPeriod, setHeatPeriod] =
+    useState<'1D' | '1W'>('1D');
+
+  const [selectedSector, setSelectedSector] =
+    useState('ENERGY');
+
+  const [seasonTicker, setSeasonTicker] =
+    useState('BUMI');
+
+  const [seasonality, setSeasonality] =
+    useState<SeasonalityData | null>(null);
+
+  const [cot, setCot] =
+    useState<CotData | null>(null);
+
+  const [cotAsset, setCotAsset] =
+    useState('USD');
+
+  const [notesOpen, setNotesOpen] =
+    useState(false);
+
+  const [settingsOpen, setSettingsOpen] =
+    useState(false);
+
+  const [scheme, setScheme] =
+    useState<Scheme>('default');
+
+  const [note, setNote] =
+    useState('');
+
+  const [savedNote, setSavedNote] =
+    useState(
+      'Watch the next Core PCE print. A second upside surprise would strengthen the higher-for-longer rates case.'
+    );
+
+  const [fred, setFred] =
+    useState<FredData | null>(null);
+
+  const [markets, setMarkets] =
+    useState<MarketData | null>(null);
+
+  const [gdelt, setGdelt] =
+    useState<GdeltData | null>(null);
+
+  const [calendar, setCalendar] =
+    useState<CalendarData | null>(null);
+
+  /* =========================
+     SEARCH STATE
+  ========================= */
+
+  const [searchQuery, setSearchQuery] =
+    useState('');
+
+  const [searchResults, setSearchResults] =
+    useState<SearchStock[]>([]);
+
+  const [searchOpen, setSearchOpen] =
+    useState(false);
+
+  /* =========================
+     MAIN DATA FETCH
+  ========================= */
 
   useEffect(() => {
-    Promise.allSettled([fetch('/api/fred').then((r) => r.ok ? r.json() : Promise.reject()), fetch('/api/markets').then((r) => r.ok ? r.json() : Promise.reject()), fetch('/api/gdelt').then((r) => r.ok ? r.json() : Promise.reject()), fetch('/api/calendar').then((r) => r.ok ? r.json() : Promise.reject()), fetch('/api/cot').then((r) => r.ok ? r.json() : Promise.reject())]).then(([fredResult, marketResult, gdeltResult, calendarResult, cotResult]) => {
-      if (fredResult.status === 'fulfilled') setFred(fredResult.value as FredData);
-      if (marketResult.status === 'fulfilled') setMarkets(marketResult.value as MarketData);
-      if (gdeltResult.status === 'fulfilled') setGdelt(gdeltResult.value as GdeltData);
-      if (calendarResult.status === 'fulfilled') setCalendar(calendarResult.value as CalendarData);
-      if (cotResult.status === 'fulfilled') setCot(cotResult.value as CotData);
-    });
-    const onKey = (event: KeyboardEvent) => { if ((event.target as HTMLElement).matches('textarea,input')) return; if (event.key.toLowerCase() === 'n') setNotesOpen(true); if (event.key.toLowerCase() === 's') setSettingsOpen(true); if (event.key === 'Escape') { setNotesOpen(false); setSettingsOpen(false); } };
-    window.addEventListener('keydown', onKey); return () => window.removeEventListener('keydown', onKey);
+    Promise.allSettled([
+      fetch('/api/fred').then((r) =>
+        r.ok ? r.json() : Promise.reject()
+      ),
+
+      fetch('/api/markets').then((r) =>
+        r.ok ? r.json() : Promise.reject()
+      ),
+
+      fetch('/api/gdelt').then((r) =>
+        r.ok ? r.json() : Promise.reject()
+      ),
+
+      fetch('/api/calendar').then((r) =>
+        r.ok ? r.json() : Promise.reject()
+      ),
+
+      fetch('/api/cot').then((r) =>
+        r.ok ? r.json() : Promise.reject()
+      ),
+    ]).then(
+      ([
+        fredResult,
+        marketResult,
+        gdeltResult,
+        calendarResult,
+        cotResult,
+      ]) => {
+        if (fredResult.status === 'fulfilled') {
+          setFred(fredResult.value as FredData);
+        }
+
+        if (marketResult.status === 'fulfilled') {
+          setMarkets(
+            marketResult.value as MarketData
+          );
+        }
+
+        if (gdeltResult.status === 'fulfilled') {
+          setGdelt(
+            gdeltResult.value as GdeltData
+          );
+        }
+
+        if (calendarResult.status === 'fulfilled') {
+          setCalendar(
+            calendarResult.value as CalendarData
+          );
+        }
+
+        if (cotResult.status === 'fulfilled') {
+          setCot(
+            cotResult.value as CotData
+          );
+        }
+      }
+    );
+
+    const onKey = (event: KeyboardEvent) => {
+      if (
+        (event.target as HTMLElement).matches(
+          'textarea,input'
+        )
+      ) {
+        return;
+      }
+
+      if (event.key.toLowerCase() === 'n') {
+        setNotesOpen(true);
+      }
+
+      if (event.key.toLowerCase() === 's') {
+        setSettingsOpen(true);
+      }
+
+      if (event.key === 'Escape') {
+        setNotesOpen(false);
+        setSettingsOpen(false);
+      }
+    };
+
+    window.addEventListener('keydown', onKey);
+
+    return () =>
+      window.removeEventListener(
+        'keydown',
+        onKey
+      );
   }, []);
 
-  useEffect(() => { setSeasonality(null); fetch(`/api/seasonality?ticker=${seasonTicker}`).then((response)=>response.ok?response.json():Promise.reject()).then((data)=>setSeasonality(data as SeasonalityData)).catch(()=>setSeasonality(null)); }, [seasonTicker]);
+  /* =========================
+     SEARCH API
+  ========================= */
 
-  const indicators = fred?.indicators ?? fallbackIndicators; const yields = fred?.yields.map((item) => item.value) ?? fallbackYield;
-  const watchlist = markets?.watchlist ?? fallbackWatch; const heatmap = markets?.heatmap ?? fallbackHeat;
-  const marketChange = (name: string) => { const values = markets?.assets.find((item) => item.name === name)?.closes.filter((x): x is number => x !== null) ?? []; const last = values.at(-1) ?? 0; const prior = values.at(-2) ?? last; const recent = values.slice(-20); const average = recent.length ? recent.reduce((sum, value) => sum + value, 0) / recent.length : 0; return { last, average, change: prior ? ((last / prior) - 1) * 100 : 0 }; };
-  const dxy = marketChange('DXY'); const oil = marketChange('OIL'); const liveCount = Number(Boolean(fred)) + Number(Boolean(markets)) + Number(Boolean(gdelt)) + Number(Boolean(calendar));
-  const currentRegime = (fred?.regime ?? fallbackTrail).at(-1)!;
-  const selectedHeat = heatmap.find((item) => item.label === selectedSector) ?? heatmap[0];
-  const liveCorrelationRows = useMemo(() => correlationMatrix(gdelt, markets), [gdelt, markets]);
-  const selectedCot = cot?.series.find((item) => item.key === cotAsset) ?? cot?.series[0] ?? null;
+  useEffect(() => {
+    const query = searchQuery.trim();
 
-  const saveNote = () => { if (note.trim()) { setSavedNote(note.trim()); setNote(''); } setNotesOpen(false); };
+    if (!query) {
+      setSearchResults([]);
+      return;
+    }
+
+    const timeout = setTimeout(async () => {
+      try {
+        const response = await fetch(
+          `/api/search?q=${encodeURIComponent(query)}`
+        );
+
+        if (!response.ok) {
+          setSearchResults([]);
+          return;
+        }
+
+        const data = await response.json();
+
+        setSearchResults(
+          Array.isArray(data.results)
+            ? data.results
+            : []
+        );
+      } catch {
+        setSearchResults([]);
+      }
+    }, 250);
+
+    return () => clearTimeout(timeout);
+  }, [searchQuery]);
+
+  /* =========================
+     SEASONALITY
+  ========================= */
+
+  useEffect(() => {
+    setSeasonality(null);
+
+    fetch(
+      `/api/seasonality?ticker=${seasonTicker}`
+    )
+      .then((response) =>
+        response.ok
+          ? response.json()
+          : Promise.reject()
+      )
+      .then((data) =>
+        setSeasonality(
+          data as SeasonalityData
+        )
+      )
+      .catch(() =>
+        setSeasonality(null)
+      );
+  }, [seasonTicker]);
+
+  /* =========================
+     DERIVED DATA
+  ========================= */
+
+  const indicators =
+    fred?.indicators ?? fallbackIndicators;
+
+  const yields =
+    fred?.yields.map(
+      (item) => item.value
+    ) ?? fallbackYield;
+
+  const watchlist =
+    markets?.watchlist ?? fallbackWatch;
+
+  const heatmap =
+    markets?.heatmap ?? fallbackHeat;
+
+  const marketChange = (name: string) => {
+    const values =
+      markets?.assets
+        .find(
+          (item) => item.name === name
+        )
+        ?.closes.filter(
+          (x): x is number => x !== null
+        ) ?? [];
+
+    const last =
+      values.at(-1) ?? 0;
+
+    const prior =
+      values.at(-2) ?? last;
+
+    const recent =
+      values.slice(-20);
+
+    const average = recent.length
+      ? recent.reduce(
+          (sum, value) =>
+            sum + value,
+          0
+        ) / recent.length
+      : 0;
+
+    return {
+      last,
+      average,
+      change: prior
+        ? ((last / prior) - 1) * 100
+        : 0,
+    };
+  };
+
+  const dxy =
+    marketChange('DXY');
+
+  const oil =
+    marketChange('OIL');
+
+  const liveCount =
+    Number(Boolean(fred)) +
+    Number(Boolean(markets)) +
+    Number(Boolean(gdelt)) +
+    Number(Boolean(calendar));
+
+  const currentRegime =
+    (fred?.regime ??
+      fallbackTrail).at(-1)!;
+
+  const selectedHeat =
+    heatmap.find(
+      (item) =>
+        item.label === selectedSector
+    ) ?? heatmap[0];
+
+  const liveCorrelationRows =
+    useMemo(
+      () =>
+        correlationMatrix(
+          gdelt,
+          markets
+        ),
+      [gdelt, markets]
+    );
+
+  const selectedCot =
+    cot?.series.find(
+      (item) =>
+        item.key === cotAsset
+    ) ??
+    cot?.series[0] ??
+    null;
+
+  const saveNote = () => {
+    if (note.trim()) {
+      setSavedNote(note.trim());
+      setNote('');
+    }
+
+    setNotesOpen(false);
+  };
+
+  /* =========================
+     SEARCH SELECT
+  ========================= */
+
+  const handleSearchSelect = (
+    stock: SearchStock
+  ) => {
+    const ticker =
+      stock.ticker.replace(
+        '.JK',
+        ''
+      );
+
+    setSearchQuery(ticker);
+    setSearchOpen(false);
+
+    /*
+     * Untuk sekarang:
+     * klik saham -> buka SEASONALITY
+     * dengan ticker yang dipilih.
+     *
+     * Nanti bisa kita upgrade menjadi
+     * dedicated stock detail page/panel.
+     */
+
+    setSeasonTicker(ticker);
+    setActive('SEASONALITY');
+  };
 
   return (
-    <main className="terminal-shell" data-scheme={scheme}>
+    <main
+      className="terminal-shell"
+      data-scheme={scheme}
+    >
+      {/* =========================
+          SIDEBAR
+      ========================= */}
+
       <aside className="side-nav">
-        <div className="side-brand" aria-label="Jarvis"><img src="/jarvis-logo.png" alt="" /></div>
+        <div
+          className="side-brand"
+          aria-label="Jarvis"
+        >
+          <img
+            src="/jarvis-logo.png"
+            alt=""
+          />
+        </div>
+
         <nav aria-label="Research sections">
-          {navigation.map((item) => <button key={item.label} aria-label={item.label} data-label={item.label} title={item.label} onClick={() => setActive(item.label)} className={active === item.label ? 'active' : ''}><span aria-hidden="true">{item.icon}</span></button>)}
+          {navigation.map((item) => (
+            <button
+              key={item.label}
+              aria-label={item.label}
+              data-label={item.label}
+              title={item.label}
+              onClick={() =>
+                setActive(item.label)
+              }
+              className={
+                active === item.label
+                  ? 'active'
+                  : ''
+              }
+            >
+              <span aria-hidden="true">
+                {item.icon}
+              </span>
+            </button>
+          ))}
         </nav>
-        <div className="side-tools"><button aria-label="Notes" data-label="NOTES" title="Notes" onClick={() => setNotesOpen(true)}><span aria-hidden="true">✎</span></button><button aria-label="Settings" data-label="SETTINGS" title="Settings" onClick={() => setSettingsOpen(true)}><span aria-hidden="true">⚙</span></button></div>
-        <button className="sidebar-health" aria-label={`${liveCount} of 4 data feeds live`} data-label={`${liveCount}/4 FEEDS LIVE`} title={`${liveCount}/4 feeds live`} onClick={() => setSettingsOpen(true)}><i className={liveCount >= 3 ? 'good' : liveCount ? 'partial' : ''} /></button>
+
+        <div className="side-tools">
+          <button
+            aria-label="Notes"
+            data-label="NOTES"
+            title="Notes"
+            onClick={() =>
+              setNotesOpen(true)
+            }
+          >
+            <span aria-hidden="true">
+              ✎
+            </span>
+          </button>
+
+          <button
+            aria-label="Settings"
+            data-label="SETTINGS"
+            title="Settings"
+            onClick={() =>
+              setSettingsOpen(true)
+            }
+          >
+            <span aria-hidden="true">
+              ⚙
+            </span>
+          </button>
+        </div>
+
+        <button
+          className="sidebar-health"
+          aria-label={`${liveCount} of 4 data feeds live`}
+          data-label={`${liveCount}/4 FEEDS LIVE`}
+          title={`${liveCount}/4 feeds live`}
+          onClick={() =>
+            setSettingsOpen(true)
+          }
+        >
+          <i
+            className={
+              liveCount >= 3
+                ? 'good'
+                : liveCount
+                  ? 'partial'
+                  : ''
+            }
+          />
+        </button>
       </aside>
 
       <div className="app-column">
+
+        {/* =========================
+            TOP BAR
+        ========================= */}
+
         <header className="topbar global-bar">
-          <label className="global-search"><span>⌕</span><input aria-label="Search terminal" placeholder="Search tickers, indicators, notes" /></label>
-          <div className="global-date"><span>THU</span><strong>03 SEP 2026</strong><b>WIB</b></div>
-          <div className="feed-summary"><span className={liveCount ? 'live-dot' : 'stale-dot'} /><strong>{liveCount}/4 FEEDS LIVE</strong><small>DAILY CLOSE</small></div>
+
+          <div className="global-search-wrap">
+            <label className="global-search">
+              <span>⌕</span>
+
+              <input
+                aria-label="Search terminal"
+                placeholder="Search tickers, indicators, notes"
+                value={searchQuery}
+                onChange={(event) => {
+                  setSearchQuery(
+                    event.target.value
+                  );
+
+                  setSearchOpen(true);
+                }}
+                onFocus={() =>
+                  setSearchOpen(true)
+                }
+                onBlur={() => {
+                  setTimeout(() => {
+                    setSearchOpen(false);
+                  }, 150);
+                }}
+              />
+            </label>
+
+            {/* SEARCH DROPDOWN */}
+
+            {searchOpen &&
+              searchQuery.trim() && (
+                <div className="global-search-results">
+
+                  {searchResults.length > 0 ? (
+                    searchResults.map(
+                      (stock) => (
+                        <button
+                          key={stock.ticker}
+                          type="button"
+                          onMouseDown={(
+                            event
+                          ) => {
+                            event.preventDefault();
+
+                            handleSearchSelect(
+                              stock
+                            );
+                          }}
+                        >
+                          <strong>
+                            {stock.ticker.replace(
+                              '.JK',
+                              ''
+                            )}
+                          </strong>
+
+                          <span>
+                            {stock.name}
+                          </span>
+
+                          <small>
+                            {stock.sector}
+                          </small>
+                        </button>
+                      )
+                    )
+                  ) : (
+                    <div className="global-search-empty">
+                      NO IDX STOCK FOUND
+                    </div>
+                  )}
+
+                </div>
+              )}
+          </div>
+
+          <div className="global-date">
+            <span>THU</span>
+            <strong>
+              03 SEP 2026
+            </strong>
+            <b>WIB</b>
+          </div>
+
+          <div className="feed-summary">
+            <span
+              className={
+                liveCount
+                  ? 'live-dot'
+                  : 'stale-dot'
+              }
+            />
+
+            <strong>
+              {liveCount}/4 FEEDS LIVE
+            </strong>
+
+            <small>
+              DAILY CLOSE
+            </small>
+          </div>
         </header>
 
-        <section className="signal-strip" aria-label="Key readings">
-          <MetricCard label="MACRO REGIME" value={regimeLabel(currentRegime)} tone="orange" condition="GROWTH–INFLATION PRESSURE" implication="Defensive tilt; avoid paying for fragile growth." source={fred ? 'FRED LIVE' : 'ILLUSTRATIVE DATA'} />
-          <MetricCard label="GPR COMPOSITE" value={gdelt ? 'PARTIAL' : '64.2'} condition={gdelt ? `FREQUENCY ${gdelt.frequencyScore.toFixed(1)} · LIVE` : 'ELEVATED · RISK RISING'} implication={gdelt ? 'Goldstein severity is still required for a valid composite.' : 'Higher event-risk premium; tighten position sizing.'} source={gdelt ? 'GDELT KEYWORD FEED LIVE' : 'ILLUSTRATIVE DATA'} />
-          <MetricCard label="US 10Y–2Y" value={`${((yields[4] - yields[2]) * 100).toFixed(0)} BP`} condition={spreadLabel((yields[4] - yields[2]) * 100)} implication="A flatter curve keeps cyclical conviction constrained." source={fred ? 'FRED LIVE' : 'ILLUSTRATIVE DATA'} />
-          <MetricCard label="DXY" value={dxy.last ? dxy.last.toFixed(2) : '103.42'} condition={relativeLabel(dxy.last, dxy.average, 'DOLLAR')} implication="Firm USD is a headwind for EM risk and commodities." source={markets ? `${signed(dxy.change)}% · LIVE` : 'ILLUSTRATIVE DATA'} />
-          <MetricCard label="WTI CRUDE" value={oil.last ? '$' + oil.last.toFixed(2) : '$84.17'} condition={relativeLabel(oil.last, oil.average, 'ENERGY')} implication="Supports the energy complex; coal equities benefit indirectly." source={markets ? `${signed(oil.change)}% · LIVE` : 'ILLUSTRATIVE DATA'} />
+        {/* =========================
+            SIGNAL STRIP
+        ========================= */}
+
+        <section
+          className="signal-strip"
+          aria-label="Key readings"
+        >
+          <MetricCard
+            label="MACRO REGIME"
+            value={regimeLabel(
+              currentRegime
+            )}
+            tone="orange"
+            condition="GROWTH–INFLATION PRESSURE"
+            implication="Defensive tilt; avoid paying for fragile growth."
+            source={
+              fred
+                ? 'FRED LIVE'
+                : 'ILLUSTRATIVE DATA'
+            }
+          />
+
+          <MetricCard
+            label="GPR COMPOSITE"
+            value={
+              gdelt
+                ? 'PARTIAL'
+                : '64.2'
+            }
+            condition={
+              gdelt
+                ? `FREQUENCY ${gdelt.frequencyScore.toFixed(1)} · LIVE`
+                : 'ELEVATED · RISK RISING'
+            }
+            implication={
+              gdelt
+                ? 'Goldstein severity is still required for a valid composite.'
+                : 'Higher event-risk premium; tighten position sizing.'
+            }
+            source={
+              gdelt
+                ? 'GDELT KEYWORD FEED LIVE'
+                : 'ILLUSTRATIVE DATA'
+            }
+          />
+
+          <MetricCard
+            label="US 10Y–2Y"
+            value={`${(
+              (yields[4] -
+                yields[2]) *
+              100
+            ).toFixed(0)} BP`}
+            condition={spreadLabel(
+              (yields[4] -
+                yields[2]) *
+                100
+            )}
+            implication="A flatter curve keeps cyclical conviction constrained."
+            source={
+              fred
+                ? 'FRED LIVE'
+                : 'ILLUSTRATIVE DATA'
+            }
+          />
+
+          <MetricCard
+            label="DXY"
+            value={
+              dxy.last
+                ? dxy.last.toFixed(2)
+                : '103.42'
+            }
+            condition={relativeLabel(
+              dxy.last,
+              dxy.average,
+              'DOLLAR'
+            )}
+            implication="Firm USD is a headwind for EM risk and commodities."
+            source={
+              markets
+                ? `${signed(
+                    dxy.change
+                  )}% · LIVE`
+                : 'ILLUSTRATIVE DATA'
+            }
+          />
+
+          <MetricCard
+            label="WTI CRUDE"
+            value={
+              oil.last
+                ? '$' +
+                  oil.last.toFixed(
+                    2
+                  )
+                : '$84.17'
+            }
+            condition={relativeLabel(
+              oil.last,
+              oil.average,
+              'ENERGY'
+            )}
+            implication="Supports the energy complex; coal equities benefit indirectly."
+            source={
+              markets
+                ? `${signed(
+                    oil.change
+                  )}% · LIVE`
+                : 'ILLUSTRATIVE DATA'
+            }
+          />
         </section>
 
-        <div className="view-heading"><div><span>RESEARCH / {active}</span><h2>{active === 'OVERVIEW' ? 'Daily Research Overview' : active === 'GPR INDEX' ? 'Geopolitical Risk Index' : titleCase(active)}</h2></div><p>{sectionDescription(active)}</p></div>
+        {/* =========================
+            SECTION HEADER
+        ========================= */}
 
-        {active === 'OVERVIEW' && <section className="dashboard-grid overview-grid">
-          <Watchlist watchlist={watchlist} live={Boolean(markets)} />
-          <Calendar data={calendar} />
-          <article className="panel thesis-panel"><PanelHead index="03" title="CURRENT THESIS"><button className="quiet-button" onClick={() => setNotesOpen(true)}>UPDATE</button></PanelHead><div className="thesis-content compact"><span className="thesis-date">03 SEP 2026 · 08:15 WIB</span><h3>Sticky inflation is meeting softer growth.</h3><p>{savedNote}</p><div className="thesis-tags"><span>RATES</span><span>CHINA</span><span>ENERGY</span></div></div></article>
-          <article className="panel implication-panel"><PanelHead index="04" title="DAILY IMPLICATIONS"><span className="compact-health" title={`${liveCount}/4 feeds live`}><i className={liveCount >= 3 ? 'good' : liveCount ? 'partial' : ''} />{liveCount}/4</span></PanelHead><div className="implication-list"><p><span>01</span><strong>Stay selective in cyclicals</strong><small>Weakening growth and sticky inflation lower the margin for error.</small></p><p><span>02</span><strong>Keep energy on the screen</strong><small>Oil strength supports cash flow, but ADRO and BUMI remain coal-led exposures.</small></p><p><span>03</span><strong>Size around event risk</strong><small>Elevated GPR argues for tighter stops and less crowded positions.</small></p></div></article>
-        </section>}
+        <div className="view-heading">
+          <div>
+            <span>
+              RESEARCH / {active}
+            </span>
 
-        {active === 'MACRO' && <section className="dashboard-grid macro-grid">
-          <article className="panel regime-panel"><PanelHead index="01" title="MACRO REGIME MAP"><div className="range-switcher">{(['6M','1Y','3Y'] as const).map((item) => <button key={item} onClick={() => setRange(item)} className={range === item ? 'active' : ''}>{item}</button>)}</div></PanelHead><RegimeCanvas points={fred?.regime ?? fallbackTrail} range={range} /><PanelFoot left="INDUSTRIAL PRODUCTION GROWTH × CPI INFLATION" right={fred ? `FRED · THROUGH ${formatDate(fred.freshness)}` : `ILLUSTRATIVE · THROUGH ${formatDate(fallbackTrail.at(-1)!.date)}`} /></article>
-          <article className="panel indicator-panel"><PanelHead index="02" title="MACRO INDICATOR Z-SCORES"><span className="head-note">VS 10Y MEAN</span></PanelHead><div className="indicator-head"><span>INDICATOR</span><span>ACTUAL</span><span>MEAN</span><span>DEVIATION</span><span>Z</span></div>{indicators.map((item) => <div className="indicator-row" key={item.name}><strong>{item.name}</strong><span>{formatNumber(item.actual, item.unit)}</span><span>{formatNumber(item.mean, item.unit)}</span><div className="deviation-track"><i className={zTone(item.z)} style={{width:`${Math.min(96, 50 + item.z * 28)}%`}} /></div><b className={zTone(item.z)}>{signed(item.z)}</b></div>)}<PanelFoot left="SEASONALLY ADJUSTED WHERE AVAILABLE" right={fred ? 'FRED LIVE' : 'ILLUSTRATIVE DATA'} /></article>
-          <YieldCurve values={yields} live={Boolean(fred)} />
-        </section>}
+            <h2>
+              {active ===
+              'OVERVIEW'
+                ? 'Daily Research Overview'
+                : active ===
+                    'GPR INDEX'
+                  ? 'Geopolitical Risk Index'
+                  : titleCase(
+                      active
+                    )}
+            </h2>
+          </div>
 
-        {active === 'MARKETS' && <section className="dashboard-grid markets-grid">
-          <article className="panel heatmap-panel"><PanelHead index="01" title="IDX SECTOR HEATMAP"><div className="range-switcher">{(['1D','1W'] as const).map((item) => <button key={item} onClick={() => setHeatPeriod(item)} className={heatPeriod === item ? 'active' : ''}>{item}</button>)}</div></PanelHead><div className="heatmap">{heatmap.map((item, index) => { const value = heatPeriod === '1D' ? item.daily : item.weekly; return <button key={item.label} onClick={() => setSelectedSector(item.label)} className={`heat-tile ${['xl','lg','md','lg','sm','sm','md','sm','md','lg','md'][index]} ${value === null ? 'no-data' : heatTone(value)} ${item.confidence === 'low' ? 'low-confidence' : ''} ${selectedHeat?.label === item.label ? 'selected' : ''}`}><span>{item.label}</span><strong>{value === null ? '—' : `${signed(value)}%`}</strong><small>{item.confidence === 'low' ? `LOW CONFIDENCE · ${item.validCount ?? 0}/${item.memberCount ?? 0} VALID` : 'VIEW MEMBERS →'}</small></button>; })}</div>{selectedHeat && <div className="heat-drilldown"><div><span>SELECTED SECTOR</span><strong>{selectedHeat.label}</strong><small>SIMPLE AVG · {selectedHeat.validCount ?? selectedHeat.constituents.length}/{selectedHeat.memberCount ?? selectedHeat.constituents.length} VALID</small></div>{selectedHeat.constituents.length ? selectedHeat.constituents.map((stock) => { const value = heatPeriod === '1D' ? stock.daily : stock.weekly; return <div key={stock.ticker}><span>{stock.ticker}</span><strong>{stock.price.toLocaleString('en-US',{maximumFractionDigits:2})}</strong><small className={value === null ? '' : value >= 0 ? 'positive' : 'negative'}>{value === null ? 'NO VALID RETURN' : `${signed(value)}%`}</small></div>}) : <p>Constituent feed unavailable for this sector.</p>}</div>}<PanelFoot left="SIMPLE AVERAGE OF VALID IDX-IC CONSTITUENT BASKETS" right={markets ? `${markets.status.toUpperCase()} · YAHOO UPSTREAM` : 'ILLUSTRATIVE DATA'} /></article>
-          <Watchlist watchlist={watchlist} live={Boolean(markets)} />
-          <Calendar data={calendar} />
-        </section>}
+          <p>
+            {sectionDescription(
+              active
+            )}
+          </p>
+        </div>
 
-        {active === 'GPR INDEX' && <section className="dashboard-grid risk-grid">
-          <article className="panel gpr-panel"><PanelHead index="01" title="GEOPOLITICAL RISK COMPOSITE"><span className="model-badge">FORMULA V1</span></PanelHead><div className="gpr-summary"><div className="gpr-score"><span>CURRENT COMPOSITE</span><strong>{gdelt ? '—' : '64.2'}</strong><b>{gdelt ? 'PARTIAL INPUT' : 'ILLUSTRATIVE'}</b></div><div className="gpr-formula"><span>COMPOSITE FORMULA</span><strong><b>60%</b> GOLDSTEIN EVENT SEVERITY <i>+</i> <b>40%</b> KEYWORD FREQUENCY</strong><small>Composite is withheld until both inputs are live and normalized on the same baseline.</small></div><div className="gpr-moves"><span>EVENT SEVERITY <b>{gdelt ? 'PENDING' : '68.8'}</b></span><span>KEYWORD FREQ. <b>{gdelt ? `${gdelt.frequencyScore.toFixed(1)} LIVE` : '57.3'}</b></span><span>FRESHNESS <b>{gdelt ? formatDate(gdelt.freshness) : 'DEMO'}</b></span></div></div><div className="gpr-chart"><div className="threshold-line"><span>ELEVATED 60</span></div>{gprBars.map((height,index) => <i key={index} className={index > 12 ? 'alert' : ''} style={{height:`${height}%`}} />)}</div><div className="regional-risk"><span>REGIONAL KEYWORD FREQUENCY</span>{(gdelt?.regions ?? [{region:'SEA',score:56.1},{region:'CHINA',score:71.4},{region:'US',score:62}]).map((region) => <div key={region.region}><b>{region.region}</b><i><em style={{width:`${region.score}%`}} /></i><strong>{region.score.toFixed(1)}</strong></div>)}</div><PanelFoot left={gdelt ? 'GDELT KEYWORD FREQUENCY LIVE · GOLDSTEIN EVENT FEED PENDING' : 'VALUES REMAIN ILLUSTRATIVE'} right="60 / 40 WEIGHTING" /></article>
-          <article className="panel methodology-panel"><PanelHead index="02" title="METHOD NOTES" /><div><h3>Why 60 / 40?</h3><p>Event severity receives more weight so a sharp escalation moves the index faster than a gradual rise in coverage. Frequency still captures slower risk build-ups.</p><h3>What the score is not</h3><p>It is a directional research signal. GDELT classification noise and reporting density prevent it from being an academic-grade measure.</p><h3>Regional scope</h3><p>Southeast Asia and China are primary. The United States is included as global macro context.</p></div></article>
-        </section>}
+        {/* =========================
+            OVERVIEW
+        ========================= */}
 
-        {active === 'CORRELATIONS' && <section className="panel correlation-panel actual-matrix"><PanelHead index="01" title="60-DAY ROLLING CORRELATION"><div className="legend"><span>NEGATIVE</span><i /><span>POSITIVE</span></div></PanelHead><div className="matrix-intro"><div><h3>REGIONAL GDELT FREQUENCY × ASSET RETURNS</h3><p>Pearson correlation of daily changes. This is a live keyword-risk proxy until Goldstein event history is available.</p></div><span>{liveCorrelationRows ? 'LIVE PROXY · NOT FULL GPR' : 'MATRIX VALUES ILLUSTRATIVE'}</span></div><div className="matrix correlation-only"><div className="matrix-row matrix-labels"><span />{['COAL ETF','NICKEL EQ.','OIL','DXY','JKSE'].map((item) => <b key={item}>{item}</b>)}</div>{(liveCorrelationRows ?? correlationRows).map((row) => <div className="matrix-row" key={row[0]}><b>{row[0]}</b>{row.slice(1).map((value,index) => { const n=Number(value); return <span key={index} className={Math.abs(n)>=.3 ? n>0 ? 'corr-pos' : 'corr-neg' : ''}>{value}</span>; })}</div>)}</div><div className="matrix-footnotes"><p><strong>COAL ETF</strong> COAL · coal-industry equity ETF proxy</p><p><strong>NICKEL EQUITY</strong> VALE · nickel-exposed producer equity proxy</p><p><strong>OIL</strong> WTI crude futures</p><p><strong>DXY</strong> US Dollar Index</p><p><strong>JKSE</strong> IDX Composite</p></div><PanelFoot left={liveCorrelationRows ? 'GDELT DOC + YAHOO SERIES CONNECTED' : 'LIVE SERIES UNAVAILABLE · ILLUSTRATIVE FALLBACK'} right="60 TRADING DAYS" /></section>}
+        {active === 'OVERVIEW' && (
+          <section className="dashboard-grid overview-grid">
 
-        {active === 'SEASONALITY' && <section className="panel seasonality-panel"><PanelHead index="01" title="MONTHLY RETURN SEASONALITY"><div className="ticker-switcher">{['BUMI','AMMN','ADRO','JKSE'].map((ticker)=><button key={ticker} onClick={()=>setSeasonTicker(ticker)} className={seasonTicker===ticker?'active':''}>{ticker}</button>)}</div></PanelHead>{seasonality ? <><div className="season-summary"><div><span>SELECTED SERIES</span><strong>{seasonality.ticker}</strong><small>{seasonality.symbol}</small></div><p>Average calendar-month return across completed monthly observations. Historical tendency only—not a forecast.</p><b>BASED ON {seasonality.years} YEARS OF HISTORICAL DATA · {seasonality.from}–{seasonality.through}</b></div><div className="season-grid">{seasonality.months.map((month)=><div key={month.month} className={`season-tile ${heatTone(month.average)}`}><span>{monthName(month.month)}</span><strong>{signed(month.average)}%</strong><small>{month.positiveRate.toFixed(0)}% POSITIVE · N={month.observations}</small></div>)}</div><div className="season-legend"><span>WEAKER AVERAGE</span><i/><span>STRONGER AVERAGE</span></div><PanelFoot left="AVERAGE MONTHLY CLOSE-TO-CLOSE RETURN" right="YAHOO FINANCE UPSTREAM · DAILY HISTORY" /></> : <FeedUnavailable title="SEASONALITY FEED UNAVAILABLE" body="No historical values are shown until Yahoo returns a valid 5–10 year price series." />}</section>}
+            <Watchlist
+              watchlist={watchlist}
+              live={Boolean(markets)}
+            />
 
-        {active === 'MARKET PARTICIPANT' && <section className="dashboard-grid cot-grid"><article className="panel cot-panel"><PanelHead index="01" title="CFTC COT POSITIONING"><div className="ticker-switcher">{['USD','GOLD','US10Y','BTC'].map((asset)=><button key={asset} onClick={()=>setCotAsset(asset)} className={cotAsset===asset?'active':''} disabled={!cot?.series.some((item)=>item.key===asset)}>{asset}</button>)}</div></PanelHead>{selectedCot ? <><div className="cot-summary"><div><span>CONTRACT</span><strong>{selectedCot.label}</strong></div><div><span>LATEST REPORT</span><strong>{formatDate(selectedCot.latest)}</strong></div><div><span>FREQUENCY</span><strong>WEEKLY · CFTC</strong></div></div><CotChart series={selectedCot} /><CotTable series={selectedCot} /><PanelFoot left="NET POSITION = LONG CONTRACTS − SHORT CONTRACTS" right={`UPDATED WEEKLY · THROUGH ${formatDate(selectedCot.latest)}`} /></> : <FeedUnavailable title="CFTC CONNECTION FAILED" body="No positioning values are shown because the public COT dataset did not return a valid series." />}</article></section>}
+            <Calendar
+              data={calendar}
+            />
 
-        <footer className="terminal-footer"><span>JARVIS / RESEARCH USE ONLY</span><span>Unavailable feeds retain explicit connection labels.</span><span>v1.2</span></footer>
+            <article className="panel thesis-panel">
+              <PanelHead
+                index="03"
+                title="CURRENT THESIS"
+              >
+                <button
+                  className="quiet-button"
+                  onClick={() =>
+                    setNotesOpen(true)
+                  }
+                >
+                  UPDATE
+                </button>
+              </PanelHead>
+
+              <div className="thesis-content compact">
+                <span className="thesis-date">
+                  03 SEP 2026 · 08:15 WIB
+                </span>
+
+                <h3>
+                  Sticky inflation is meeting softer growth.
+                </h3>
+
+                <p>
+                  {savedNote}
+                </p>
+
+                <div className="thesis-tags">
+                  <span>RATES</span>
+                  <span>CHINA</span>
+                  <span>ENERGY</span>
+                </div>
+              </div>
+            </article>
+
+            <article className="panel implication-panel">
+              <PanelHead
+                index="04"
+                title="DAILY IMPLICATIONS"
+              >
+                <span
+                  className="compact-health"
+                  title={`${liveCount}/4 feeds live`}
+                >
+                  <i
+                    className={
+                      liveCount >= 3
+                        ? 'good'
+                        : liveCount
+                          ? 'partial'
+                          : ''
+                    }
+                  />
+                  {liveCount}/4
+                </span>
+              </PanelHead>
+
+              <div className="implication-list">
+                <p>
+                  <span>01</span>
+                  <strong>
+                    Stay selective in cyclicals
+                  </strong>
+                  <small>
+                    Weakening growth and sticky inflation lower the margin for error.
+                  </small>
+                </p>
+
+                <p>
+                  <span>02</span>
+                  <strong>
+                    Keep energy on the screen
+                  </strong>
+                  <small>
+                    Oil strength supports cash flow, but ADRO and BUMI remain coal-led exposures.
+                  </small>
+                </p>
+
+                <p>
+                  <span>03</span>
+                  <strong>
+                    Size around event risk
+                  </strong>
+                  <small>
+                    Elevated GPR argues for tighter stops and less crowded positions.
+                  </small>
+                </p>
+              </div>
+            </article>
+
+          </section>
+        )}
+
+        {/* =========================
+            MACRO
+        ========================= */}
+
+        {active === 'MACRO' && (
+          <section className="dashboard-grid macro-grid">
+
+            <article className="panel regime-panel">
+              <PanelHead
+                index="01"
+                title="MACRO REGIME MAP"
+              >
+                <div className="range-switcher">
+                  {(
+                    ['6M', '1Y', '3Y'] as const
+                  ).map((item) => (
+                    <button
+                      key={item}
+                      onClick={() =>
+                        setRange(item)
+                      }
+                      className={
+                        range === item
+                          ? 'active'
+                          : ''
+                      }
+                    >
+                      {item}
+                    </button>
+                  ))}
+                </div>
+              </PanelHead>
+
+              <RegimeCanvas
+                points={
+                  fred?.regime ??
+                  fallbackTrail
+                }
+                range={range}
+              />
+
+              <PanelFoot
+                left="INDUSTRIAL PRODUCTION GROWTH × CPI INFLATION"
+                right={
+                  fred
+                    ? `FRED · THROUGH ${formatDate(
+                        fred.freshness
+                      )}`
+                    : `ILLUSTRATIVE · THROUGH ${formatDate(
+                        fallbackTrail.at(
+                          -1
+                        )!.date
+                      )}`
+                }
+              />
+            </article>
+
+            <article className="panel indicator-panel">
+              <PanelHead
+                index="02"
+                title="MACRO INDICATOR Z-SCORES"
+              >
+                <span className="head-note">
+                  VS 10Y MEAN
+                </span>
+              </PanelHead>
+
+              <div className="indicator-head">
+                <span>INDICATOR</span>
+                <span>ACTUAL</span>
+                <span>MEAN</span>
+                <span>DEVIATION</span>
+                <span>Z</span>
+              </div>
+
+              {indicators.map(
+                (item) => (
+                  <div
+                    className="indicator-row"
+                    key={item.name}
+                  >
+                    <strong>
+                      {item.name}
+                    </strong>
+
+                    <span>
+                      {formatNumber(
+                        item.actual,
+                        item.unit
+                      )}
+                    </span>
+
+                    <span>
+                      {formatNumber(
+                        item.mean,
+                        item.unit
+                      )}
+                    </span>
+
+                    <div className="deviation-track">
+                      <i
+                        className={zTone(
+                          item.z
+                        )}
+                        style={{
+                          width: `${Math.min(
+                            96,
+                            50 +
+                              item.z *
+                                28
+                          )}%`,
+                        }}
+                      />
+                    </div>
+
+                    <b
+                      className={zTone(
+                        item.z
+                      )}
+                    >
+                      {signed(item.z)}
+                    </b>
+                  </div>
+                )
+              )}
+
+              <PanelFoot
+                left="SEASONALLY ADJUSTED WHERE AVAILABLE"
+                right={
+                  fred
+                    ? 'FRED LIVE'
+                    : 'ILLUSTRATIVE DATA'
+                }
+              />
+            </article>
+
+            <YieldCurve
+              values={yields}
+              live={Boolean(fred)}
+            />
+
+          </section>
+        )}
+
+        {/* =========================
+            MARKETS
+        ========================= */}
+
+        {active === 'MARKETS' && (
+          <section className="dashboard-grid markets-grid">
+
+            <article className="panel heatmap-panel">
+              <PanelHead
+                index="01"
+                title="IDX SECTOR HEATMAP"
+              >
+                <div className="range-switcher">
+                  {(
+                    ['1D', '1W'] as const
+                  ).map((item) => (
+                    <button
+                      key={item}
+                      onClick={() =>
+                        setHeatPeriod(item)
+                      }
+                      className={
+                        heatPeriod === item
+                          ? 'active'
+                          : ''
+                      }
+                    >
+                      {item}
+                    </button>
+                  ))}
+                </div>
+              </PanelHead>
+
+              <div className="heatmap">
+                {heatmap.map(
+                  (
+                    item,
+                    index
+                  ) => {
+                    const value =
+                      heatPeriod ===
+                      '1D'
+                        ? item.daily
+                        : item.weekly;
+
+                    return (
+                      <button
+                        key={
+                          item.label
+                        }
+                        onClick={() =>
+                          setSelectedSector(
+                            item.label
+                          )
+                        }
+                        className={`heat-tile ${
+                          [
+                            'xl',
+                            'lg',
+                            'md',
+                            'lg',
+                            'sm',
+                            'sm',
+                            'md',
+                            'sm',
+                            'md',
+                            'lg',
+                            'md',
+                          ][index]
+                        } ${
+                          value ===
+                          null
+                            ? 'no-data'
+                            : heatTone(
+                                value
+                              )
+                        } ${
+                          item.confidence ===
+                          'low'
+                            ? 'low-confidence'
+                            : ''
+                        } ${
+                          selectedHeat?.label ===
+                          item.label
+                            ? 'selected'
+                            : ''
+                        }`}
+                      >
+                        <span>
+                          {item.label}
+                        </span>
+
+                        <strong>
+                          {value ===
+                          null
+                            ? '—'
+                            : `${signed(
+                                value
+                              )}%`}
+                        </strong>
+
+                        <small>
+                          {item.confidence ===
+                          'low'
+                            ? `LOW CONFIDENCE · ${
+                                item.validCount ??
+                                0
+                              }/${
+                                item.memberCount ??
+                                0
+                              } VALID`
+                            : 'VIEW MEMBERS →'}
+                        </small>
+                      </button>
+                    );
+                  }
+                )}
+              </div>
+
+              {selectedHeat && (
+                <div className="heat-drilldown">
+                  <div>
+                    <span>
+                      SELECTED SECTOR
+                    </span>
+
+                    <strong>
+                      {selectedHeat.label}
+                    </strong>
+
+                    <small>
+                      SIMPLE AVG ·{' '}
+                      {selectedHeat.validCount ??
+                        selectedHeat.constituents
+                          .length}
+                      /
+                      {selectedHeat.memberCount ??
+                        selectedHeat.constituents
+                          .length}{' '}
+                      VALID
+                    </small>
+                  </div>
+
+                  {selectedHeat
+                    .constituents
+                    .length ? (
+                    selectedHeat.constituents.map(
+                      (stock) => {
+                        const value =
+                          heatPeriod ===
+                          '1D'
+                            ? stock.daily
+                            : stock.weekly;
+
+                        return (
+                          <div
+                            key={
+                              stock.ticker
+                            }
+                          >
+                            <span>
+                              {
+                                stock.ticker
+                              }
+                            </span>
+
+                            <strong>
+                              {stock.price.toLocaleString(
+                                'en-US',
+                                {
+                                  maximumFractionDigits: 2,
+                                }
+                              )}
+                            </strong>
+
+                            <small
+                              className={
+                                value ===
+                                null
+                                  ? ''
+                                  : value >=
+                                      0
+                                    ? 'positive'
+                                    : 'negative'
+                              }
+                            >
+                              {value ===
+                              null
+                                ? 'NO VALID RETURN'
+                                : `${signed(
+                                    value
+                                  )}%`}
+                            </small>
+                          </div>
+                        );
+                      }
+                    )
+                  ) : (
+                    <p>
+                      Constituent feed unavailable for this sector.
+                    </p>
+                  )}
+                </div>
+              )}
+
+              <PanelFoot
+                left="SIMPLE AVERAGE OF VALID IDX-IC CONSTITUENT BASKETS"
+                right={
+                  markets
+                    ? `${markets.status.toUpperCase()} · YAHOO UPSTREAM`
+                    : 'ILLUSTRATIVE DATA'
+                }
+              />
+            </article>
+
+            <Watchlist
+              watchlist={watchlist}
+              live={Boolean(markets)}
+            />
+
+            <Calendar
+              data={calendar}
+            />
+
+          </section>
+        )}
+
+        {/* =========================
+            GPR INDEX
+        ========================= */}
+
+        {active === 'GPR INDEX' && (
+          <section className="dashboard-grid risk-grid">
+
+            <article className="panel gpr-panel">
+              <PanelHead
+                index="01"
+                title="GEOPOLITICAL RISK COMPOSITE"
+              >
+                <span className="model-badge">
+                  FORMULA V1
+                </span>
+              </PanelHead>
+
+              <div className="gpr-summary">
+                <div className="gpr-score">
+                  <span>
+                    CURRENT COMPOSITE
+                  </span>
+
+                  <strong>
+                    {gdelt
+                      ? '—'
+                      : '64.2'}
+                  </strong>
+
+                  <b>
+                    {gdelt
+                      ? 'PARTIAL INPUT'
+                      : 'ILLUSTRATIVE'}
+                  </b>
+                </div>
+
+                <div className="gpr-formula">
+                  <span>
+                    COMPOSITE FORMULA
+                  </span>
+
+                  <strong>
+                    <b>60%</b>{' '}
+                    GOLDSTEIN EVENT SEVERITY{' '}
+                    <i>+</i>{' '}
+                    <b>40%</b>{' '}
+                    KEYWORD FREQUENCY
+                  </strong>
+
+                  <small>
+                    Composite is withheld until both inputs are live and normalized on the same baseline.
+                  </small>
+                </div>
+
+                <div className="gpr-moves">
+                  <span>
+                    EVENT SEVERITY{' '}
+                    <b>
+                      {gdelt
+                        ? 'PENDING'
+                        : '68.8'}
+                    </b>
+                  </span>
+
+                  <span>
+                    KEYWORD FREQ.{' '}
+                    <b>
+                      {gdelt
+                        ? `${gdelt.frequencyScore.toFixed(
+                            1
+                          )} LIVE`
+                        : '57.3'}
+                    </b>
+                  </span>
+
+                  <span>
+                    FRESHNESS{' '}
+                    <b>
+                      {gdelt
+                        ? formatDate(
+                            gdelt.freshness
+                          )
+                        : 'DEMO'}
+                    </b>
+                  </span>
+                </div>
+              </div>
+
+              <div className="gpr-chart">
+                <div className="threshold-line">
+                  <span>
+                    ELEVATED 60
+                  </span>
+                </div>
+
+                {gprBars.map(
+                  (
+                    height,
+                    index
+                  ) => (
+                    <i
+                      key={index}
+                      className={
+                        index > 12
+                          ? 'alert'
+                          : ''
+                      }
+                      style={{
+                        height: `${height}%`,
+                      }}
+                    />
+                  )
+                )}
+              </div>
+
+              <div className="regional-risk">
+                <span>
+                  REGIONAL KEYWORD FREQUENCY
+                </span>
+
+                {(
+                  gdelt?.regions ??
+                  [
+                    {
+                      region:
+                        'SEA',
+                      score: 56.1,
+                    },
+                    {
+                      region:
+                        'CHINA',
+                      score: 71.4,
+                    },
+                    {
+                      region:
+                        'US',
+                      score: 62,
+                    },
+                  ]
+                ).map(
+                  (region) => (
+                    <div
+                      key={
+                        region.region
+                      }
+                    >
+                      <b>
+                        {
+                          region.region
+                        }
+                      </b>
+
+                      <i>
+                        <em
+                          style={{
+                            width: `${region.score}%`,
+                          }}
+                        />
+                      </i>
+
+                      <strong>
+                        {region.score.toFixed(
+                          1
+                        )}
+                      </strong>
+                    </div>
+                  )
+                )}
+              </div>
+
+              <PanelFoot
+                left={
+                  gdelt
+                    ? 'GDELT KEYWORD FREQUENCY LIVE · GOLDSTEIN EVENT FEED PENDING'
+                    : 'VALUES REMAIN ILLUSTRATIVE'
+                }
+                right="60 / 40 WEIGHTING"
+              />
+            </article>
+
+            <article className="panel methodology-panel">
+              <PanelHead
+                index="02"
+                title="METHOD NOTES"
+              />
+
+              <div>
+                <h3>
+                  Why 60 / 40?
+                </h3>
+
+                <p>
+                  Event severity receives more weight so a sharp escalation moves the index faster than a gradual rise in coverage. Frequency still captures slower risk build-ups.
+                </p>
+
+                <h3>
+                  What the score is not
+                </h3>
+
+                <p>
+                  It is a directional research signal. GDELT classification noise and reporting density prevent it from being an academic-grade measure.
+                </p>
+
+                <h3>
+                  Regional scope
+                </h3>
+
+                <p>
+                  Southeast Asia and China are primary. The United States is included as global macro context.
+                </p>
+              </div>
+            </article>
+
+          </section>
+        )}
+
+        {/* =========================
+            CORRELATIONS
+        ========================= */}
+
+        {active === 'CORRELATIONS' && (
+          <section className="panel correlation-panel actual-matrix">
+
+            <PanelHead
+              index="01"
+              title="60-DAY ROLLING CORRELATION"
+            >
+              <div className="legend">
+                <span>NEGATIVE</span>
+                <i />
+                <span>POSITIVE</span>
+              </div>
+            </PanelHead>
+
+            <div className="matrix-intro">
+              <div>
+                <h3>
+                  REGIONAL GDELT FREQUENCY × ASSET RETURNS
+                </h3>
+
+                <p>
+                  Pearson correlation of daily changes. This is a live keyword-risk proxy until Goldstein event history is available.
+                </p>
+              </div>
+
+              <span>
+                {liveCorrelationRows
+                  ? 'LIVE PROXY · NOT FULL GPR'
+                  : 'MATRIX VALUES ILLUSTRATIVE'}
+              </span>
+            </div>
+
+            <div className="matrix correlation-only">
+
+              <div className="matrix-row matrix-labels">
+                <span />
+
+                {[
+                  'COAL ETF',
+                  'NICKEL EQ.',
+                  'OIL',
+                  'DXY',
+                  'JKSE',
+                ].map(
+                  (item) => (
+                    <b key={item}>
+                      {item}
+                    </b>
+                  )
+                )}
+              </div>
+
+              {(
+                liveCorrelationRows ??
+                correlationRows
+              ).map(
+                (row) => (
+                  <div
+                    className="matrix-row"
+                    key={row[0]}
+                  >
+                    <b>
+                      {row[0]}
+                    </b>
+
+                    {row
+                      .slice(1)
+                      .map(
+                        (
+                          value,
+                          index
+                        ) => {
+                          const n =
+                            Number(
+                              value
+                            );
+
+                          return (
+                            <span
+                              key={
+                                index
+                              }
+                              className={
+                                Math.abs(
+                                  n
+                                ) >=
+                                0.3
+                                  ? n >
+                                    0
+                                    ? 'corr-pos'
+                                    : 'corr-neg'
+                                  : ''
+                              }
+                            >
+                              {
+                                value
+                              }
+                            </span>
+                          );
+                        }
+                      )}
+                  </div>
+                )
+              )}
+
+            </div>
+
+            <div className="matrix-footnotes">
+              <p>
+                <strong>
+                  COAL ETF
+                </strong>{' '}
+                COAL · coal-industry equity ETF proxy
+              </p>
+
+              <p>
+                <strong>
+                  NICKEL EQUITY
+                </strong>{' '}
+                VALE · nickel-exposed producer equity proxy
+              </p>
+
+              <p>
+                <strong>
+                  OIL
+                </strong>{' '}
+                WTI crude futures
+              </p>
+
+              <p>
+                <strong>
+                  DXY
+                </strong>{' '}
+                US Dollar Index
+              </p>
+
+              <p>
+                <strong>
+                  JKSE
+                </strong>{' '}
+                IDX Composite
+              </p>
+            </div>
+
+            <PanelFoot
+              left={
+                liveCorrelationRows
+                  ? 'GDELT DOC + YAHOO SERIES CONNECTED'
+                  : 'LIVE SERIES UNAVAILABLE · ILLUSTRATIVE FALLBACK'
+              }
+              right="60 TRADING DAYS"
+            />
+
+          </section>
+        )}
+
+        {/* =========================
+            SEASONALITY
+        ========================= */}
+
+        {active === 'SEASONALITY' && (
+          <section className="panel seasonality-panel">
+
+            <PanelHead
+              index="01"
+              title="MONTHLY RETURN SEASONALITY"
+            >
+              <div className="ticker-switcher">
+                {[
+                  'BUMI',
+                  'AMMN',
+                  'ADRO',
+                  'JKSE',
+                ].map(
+                  (ticker) => (
+                    <button
+                      key={ticker}
+                      onClick={() =>
+                        setSeasonTicker(
+                          ticker
+                        )
+                      }
+                      className={
+                        seasonTicker ===
+                        ticker
+                          ? 'active'
+                          : ''
+                      }
+                    >
+                      {ticker}
+                    </button>
+                  )
+                )}
+              </div>
+            </PanelHead>
+
+            {seasonality ? (
+              <>
+                <div className="season-summary">
+                  <div>
+                    <span>
+                      SELECTED SERIES
+                    </span>
+
+                    <strong>
+                      {
+                        seasonality.ticker
+                      }
+                    </strong>
+
+                    <small>
+                      {
+                        seasonality.symbol
+                      }
+                    </small>
+                  </div>
+
+                  <p>
+                    Average calendar-month return across completed monthly observations. Historical tendency only—not a forecast.
+                  </p>
+
+                  <b>
+                    BASED ON{' '}
+                    {
+                      seasonality.years
+                    }{' '}
+                    YEARS OF HISTORICAL DATA ·{' '}
+                    {
+                      seasonality.from
+                    }
+                    –
+                    {
+                      seasonality.through
+                    }
+                  </b>
+                </div>
+
+                <div className="season-grid">
+                  {seasonality.months.map(
+                    (month) => (
+                      <div
+                        key={
+                          month.month
+                        }
+                        className={`season-tile ${heatTone(
+                          month.average
+                        )}`}
+                      >
+                        <span>
+                          {monthName(
+                            month.month
+                          )}
+                        </span>
+
+                        <strong>
+                          {signed(
+                            month.average
+                          )}
+                          %
+                        </strong>
+
+                        <small>
+                          {month.positiveRate.toFixed(
+                            0
+                          )}
+                          % POSITIVE · N=
+                          {
+                            month.observations
+                          }
+                        </small>
+                      </div>
+                    )
+                  )}
+                </div>
+
+                <div className="season-legend">
+                  <span>
+                    WEAKER AVERAGE
+                  </span>
+                  <i />
+                  <span>
+                    STRONGER AVERAGE
+                  </span>
+                </div>
+
+                <PanelFoot
+                  left="AVERAGE MONTHLY CLOSE-TO-CLOSE RETURN"
+                  right="YAHOO FINANCE UPSTREAM · DAILY HISTORY"
+                />
+              </>
+            ) : (
+              <FeedUnavailable
+                title="SEASONALITY FEED UNAVAILABLE"
+                body="No historical values are shown until Yahoo returns a valid 5–10 year price series."
+              />
+            )}
+
+          </section>
+        )}
+
+        {/* =========================
+            MARKET PARTICIPANT
+        ========================= */}
+
+        {active === 'MARKET PARTICIPANT' && (
+          <section className="dashboard-grid cot-grid">
+
+            <article className="panel cot-panel">
+
+              <PanelHead
+                index="01"
+                title="CFTC COT POSITIONING"
+              >
+                <div className="ticker-switcher">
+                  {[
+                    'USD',
+                    'GOLD',
+                    'US10Y',
+                    'BTC',
+                  ].map(
+                    (asset) => (
+                      <button
+                        key={asset}
+                        onClick={() =>
+                          setCotAsset(
+                            asset
+                          )
+                        }
+                        className={
+                          cotAsset ===
+                          asset
+                            ? 'active'
+                            : ''
+                        }
+                        disabled={
+                          !cot?.series.some(
+                            (item) =>
+                              item.key ===
+                              asset
+                          )
+                        }
+                      >
+                        {asset}
+                      </button>
+                    )
+                  )}
+                </div>
+              </PanelHead>
+
+              {selectedCot ? (
+                <>
+                  <div className="cot-summary">
+                    <div>
+                      <span>
+                        CONTRACT
+                      </span>
+
+                      <strong>
+                        {
+                          selectedCot.label
+                        }
+                      </strong>
+                    </div>
+
+                    <div>
+                      <span>
+                        LATEST REPORT
+                      </span>
+
+                      <strong>
+                        {formatDate(
+                          selectedCot.latest
+                        )}
+                      </strong>
+                    </div>
+
+                    <div>
+                      <span>
+                        FREQUENCY
+                      </span>
+
+                      <strong>
+                        WEEKLY · CFTC
+                      </strong>
+                    </div>
+                  </div>
+
+                  <CotChart
+                    series={
+                      selectedCot
+                    }
+                  />
+
+                  <CotTable
+                    series={
+                      selectedCot
+                    }
+                  />
+
+                  <PanelFoot
+                    left="NET POSITION = LONG CONTRACTS − SHORT CONTRACTS"
+                    right={`UPDATED WEEKLY · THROUGH ${formatDate(
+                      selectedCot.latest
+                    )}`}
+                  />
+                </>
+              ) : (
+                <FeedUnavailable
+                  title="CFTC CONNECTION FAILED"
+                  body="No positioning values are shown because the public COT dataset did not return a valid series."
+                />
+              )}
+
+            </article>
+
+          </section>
+        )}
+
+        {/* =========================
+            FOOTER
+        ========================= */}
+
+        <footer className="terminal-footer">
+          <span>
+            JARVIS / RESEARCH USE ONLY
+          </span>
+
+          <span>
+            Unavailable feeds retain explicit connection labels.
+          </span>
+
+          <span>
+            v1.2
+          </span>
+        </footer>
+
       </div>
 
-      {notesOpen && <div className="overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) setNotesOpen(false); }}><section className="drawer" role="dialog" aria-modal="true" aria-label="Research notes"><div className="drawer-head"><div><span>RESEARCH LOG</span><h2>UPDATE CURRENT THESIS</h2></div><button onClick={() => setNotesOpen(false)}>ESC</button></div><label htmlFor="note">NEW NOTE</label><textarea id="note" autoFocus value={note} maxLength={600} onChange={(e) => setNote(e.target.value)} placeholder="What changed in the data, and what would disprove your read?" /><div className="prompt-line"><span>Keep the claim testable.</span><span>{note.length} / 600</span></div><div className="drawer-actions"><button onClick={() => setNotesOpen(false)}>CANCEL</button><button className="primary-button" onClick={saveNote}>SAVE NOTE</button></div><div className="recent-note"><span>LATEST ENTRY</span><p>{savedNote}</p><small>03 SEP 2026 · 08:15 WIB</small></div></section></div>}
-      {settingsOpen && <div className="overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) setSettingsOpen(false); }}><section className="drawer" role="dialog" aria-modal="true" aria-label="Terminal settings"><div className="drawer-head"><div><span>TERMINAL</span><h2>SETTINGS</h2></div><button onClick={() => setSettingsOpen(false)}>ESC</button></div><div className="setting-block"><h3>COLOR ACCESSIBILITY</h3><p>Choose a signal palette that keeps gains and losses distinct.</p><div className="scheme-list">{(['default','deuteranopia','protanopia','tritanopia'] as Scheme[]).map((item) => <button key={item} className={scheme===item?'selected':''} onClick={() => setScheme(item)}><i /><span>{item.toUpperCase()}</span><b>{scheme===item?'ON':''}</b></button>)}</div></div><div className="setting-block"><h3>DATA CONNECTIONS</h3><p>Technical feed detail is kept here so the daily view stays focused on decisions.</p><div className="settings-health connection-list"><p><i className={fred ? 'live' : ''} /><strong>FRED</strong><span>{fred ? `Updated ${fred.freshness}` : 'FRED_API_KEY not configured or upstream unavailable'}</span></p><p><i className={markets ? 'live' : ''} /><strong>IDX + SEASONALITY</strong><span>{markets ? `${markets.status} · Yahoo upstream` : 'Live request failed · illustrative values retained'}</span></p><p><i className={gdelt ? 'live' : ''} /><strong>GDELT DOC</strong><span>{gdelt ? 'Keyword-frequency series live · Goldstein pending' : 'Live request failed'}</span></p><p><i className={cot ? 'live' : ''} /><strong>CFTC COT</strong><span>{cot ? `${cot.status} · weekly public reports` : 'Public dataset request failed'}</span></p><p><i className={calendar ? 'live' : ''} /><strong>TRADINGECONOMICS</strong><span>{calendar ? 'Calendar connected' : 'TRADING_ECONOMICS_API_KEY required'}</span></p></div></div><button className="primary-button full" onClick={() => setSettingsOpen(false)}>APPLY SETTINGS</button></section></div>}
+      {/* =========================
+          NOTES DRAWER
+      ========================= */}
+
+      {notesOpen && (
+        <div
+          className="overlay"
+          onMouseDown={(e) => {
+            if (
+              e.target ===
+              e.currentTarget
+            ) {
+              setNotesOpen(false);
+            }
+          }}
+        >
+          <section
+            className="drawer"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Research notes"
+          >
+            <div className="drawer-head">
+              <div>
+                <span>
+                  RESEARCH LOG
+                </span>
+
+                <h2>
+                  UPDATE CURRENT THESIS
+                </h2>
+              </div>
+
+              <button
+                onClick={() =>
+                  setNotesOpen(false)
+                }
+              >
+                ESC
+              </button>
+            </div>
+
+            <label htmlFor="note">
+              NEW NOTE
+            </label>
+
+            <textarea
+              id="note"
+              autoFocus
+              value={note}
+              maxLength={600}
+              onChange={(e) =>
+                setNote(
+                  e.target.value
+                )
+              }
+              placeholder="What changed in the data, and what would disprove your read?"
+            />
+
+            <div className="prompt-line">
+              <span>
+                Keep the claim testable.
+              </span>
+
+              <span>
+                {note.length} / 600
+              </span>
+            </div>
+
+            <div className="drawer-actions">
+              <button
+                onClick={() =>
+                  setNotesOpen(false)
+                }
+              >
+                CANCEL
+              </button>
+
+              <button
+                className="primary-button"
+                onClick={saveNote}
+              >
+                SAVE NOTE
+              </button>
+            </div>
+
+            <div className="recent-note">
+              <span>
+                LATEST ENTRY
+              </span>
+
+              <p>
+                {savedNote}
+              </p>
+
+              <small>
+                03 SEP 2026 · 08:15 WIB
+              </small>
+            </div>
+          </section>
+        </div>
+      )}
+
+      {/* =========================
+          SETTINGS DRAWER
+      ========================= */}
+
+      {settingsOpen && (
+        <div
+          className="overlay"
+          onMouseDown={(e) => {
+            if (
+              e.target ===
+              e.currentTarget
+            ) {
+              setSettingsOpen(false);
+            }
+          }}
+        >
+          <section
+            className="drawer"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Terminal settings"
+          >
+            <div className="drawer-head">
+              <div>
+                <span>
+                  TERMINAL
+                </span>
+
+                <h2>
+                  SETTINGS
+                </h2>
+              </div>
+
+              <button
+                onClick={() =>
+                  setSettingsOpen(false)
+                }
+              >
+                ESC
+              </button>
+            </div>
+
+            <div className="setting-block">
+              <h3>
+                COLOR ACCESSIBILITY
+              </h3>
+
+              <p>
+                Choose a signal palette that keeps gains and losses distinct.
+              </p>
+
+              <div className="scheme-list">
+                {(
+                  [
+                    'default',
+                    'deuteranopia',
+                    'protanopia',
+                    'tritanopia',
+                  ] as Scheme[]
+                ).map(
+                  (item) => (
+                    <button
+                      key={item}
+                      className={
+                        scheme === item
+                          ? 'selected'
+                          : ''
+                      }
+                      onClick={() =>
+                        setScheme(item)
+                      }
+                    >
+                      <i />
+
+                      <span>
+                        {item.toUpperCase()}
+                      </span>
+
+                      <b>
+                        {scheme === item
+                          ? 'ON'
+                          : ''}
+                      </b>
+                    </button>
+                  )
+                )}
+              </div>
+            </div>
+
+            <div className="setting-block">
+              <h3>
+                DATA CONNECTIONS
+              </h3>
+
+              <p>
+                Technical feed detail is kept here so the daily view stays focused on decisions.
+              </p>
+
+              <div className="settings-health connection-list">
+
+                <p>
+                  <i
+                    className={
+                      fred
+                        ? 'live'
+                        : ''
+                    }
+                  />
+
+                  <strong>
+                    FRED
+                  </strong>
+
+                  <span>
+                    {fred
+                      ? `Updated ${fred.freshness}`
+                      : 'FRED_API_KEY not configured or upstream unavailable'}
+                  </span>
+                </p>
+
+                <p>
+                  <i
+                    className={
+                      markets
+                        ? 'live'
+                        : ''
+                    }
+                  />
+
+                  <strong>
+                    IDX + SEASONALITY
+                  </strong>
+
+                  <span>
+                    {markets
+                      ? `${markets.status} · Yahoo upstream`
+                      : 'Live request failed · illustrative values retained'}
+                  </span>
+                </p>
+
+                <p>
+                  <i
+                    className={
+                      gdelt
+                        ? 'live'
+                        : ''
+                    }
+                  />
+
+                  <strong>
+                    GDELT DOC
+                  </strong>
+
+                  <span>
+                    {gdelt
+                      ? 'Keyword-frequency series live · Goldstein pending'
+                      : 'Live request failed'}
+                  </span>
+                </p>
+
+                <p>
+                  <i
+                    className={
+                      cot
+                        ? 'live'
+                        : ''
+                    }
+                  />
+
+                  <strong>
+                    CFTC COT
+                  </strong>
+
+                  <span>
+                    {cot
+                      ? `${cot.status} · weekly public reports`
+                      : 'Public dataset request failed'}
+                  </span>
+                </p>
+
+                <p>
+                  <i
+                    className={
+                      calendar
+                        ? 'live'
+                        : ''
+                    }
+                  />
+
+                  <strong>
+                    TRADINGECONOMICS
+                  </strong>
+
+                  <span>
+                    {calendar
+                      ? 'Calendar connected'
+                      : 'TRADING_ECONOMICS_API_KEY required'}
+                  </span>
+                </p>
+
+              </div>
+            </div>
+
+            <button
+              className="primary-button full"
+              onClick={() =>
+                setSettingsOpen(false)
+              }
+            >
+              APPLY SETTINGS
+            </button>
+
+          </section>
+        </div>
+      )}
     </main>
   );
 }
 
-function RegimeCanvas({ points, range }: { points: RegimePoint[]; range: '6M'|'1Y'|'3Y' }) {
-  const canvas = useRef<HTMLCanvasElement>(null); const visible = useMemo(() => points.slice(-(range === '6M' ? 6 : range === '1Y' ? 12 : 36)), [points, range]);
-  useEffect(() => { const el=canvas.current; if(!el) return; const draw=()=>{ const rect=el.getBoundingClientRect(); const scale=window.devicePixelRatio||1; el.width=rect.width*scale; el.height=rect.height*scale; const ctx=el.getContext('2d'); if(!ctx)return; ctx.scale(scale,scale); const w=rect.width,h=rect.height,pad=34; ctx.clearRect(0,0,w,h); ctx.strokeStyle='#202a35'; ctx.lineWidth=1; for(let i=0;i<=8;i++){const x=pad+(w-pad*2)*i/8;const y=pad+(h-pad*2)*i/8;ctx.beginPath();ctx.moveTo(x,pad);ctx.lineTo(x,h-pad);ctx.stroke();ctx.beginPath();ctx.moveTo(pad,y);ctx.lineTo(w-pad,y);ctx.stroke();} ctx.strokeStyle='#485868';ctx.beginPath();ctx.moveTo(w/2,pad);ctx.lineTo(w/2,h-pad);ctx.moveTo(pad,h/2);ctx.lineTo(w-pad,h/2);ctx.stroke(); const xy=(p:RegimePoint)=>({x:pad+((Math.max(-2,Math.min(2,p.growth))+2)/4)*(w-pad*2),y:pad+((2-Math.max(-2,Math.min(2,p.inflation)))/4)*(h-pad*2)}); ctx.strokeStyle='#48a6ff';ctx.lineWidth=2;ctx.beginPath();visible.forEach((p,i)=>{const q=xy(p);i?ctx.lineTo(q.x,q.y):ctx.moveTo(q.x,q.y)});ctx.stroke(); visible.forEach((p,i)=>{const q=xy(p);ctx.fillStyle=i===visible.length-1?'#ff9840':'#48a6ff';ctx.beginPath();ctx.arc(q.x,q.y,i===visible.length-1?5:2.5,0,Math.PI*2);ctx.fill();if(i===0||i===visible.length-1||i===Math.floor(visible.length/2)){ctx.fillStyle='#93a0af';ctx.font='9px monospace';ctx.fillText(formatDate(p.date),q.x+7,q.y-7)}}); }; draw(); const ro=new ResizeObserver(draw);ro.observe(el);return()=>ro.disconnect(); },[visible]);
-  const last=visible.at(-1); return <div className="regime-canvas-wrap"><span className="quadrant q1">STAGFLATION</span><span className="quadrant q2">OVERHEAT</span><span className="quadrant q3">DEFLATION</span><span className="quadrant q4">REFLATION</span><div className="regime-sector-overlay" aria-label="Typical IDX sector alignment by regime"><span className="sector-stag">ENERGY · BASIC MATERIALS</span><span className="sector-heat">FINANCIALS · INDUSTRIALS</span><span className="sector-def">HEALTHCARE · NON-CYCLICALS</span><span className="sector-ref">TECHNOLOGY · CYCLICALS</span></div><canvas ref={canvas} aria-label={`Historical growth and inflation z-score path for ${range}`} /><span className="canvas-axis x">GROWTH Z-SCORE</span><span className="canvas-axis y">INFLATION Z-SCORE</span>{last&&<span className="canvas-current">THROUGH {formatDate(last.date)} · G {signed(last.growth)} · I {signed(last.inflation)}</span>}</div>;
+/* =========================
+   REGIME CANVAS
+========================= */
+
+function RegimeCanvas({
+  points,
+  range,
+}: {
+  points: RegimePoint[];
+  range: '6M' | '1Y' | '3Y';
+}) {
+  const canvas =
+    useRef<HTMLCanvasElement>(
+      null
+    );
+
+  const visible = useMemo(
+    () =>
+      points.slice(
+        -(
+          range === '6M'
+            ? 6
+            : range === '1Y'
+              ? 12
+              : 36
+        )
+      ),
+    [points, range]
+  );
+
+  useEffect(() => {
+    const el = canvas.current;
+
+    if (!el) {
+      return;
+    }
+
+    const draw = () => {
+      const rect =
+        el.getBoundingClientRect();
+
+      const scale =
+        window.devicePixelRatio ||
+        1;
+
+      el.width =
+        rect.width * scale;
+
+      el.height =
+        rect.height * scale;
+
+      const ctx =
+        el.getContext('2d');
+
+      if (!ctx) {
+        return;
+      }
+
+      ctx.scale(
+        scale,
+        scale
+      );
+
+      const w = rect.width;
+      const h = rect.height;
+      const pad = 34;
+
+      ctx.clearRect(
+        0,
+        0,
+        w,
+        h
+      );
+
+      ctx.strokeStyle =
+        '#202a35';
+
+      ctx.lineWidth = 1;
+
+      for (
+        let i = 0;
+        i <= 8;
+        i++
+      ) {
+        const x =
+          pad +
+          ((w - pad * 2) *
+            i) /
+            8;
+
+        const y =
+          pad +
+          ((h - pad * 2) *
+            i) /
+            8;
+
+        ctx.beginPath();
+        ctx.moveTo(
+          x,
+          pad
+        );
+        ctx.lineTo(
+          x,
+          h - pad
+        );
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.moveTo(
+          pad,
+          y
+        );
+        ctx.lineTo(
+          w - pad,
+          y
+        );
+        ctx.stroke();
+      }
+
+      ctx.strokeStyle =
+        '#485868';
+
+      ctx.beginPath();
+
+      ctx.moveTo(
+        w / 2,
+        pad
+      );
+
+      ctx.lineTo(
+        w / 2,
+        h - pad
+      );
+
+      ctx.moveTo(
+        pad,
+        h / 2
+      );
+
+      ctx.lineTo(
+        w - pad,
+        h / 2
+      );
+
+      ctx.stroke();
+
+      const xy = (
+        p: RegimePoint
+      ) => ({
+        x:
+          pad +
+          ((Math.max(
+            -2,
+            Math.min(
+              2,
+              p.growth
+            )
+          ) +
+            2) /
+            4) *
+            (w - pad * 2),
+
+        y:
+          pad +
+          ((2 -
+            Math.max(
+              -2,
+              Math.min(
+                2,
+                p.inflation
+              )
+            )) /
+            4) *
+            (h - pad * 2),
+      });
+
+      ctx.strokeStyle =
+        '#48a6ff';
+
+      ctx.lineWidth = 2;
+
+      ctx.beginPath();
+
+      visible.forEach(
+        (p, i) => {
+          const q = xy(p);
+
+          if (i) {
+            ctx.lineTo(
+              q.x,
+              q.y
+            );
+          } else {
+            ctx.moveTo(
+              q.x,
+              q.y
+            );
+          }
+        }
+      );
+
+      ctx.stroke();
+
+      visible.forEach(
+        (p, i) => {
+          const q = xy(p);
+
+          ctx.fillStyle =
+            i ===
+            visible.length - 1
+              ? '#ff9840'
+              : '#48a6ff';
+
+          ctx.beginPath();
+
+          ctx.arc(
+            q.x,
+            q.y,
+            i ===
+            visible.length - 1
+              ? 5
+              : 2.5,
+            0,
+            Math.PI * 2
+          );
+
+          ctx.fill();
+
+          if (
+            i === 0 ||
+            i ===
+              visible.length -
+                1 ||
+            i ===
+              Math.floor(
+                visible.length /
+                  2
+              )
+          ) {
+            ctx.fillStyle =
+              '#93a0af';
+
+            ctx.font =
+              '9px monospace';
+
+            ctx.fillText(
+              formatDate(
+                p.date
+              ),
+              q.x + 7,
+              q.y - 7
+            );
+          }
+        }
+      );
+    };
+
+    draw();
+
+    const ro =
+      new ResizeObserver(
+        draw
+      );
+
+    ro.observe(el);
+
+    return () =>
+      ro.disconnect();
+  }, [visible]);
+
+  const last =
+    visible.at(-1);
+
+  return (
+    <div className="regime-canvas-wrap">
+
+      <span className="quadrant q1">
+        STAGFLATION
+      </span>
+
+      <span className="quadrant q2">
+        OVERHEAT
+      </span>
+
+      <span className="quadrant q3">
+        DEFLATION
+      </span>
+
+      <span className="quadrant q4">
+        REFLATION
+      </span>
+
+      <div
+        className="regime-sector-overlay"
+        aria-label="Typical IDX sector alignment by regime"
+      >
+        <span className="sector-stag">
+          ENERGY · BASIC MATERIALS
+        </span>
+
+        <span className="sector-heat">
+          FINANCIALS · INDUSTRIALS
+        </span>
+
+        <span className="sector-def">
+          HEALTHCARE · NON-CYCLICALS
+        </span>
+
+        <span className="sector-ref">
+          TECHNOLOGY · CYCLICALS
+        </span>
+      </div>
+
+      <canvas
+        ref={canvas}
+        aria-label={`Historical growth and inflation z-score path for ${range}`}
+      />
+
+      <span className="canvas-axis x">
+        GROWTH Z-SCORE
+      </span>
+
+      <span className="canvas-axis y">
+        INFLATION Z-SCORE
+      </span>
+
+      {last && (
+        <span className="canvas-current">
+          THROUGH {formatDate(
+            last.date
+          )}{' '}
+          · G {signed(
+            last.growth
+          )}{' '}
+          · I {signed(
+            last.inflation
+          )}
+        </span>
+      )}
+
+    </div>
+  );
 }
 
-function CotChart({series}:{series:CotSeries}){const canvas=useRef<HTMLCanvasElement>(null);const points=useMemo(()=>series.points.slice(-52),[series]);useEffect(()=>{const el=canvas.current;if(!el)return;const draw=()=>{const rect=el.getBoundingClientRect(),scale=window.devicePixelRatio||1;el.width=rect.width*scale;el.height=rect.height*scale;const ctx=el.getContext('2d');if(!ctx)return;ctx.scale(scale,scale);const w=rect.width,h=rect.height,pad=38;ctx.clearRect(0,0,w,h);ctx.strokeStyle='#242424';ctx.lineWidth=1;for(let i=0;i<=5;i++){const y=pad+(h-pad*2)*i/5;ctx.beginPath();ctx.moveTo(pad,y);ctx.lineTo(w-pad,y);ctx.stroke()}const all=points.flatMap((point)=>series.groups.map((group)=>point.values[group]??0));const max=Math.max(...all.map(Math.abs),1);const colors=['#48a6ff','#ff9840','#43d4a3'];series.groups.forEach((group,groupIndex)=>{ctx.strokeStyle=colors[groupIndex];ctx.lineWidth=2;ctx.beginPath();points.forEach((point,index)=>{const x=pad+(w-pad*2)*(index/Math.max(points.length-1,1));const y=h/2-((point.values[group]??0)/max)*(h/2-pad);index?ctx.lineTo(x,y):ctx.moveTo(x,y)});ctx.stroke()});ctx.strokeStyle='#55606d';ctx.beginPath();ctx.moveTo(pad,h/2);ctx.lineTo(w-pad,h/2);ctx.stroke();ctx.fillStyle='#778596';ctx.font='8px monospace';ctx.fillText(compact(max),4,pad+3);ctx.fillText('0',18,h/2+3);ctx.fillText(compact(-max),4,h-pad+3);if(points.length){ctx.fillText(formatDate(points[0].date),pad,h-10);const end=formatDate(points.at(-1)!.date);ctx.fillText(end,w-pad-46,h-10)}};draw();const ro=new ResizeObserver(draw);ro.observe(el);return()=>ro.disconnect()},[points,series]);return <div className="cot-chart"><div className="cot-legend">{series.groups.map((group,index)=><span key={group}><i className={`line-${index}`}/>{group}</span>)}</div><canvas ref={canvas} aria-label={`${series.label} net positioning by trader type over 52 weeks`}/></div>}
-function CotTable({series}:{series:CotSeries}){const rows=series.points.slice(-6).reverse();return <div className="cot-table"><div className="cot-row cot-head"><span>REPORT</span>{series.groups.map((group)=><span key={group}>{group}</span>)}</div>{rows.map((point,index)=>{const prior=series.points[series.points.length-2-index];return <div className="cot-row" key={point.date}><strong>{formatDate(point.date)}</strong>{series.groups.map((group)=>{const change=prior?(point.values[group]??0)-(prior.values[group]??0):0;return <span key={group}><b>{compact(point.values[group]??0)}</b><small className={change>=0?'positive':'negative'}>{change>=0?'+':''}{compact(change)} WoW</small></span>})}</div>})}</div>}
-function FeedUnavailable({title,body}:{title:string;body:string}){return <div className="feed-unavailable"><span>CONNECTION STATUS</span><strong>{title}</strong><p>{body}</p></div>}
+/* =========================
+   COT CHART
+========================= */
 
-function Watchlist({watchlist,live}:{watchlist:Array<{ticker:string;price:number;change:number}>;live:boolean}) { return <article className="panel watch-panel"><PanelHead index="01" title="IDX WATCHLIST" /><div className="watch-table table-head"><span>TICKER</span><span>LAST</span><span>1D</span></div>{watchlist.map((stock)=><div className="watch-table" key={stock.ticker}><strong>{stock.ticker}</strong><span>{stock.price.toLocaleString('en-US',{maximumFractionDigits:2})}</span><span className={stock.change>=0?'positive':'negative'}>{signed(stock.change)}%</span></div>)}<PanelFoot left="BUMI · AMMN · ADRO" right={live?'LIVE · DAILY':'ILLUSTRATIVE DATA'} /></article>; }
-function Calendar({data}:{data:CalendarData|null}){const rows=data?.events.map((event)=>{const date=new Date(event.date);return {time:Number.isNaN(date.getTime())?'—':date.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit',timeZone:'Asia/Jakarta'}),country:countryCode(event.country),event:event.event,forecast:event.forecast,prior:event.prior,status:event.importance>=3?'HIGH':'MED'}})??releases;return <article className="panel calendar-panel"><PanelHead index="02" title="ECONOMIC CALENDAR"><span className="demo-badge">{data?'LIVE':'DEMO'}</span></PanelHead><div className="date-rule"><strong>NEXT 7 DAYS</strong><span>{rows.length} RELEASES</span></div>{rows.slice(0,6).map((r,index)=><div className="release-row" key={`${r.event}-${index}`}><time>{r.time}</time><span className="country-tag">{r.country}</span><div><strong>{r.event}</strong><small>FCST {r.forecast} · PRIOR {r.prior}</small></div><span className={`importance ${r.status.toLowerCase()}`}>{r.status}</span></div>)}<PanelFoot left={data?'TRADINGECONOMICS LIVE':'TRADINGECONOMICS KEY NOT CONFIGURED'} right="WIB" /></article>}
-function YieldCurve({values,live}:{values:number[];live:boolean}){const spread=(values[4]-values[2])*100;return <article className="panel curve-panel"><PanelHead index="03" title="US TREASURY CURVE"><span className="curve-status"><i />{spread<0?'INVERTED':'NORMAL'} {signed(spread)} BP</span></PanelHead><div className="curve-chart"><div className="curve-bars">{values.map((point,index)=><div className="curve-column" key={index}><span>{point.toFixed(2)}%</span><i style={{height:`${Math.max(18,34+(point-3)*58)}px`}} /><b>{['3M','1Y','2Y','5Y','10Y','20Y','30Y'][index]}</b></div>)}</div><div className="curve-baseline" /></div><div className="curve-callouts"><div><span>2Y</span><strong>{values[2].toFixed(2)}%</strong></div><div><span>10Y</span><strong>{values[4].toFixed(2)}%</strong></div><div><span>30Y</span><strong>{values[6].toFixed(2)}%</strong></div></div><PanelFoot left="TREASURY CONSTANT MATURITY RATES" right={live?'FRED LIVE':'ILLUSTRATIVE DATA'} /></article>}
-function MetricCard({label,value,condition,implication,source,tone}:{label:string;value:string;condition:string;implication:string;source:string;tone?:string}){return <div className="metric-card"><span>{label}</span><div className="metric-reading"><strong className={tone}>{value}</strong><b>{condition}</b></div><p>{implication}</p><small>{source}</small></div>}
-function PanelHead({index: _index,title,children}:{index:string;title:string;children?:React.ReactNode}){return <header className="panel-head"><div><h2>{title}</h2></div>{children}</header>}
-function PanelFoot({left,right}:{left:string;right:string}){return <footer className="panel-foot"><span>{left}</span><span>{right}</span></footer>}
-function signed(value:number){return `${value>=0?'+':''}${value.toFixed(2)}`}
-function formatNumber(value:number,unit:string){return `${value.toFixed(unit?2:1)}${unit}`}
-function zTone(z:number){return z>.75?'hot':z>.25?'warm':z<-.25?'cool':'neutral'}
-function heatTone(value:number){const n=Math.abs(value);return value>=0? n>1.5?'up3':n>.6?'up2':'up1':n>1.5?'down3':n>.6?'down2':'down1'}
-function formatDate(date:string){return new Date(date+'T00:00:00Z').toLocaleDateString('en-US',{month:'short',year:'2-digit',timeZone:'UTC'})}
-function regimeLabel(point:RegimePoint){return point.growth < 0 && point.inflation > 0 ? 'STAGFLATION' : point.growth > 0 && point.inflation > 0 ? 'OVERHEAT' : point.growth < 0 ? 'DEFLATION' : 'REFLATION'}
-function spreadLabel(spread:number){return spread < -25 ? 'DEEPLY INVERTED' : spread < 0 ? 'SLIGHTLY INVERTED' : spread < 50 ? 'NORMAL · FLAT' : 'STEEPENING'}
-function relativeLabel(last:number,average:number,name:string){if(!last||!average)return `${name} CONTEXT PENDING`;const gap=(last/average-1)*100;return gap>2?`ABOVE 20D AVG · ${signed(gap)}%`:gap<-2?`BELOW 20D AVG · ${signed(gap)}%`:`NEAR 20D AVG · ${signed(gap)}%`}
-function countryCode(country:string){const value=country.toLowerCase();return value.includes('indonesia')?'ID':value.includes('china')?'CN':value.includes('united states')?'US':country.slice(0,2).toUpperCase()}
-function monthName(month:number){return ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'][month-1]}
-function compact(value:number){const absolute=Math.abs(value);const sign=value<0?'-':'';return absolute>=1_000_000?`${sign}${(absolute/1_000_000).toFixed(1)}M`:absolute>=1_000?`${sign}${(absolute/1_000).toFixed(1)}K`:`${Math.round(value)}`}
-function pearson(xs:number[],ys:number[]){if(xs.length<10||xs.length!==ys.length)return null;const mx=xs.reduce((a,b)=>a+b,0)/xs.length;const my=ys.reduce((a,b)=>a+b,0)/ys.length;let top=0,xx=0,yy=0;for(let i=0;i<xs.length;i++){const dx=xs[i]-mx,dy=ys[i]-my;top+=dx*dy;xx+=dx*dx;yy+=dy*dy}const bottom=Math.sqrt(xx*yy);return bottom?top/bottom:null}
-function correlationMatrix(gdelt:GdeltData|null,markets:MarketData|null){if(!gdelt||!markets||markets.assets.length<5)return null;const assetNames=['COAL','NICKEL','OIL','DXY','JKSE'];const rows=gdelt.regions.map((region)=>{const riskByDate=new Map(region.timeline.map((point,index)=>{const prior=region.timeline[index-1]?.value;return [point.date,prior&&prior!==0?(point.value/prior-1)*100:null]}));const values=assetNames.map((name)=>{const asset=markets.assets.find((item)=>item.name===name);if(!asset)return null;const xs:number[]=[],ys:number[]=[];asset.timestamps.forEach((stamp,index)=>{const close=asset.closes[index],prior=asset.closes[index-1];const date=new Date(stamp*1000).toISOString().slice(0,10);const risk=riskByDate.get(date);if(close!==null&&prior!==null&&prior&&risk!==null&&risk!==undefined){xs.push(risk);ys.push((close/prior-1)*100)}});return pearson(xs.slice(-60),ys.slice(-60))});if(values.some((value)=>value===null))return null;return [`${region.region} GPR`,...values.map((value)=>value!.toFixed(2))]});return rows.some((row)=>row===null)?null:rows as string[][]}
-function titleCase(value:string){return value.toLowerCase().replace(/\b\w/g,(x)=>x.toUpperCase())}
-function sectionDescription(section:Section){return ({OVERVIEW:'The readings that need attention before the next research session.',MACRO:'Live FRED signals for growth, inflation and the Treasury curve.',MARKETS:'Daily and weekly market performance with the IDX watchlist.', 'GPR INDEX':'Auditable geopolitical risk inputs, weights and regional scores.',CORRELATIONS:'Rolling relationships between regional risk and selected market series.',SEASONALITY:'Historical monthly return tendencies across selected IDX names and the benchmark.','MARKET PARTICIPANT':'Weekly CFTC positioning by trader category for major futures markets.'})[section]}
+function CotChart({
+  series,
+}: {
+  series: CotSeries;
+}) {
+  const canvas =
+    useRef<HTMLCanvasElement>(
+      null
+    );
+
+  const points = useMemo(
+    () =>
+      series.points.slice(
+        -52
+      ),
+    [series]
+  );
+
+  useEffect(() => {
+    const el = canvas.current;
+
+    if (!el) {
+      return;
+    }
+
+    const draw = () => {
+      const rect =
+        el.getBoundingClientRect();
+
+      const scale =
+        window.devicePixelRatio ||
+        1;
+
+      el.width =
+        rect.width * scale;
+
+      el.height =
+        rect.height * scale;
+
+      const ctx =
+        el.getContext('2d');
+
+      if (!ctx) {
+        return;
+      }
+
+      ctx.scale(
+        scale,
+        scale
+      );
+
+      const w = rect.width;
+      const h = rect.height;
+      const pad = 38;
+
+      ctx.clearRect(
+        0,
+        0,
+        w,
+        h
+      );
+
+      ctx.strokeStyle =
+        '#242424';
+
+      ctx.lineWidth = 1;
+
+      for (
+        let i = 0;
+        i <= 5;
+        i++
+      ) {
+        const y =
+          pad +
+          ((h - pad * 2) *
+            i) /
+            5;
+
+        ctx.beginPath();
+
+        ctx.moveTo(
+          pad,
+          y
+        );
+
+        ctx.lineTo(
+          w - pad,
+          y
+        );
+
+        ctx.stroke();
+      }
+
+      const all =
+        points.flatMap(
+          (point) =>
+            series.groups.map(
+              (group) =>
+                point.values[
+                  group
+                ] ?? 0
+            )
+        );
+
+      const max =
+        Math.max(
+          ...all.map(
+            Math.abs
+          ),
+          1
+        );
+
+      const colors = [
+        '#48a6ff',
+        '#ff9840',
+        '#43d4a3',
+      ];
+
+      series.groups.forEach(
+        (
+          group,
+          groupIndex
+        ) => {
+          ctx.strokeStyle =
+            colors[
+              groupIndex
+            ];
+
+          ctx.lineWidth = 2;
+
+          ctx.beginPath();
+
+          points.forEach(
+            (
+              point,
+              index
+            ) => {
+              const x =
+                pad +
+                ((w -
+                  pad * 2) *
+                  (index /
+                    Math.max(
+                      points.length -
+                        1,
+                      1
+                    )));
+
+              const y =
+                h / 2 -
+                ((point.values[
+                  group
+                ] ?? 0) /
+                  max) *
+                  (h / 2 -
+                    pad);
+
+              if (index) {
+                ctx.lineTo(
+                  x,
+                  y
+                );
+              } else {
+                ctx.moveTo(
+                  x,
+                  y
+                );
+              }
+            }
+          );
+
+          ctx.stroke();
+        }
+      );
+
+      ctx.strokeStyle =
+        '#55606d';
+
+      ctx.beginPath();
+
+      ctx.moveTo(
+        pad,
+        h / 2
+      );
+
+      ctx.lineTo(
+        w - pad,
+        h / 2
+      );
+
+      ctx.stroke();
+
+      ctx.fillStyle =
+        '#778596';
+
+      ctx.font =
+        '8px monospace';
+
+      ctx.fillText(
+        compact(max),
+        4,
+        pad + 3
+      );
+
+      ctx.fillText(
+        '0',
+        18,
+        h / 2 + 3
+      );
+
+      ctx.fillText(
+        compact(-max),
+        4,
+        h - pad + 3
+      );
+
+      if (points.length) {
+        ctx.fillText(
+          formatDate(
+            points[0].date
+          ),
+          pad,
+          h - 10
+        );
+
+        const end =
+          formatDate(
+            points.at(-1)!.date
+          );
+
+        ctx.fillText(
+          end,
+          w - pad - 46,
+          h - 10
+        );
+      }
+    };
+
+    draw();
+
+    const ro =
+      new ResizeObserver(
+        draw
+      );
+
+    ro.observe(el);
+
+    return () =>
+      ro.disconnect();
+  }, [points, series]);
+
+  return (
+    <div className="cot-chart">
+
+      <div className="cot-legend">
+        {series.groups.map(
+          (
+            group,
+            index
+          ) => (
+            <span key={group}>
+              <i
+                className={`line-${index}`}
+              />
+              {group}
+            </span>
+          )
+        )}
+      </div>
+
+      <canvas
+        ref={canvas}
+        aria-label={`${series.label} net positioning by trader type over 52 weeks`}
+      />
+
+    </div>
+  );
+}
+
+/* =========================
+   COT TABLE
+========================= */
+
+function CotTable({
+  series,
+}: {
+  series: CotSeries;
+}) {
+  const rows =
+    series.points
+      .slice(-6)
+      .reverse();
+
+  return (
+    <div className="cot-table">
+
+      <div className="cot-row cot-head">
+        <span>
+          REPORT
+        </span>
+
+        {series.groups.map(
+          (group) => (
+            <span key={group}>
+              {group}
+            </span>
+          )
+        )}
+      </div>
+
+      {rows.map(
+        (
+          point,
+          index
+        ) => {
+          const prior =
+            series.points[
+              series.points.length -
+                2 -
+                index
+            ];
+
+          return (
+            <div
+              className="cot-row"
+              key={point.date}
+            >
+              <strong>
+                {formatDate(
+                  point.date
+                )}
+              </strong>
+
+              {series.groups.map(
+                (group) => {
+                  const change =
+                    prior
+                      ? (point.values[
+                          group
+                        ] ?? 0) -
+                        (prior.values[
+                          group
+                        ] ?? 0)
+                      : 0;
+
+                  return (
+                    <span
+                      key={group}
+                    >
+                      <b>
+                        {compact(
+                          point
+                            .values[
+                            group
+                          ] ?? 0
+                        )}
+                      </b>
+
+                      <small
+                        className={
+                          change >=
+                          0
+                            ? 'positive'
+                            : 'negative'
+                        }
+                      >
+                        {change >=
+                        0
+                          ? '+'
+                          : ''}
+                        {compact(
+                          change
+                        )}{' '}
+                        WoW
+                      </small>
+                    </span>
+                  );
+                }
+              )}
+            </div>
+          );
+        }
+      )}
+
+    </div>
+  );
+}
+
+/* =========================
+   FEED UNAVAILABLE
+========================= */
+
+function FeedUnavailable({
+  title,
+  body,
+}: {
+  title: string;
+  body: string;
+}) {
+  return (
+    <div className="feed-unavailable">
+      <span>
+        CONNECTION STATUS
+      </span>
+
+      <strong>
+        {title}
+      </strong>
+
+      <p>
+        {body}
+      </p>
+    </div>
+  );
+}
+
+/* =========================
+   WATCHLIST
+========================= */
+
+function Watchlist({
+  watchlist,
+  live,
+}: {
+  watchlist: Array<{
+    ticker: string;
+    price: number;
+    change: number;
+  }>;
+  live: boolean;
+}) {
+  return (
+    <article className="panel watch-panel">
+
+      <PanelHead
+        index="01"
+        title="IDX WATCHLIST"
+      />
+
+      <div className="watch-table table-head">
+        <span>
+          TICKER
+        </span>
+
+        <span>
+          LAST
+        </span>
+
+        <span>
+          1D
+        </span>
+      </div>
+
+      {watchlist.map(
+        (stock) => (
+          <div
+            className="watch-table"
+            key={stock.ticker}
+          >
+            <strong>
+              {stock.ticker}
+            </strong>
+
+            <span>
+              {stock.price.toLocaleString(
+                'en-US',
+                {
+                  maximumFractionDigits: 2,
+                }
+              )}
+            </span>
+
+            <span
+              className={
+                stock.change >=
+                0
+                  ? 'positive'
+                  : 'negative'
+              }
+            >
+              {signed(
+                stock.change
+              )}
+              %
+            </span>
+          </div>
+        )
+      )}
+
+      <PanelFoot
+        left="BUMI · AMMN · ADRO"
+        right={
+          live
+            ? 'LIVE · DAILY'
+            : 'ILLUSTRATIVE DATA'
+        }
+      />
+
+    </article>
+  );
+}
+
+/* =========================
+   CALENDAR
+========================= */
+
+function Calendar({
+  data,
+}: {
+  data: CalendarData | null;
+}) {
+  const rows =
+    data?.events.map(
+      (event) => {
+        const date =
+          new Date(
+            event.date
+          );
+
+        return {
+          time: Number.isNaN(
+            date.getTime()
+          )
+            ? '—'
+            : date.toLocaleTimeString(
+                'en-GB',
+                {
+                  hour: '2-digit',
+                  minute:
+                    '2-digit',
+                  timeZone:
+                    'Asia/Jakarta',
+                }
+              ),
+
+          country:
+            countryCode(
+              event.country
+            ),
+
+          event:
+            event.event,
+
+          forecast:
+            event.forecast,
+
+          prior:
+            event.prior,
+
+          status:
+            event.importance >=
+            3
+              ? 'HIGH'
+              : 'MED',
+        };
+      }
+    ) ?? releases;
+
+  return (
+    <article className="panel calendar-panel">
+
+      <PanelHead
+        index="02"
+        title="ECONOMIC CALENDAR"
+      >
+        <span className="demo-badge">
+          {data
+            ? 'LIVE'
+            : 'DEMO'}
+        </span>
+      </PanelHead>
+
+      <div className="date-rule">
+        <strong>
+          NEXT 7 DAYS
+        </strong>
+
+        <span>
+          {rows.length}{' '}
+          RELEASES
+        </span>
+      </div>
+
+      {rows
+        .slice(0, 6)
+        .map(
+          (r, index) => (
+            <div
+              className="release-row"
+              key={`${r.event}-${index}`}
+            >
+              <time>
+                {r.time}
+              </time>
+
+              <span className="country-tag">
+                {r.country}
+              </span>
+
+              <div>
+                <strong>
+                  {r.event}
+                </strong>
+
+                <small>
+                  FCST {r.forecast}{' '}
+                  · PRIOR {r.prior}
+                </small>
+              </div>
+
+              <span
+                className={`importance ${r.status.toLowerCase()}`}
+              >
+                {r.status}
+              </span>
+            </div>
+          )
+        )}
+
+      <PanelFoot
+        left={
+          data
+            ? 'TRADINGECONOMICS LIVE'
+            : 'TRADINGECONOMICS KEY NOT CONFIGURED'
+        }
+        right="WIB"
+      />
+
+    </article>
+  );
+}
+
+/* =========================
+   YIELD CURVE
+========================= */
+
+function YieldCurve({
+  values,
+  live,
+}: {
+  values: number[];
+  live: boolean;
+}) {
+  const spread =
+    (values[4] -
+      values[2]) *
+    100;
+
+  return (
+    <article className="panel curve-panel">
+
+      <PanelHead
+        index="03"
+        title="US TREASURY CURVE"
+      >
+        <span className="curve-status">
+          <i />
+
+          {spread < 0
+            ? 'INVERTED'
+            : 'NORMAL'}{' '}
+
+          {signed(
+            spread
+          )}{' '}
+          BP
+        </span>
+      </PanelHead>
+
+      <div className="curve-chart">
+        <div className="curve-bars">
+
+          {values.map(
+            (
+              point,
+              index
+            ) => (
+              <div
+                className="curve-column"
+                key={index}
+              >
+                <span>
+                  {point.toFixed(
+                    2
+                  )}
+                  %
+                </span>
+
+                <i
+                  style={{
+                    height: `${Math.max(
+                      18,
+                      34 +
+                        (point -
+                          3) *
+                          58
+                    )}px`,
+                  }}
+                />
+
+                <b>
+                  {
+                    [
+                      '3M',
+                      '1Y',
+                      '2Y',
+                      '5Y',
+                      '10Y',
+                      '20Y',
+                      '30Y',
+                    ][index]
+                  }
+                </b>
+              </div>
+            )
+          )}
+
+        </div>
+
+        <div className="curve-baseline" />
+      </div>
+
+      <div className="curve-callouts">
+
+        <div>
+          <span>
+            2Y
+          </span>
+
+          <strong>
+            {values[2].toFixed(
+              2
+            )}
+            %
+          </strong>
+        </div>
+
+        <div>
+          <span>
+            10Y
+          </span>
+
+          <strong>
+            {values[4].toFixed(
+              2
+            )}
+            %
+          </strong>
+        </div>
+
+        <div>
+          <span>
+            30Y
+          </span>
+
+          <strong>
+            {values[6].toFixed(
+              2
+            )}
+            %
+          </strong>
+        </div>
+
+      </div>
+
+      <PanelFoot
+        left="TREASURY CONSTANT MATURITY RATES"
+        right={
+          live
+            ? 'FRED LIVE'
+            : 'ILLUSTRATIVE DATA'
+        }
+      />
+
+    </article>
+  );
+}
+
+/* =========================
+   METRIC CARD
+========================= */
+
+function MetricCard({
+  label,
+  value,
+  condition,
+  implication,
+  source,
+  tone,
+}: {
+  label: string;
+  value: string;
+  condition: string;
+  implication: string;
+  source: string;
+  tone?: string;
+}) {
+  return (
+    <div className="metric-card">
+
+      <span>
+        {label}
+      </span>
+
+      <div className="metric-reading">
+        <strong
+          className={tone}
+        >
+          {value}
+        </strong>
+
+        <b>
+          {condition}
+        </b>
+      </div>
+
+      <p>
+        {implication}
+      </p>
+
+      <small>
+        {source}
+      </small>
+
+    </div>
+  );
+}
+
+/* =========================
+   PANEL HEAD
+========================= */
+
+function PanelHead({
+  index: _index,
+  title,
+  children,
+}: {
+  index: string;
+  title: string;
+  children?: React.ReactNode;
+}) {
+  return (
+    <header className="panel-head">
+
+      <div>
+        <h2>
+          {title}
+        </h2>
+      </div>
+
+      {children}
+
+    </header>
+  );
+}
+
+/* =========================
+   PANEL FOOT
+========================= */
+
+function PanelFoot({
+  left,
+  right,
+}: {
+  left: string;
+  right: string;
+}) {
+  return (
+    <footer className="panel-foot">
+      <span>
+        {left}
+      </span>
+
+      <span>
+        {right}
+      </span>
+    </footer>
+  );
+}
+
+/* =========================
+   HELPERS
+========================= */
+
+function signed(
+  value: number
+) {
+  return `${
+    value >= 0
+      ? '+'
+      : ''
+  }${value.toFixed(2)}`;
+}
+
+function formatNumber(
+  value: number,
+  unit: string
+) {
+  return `${value.toFixed(
+    unit ? 2 : 1
+  )}${unit}`;
+}
+
+function zTone(
+  z: number
+) {
+  return z > 0.75
+    ? 'hot'
+    : z > 0.25
+      ? 'warm'
+      : z < -0.25
+        ? 'cool'
+        : 'neutral';
+}
+
+function heatTone(
+  value: number
+) {
+  const n =
+    Math.abs(value);
+
+  return value >= 0
+    ? n > 1.5
+      ? 'up3'
+      : n > 0.6
+        ? 'up2'
+        : 'up1'
+    : n > 1.5
+      ? 'down3'
+      : n > 0.6
+        ? 'down2'
+        : 'down1';
+}
+
+function formatDate(
+  date: string
+) {
+  return new Date(
+    date + 'T00:00:00Z'
+  ).toLocaleDateString(
+    'en-US',
+    {
+      month: 'short',
+      year: '2-digit',
+      timeZone: 'UTC',
+    }
+  );
+}
+
+function regimeLabel(
+  point: RegimePoint
+) {
+  return point.growth < 0 &&
+    point.inflation > 0
+    ? 'STAGFLATION'
+    : point.growth > 0 &&
+        point.inflation > 0
+      ? 'OVERHEAT'
+      : point.growth < 0
+        ? 'DEFLATION'
+        : 'REFLATION';
+}
+
+function spreadLabel(
+  spread: number
+) {
+  return spread < -25
+    ? 'DEEPLY INVERTED'
+    : spread < 0
+      ? 'SLIGHTLY INVERTED'
+      : spread < 50
+        ? 'NORMAL · FLAT'
+        : 'STEEPENING';
+}
+
+function relativeLabel(
+  last: number,
+  average: number,
+  name: string
+) {
+  if (!last || !average) {
+    return `${name} CONTEXT PENDING`;
+  }
+
+  const gap =
+    (last / average - 1) *
+    100;
+
+  return gap > 2
+    ? `ABOVE 20D AVG · ${signed(
+        gap
+      )}%`
+    : gap < -2
+      ? `BELOW 20D AVG · ${signed(
+          gap
+        )}%`
+      : `NEAR 20D AVG · ${signed(
+          gap
+        )}%`;
+}
+
+function countryCode(
+  country: string
+) {
+  const value =
+    country.toLowerCase();
+
+  return value.includes(
+    'indonesia'
+  )
+    ? 'ID'
+    : value.includes(
+          'china'
+        )
+      ? 'CN'
+      : value.includes(
+            'united states'
+          )
+        ? 'US'
+        : country.slice(
+            0,
+            2
+          ).toUpperCase();
+}
+
+function monthName(
+  month: number
+) {
+  return [
+    'JAN',
+    'FEB',
+    'MAR',
+    'APR',
+    'MAY',
+    'JUN',
+    'JUL',
+    'AUG',
+    'SEP',
+    'OCT',
+    'NOV',
+    'DEC',
+  ][month - 1];
+}
+
+function compact(
+  value: number
+) {
+  const absolute =
+    Math.abs(value);
+
+  const sign =
+    value < 0 ? '-' : '';
+
+  return absolute >=
+    1_000_000
+    ? `${sign}${(
+        absolute /
+        1_000_000
+      ).toFixed(1)}M`
+    : absolute >= 1_000
+      ? `${sign}${(
+          absolute /
+          1_000
+        ).toFixed(1)}K`
+      : `${Math.round(
+          value
+        )}`;
+}
+
+function pearson(
+  xs: number[],
+  ys: number[]
+) {
+  if (
+    xs.length < 10 ||
+    xs.length !==
+      ys.length
+  ) {
+    return null;
+  }
+
+  const mx =
+    xs.reduce(
+      (a, b) =>
+        a + b,
+      0
+    ) / xs.length;
+
+  const my =
+    ys.reduce(
+      (a, b) =>
+        a + b,
+      0
+    ) / ys.length;
+
+  let top = 0;
+  let xx = 0;
+  let yy = 0;
+
+  for (
+    let i = 0;
+    i < xs.length;
+    i++
+  ) {
+    const dx =
+      xs[i] - mx;
+
+    const dy =
+      ys[i] - my;
+
+    top +=
+      dx * dy;
+
+    xx +=
+      dx * dx;
+
+    yy +=
+      dy * dy;
+  }
+
+  const bottom =
+    Math.sqrt(
+      xx * yy
+    );
+
+  return bottom
+    ? top / bottom
+    : null;
+}
+
+function correlationMatrix(
+  gdelt: GdeltData | null,
+  markets: MarketData | null
+) {
+  if (
+    !gdelt ||
+    !markets ||
+    markets.assets.length < 5
+  ) {
+    return null;
+  }
+
+  const assetNames = [
+    'COAL',
+    'NICKEL',
+    'OIL',
+    'DXY',
+    'JKSE',
+  ];
+
+  const rows =
+    gdelt.regions.map(
+      (region) => {
+        const riskByDate =
+          new Map(
+            region.timeline.map(
+              (
+                point,
+                index
+              ) => {
+                const prior =
+                  region
+                    .timeline[
+                    index - 1
+                  ]?.value;
+
+                return [
+                  point.date,
+                  prior &&
+                  prior !== 0
+                    ? (point.value /
+                        prior -
+                        1) *
+                      100
+                    : null,
+                ];
+              }
+            )
+          );
+
+        const values =
+          assetNames.map(
+            (name) => {
+              const asset =
+                markets.assets.find(
+                  (item) =>
+                    item.name ===
+                    name
+                );
+
+              if (!asset) {
+                return null;
+              }
+
+              const xs: number[] =
+                [];
+
+              const ys: number[] =
+                [];
+
+              asset.timestamps.forEach(
+                (
+                  stamp,
+                  index
+                ) => {
+                  const close =
+                    asset.closes[
+                      index
+                    ];
+
+                  const prior =
+                    asset.closes[
+                      index - 1
+                    ];
+
+                  const date =
+                    new Date(
+                      stamp * 1000
+                    )
+                      .toISOString()
+                      .slice(
+                        0,
+                        10
+                      );
+
+                  const risk =
+                    riskByDate.get(
+                      date
+                    );
+
+                  if (
+                    close !==
+                      null &&
+                    prior !==
+                      null &&
+                    prior &&
+                    risk !==
+                      null &&
+                    risk !==
+                      undefined
+                  ) {
+                    xs.push(
+                      risk
+                    );
+
+                    ys.push(
+                      (close /
+                        prior -
+                        1) *
+                        100
+                    );
+                  }
+                }
+              );
+
+              return pearson(
+                xs.slice(
+                  -60
+                ),
+                ys.slice(
+                  -60
+                )
+              );
+            }
+          );
+
+        if (
+          values.some(
+            (value) =>
+              value ===
+              null
+          )
+        ) {
+          return null;
+        }
+
+        return [
+          `${region.region} GPR`,
+          ...values.map(
+            (value) =>
+              value!.toFixed(
+                2
+              )
+          ),
+        ];
+      }
+    );
+
+  return rows.some(
+    (row) =>
+      row === null
+  )
+    ? null
+    : (rows as string[][]);
+}
+
+function titleCase(
+  value: string
+) {
+  return value
+    .toLowerCase()
+    .replace(
+      /\b\w/g,
+      (x) =>
+        x.toUpperCase()
+    );
+}
+
+function sectionDescription(
+  section: Section
+) {
+  return {
+    OVERVIEW:
+      'The readings that need attention before the next research session.',
+
+    MACRO:
+      'Live FRED signals for growth, inflation and the Treasury curve.',
+
+    MARKETS:
+      'Daily and weekly market performance with the IDX watchlist.',
+
+    'GPR INDEX':
+      'Auditable geopolitical risk inputs, weights and regional scores.',
+
+    CORRELATIONS:
+      'Rolling relationships between regional risk and selected market series.',
+
+    SEASONALITY:
+      'Historical monthly return tendencies across selected IDX names and the benchmark.',
+
+    'MARKET PARTICIPANT':
+      'Weekly CFTC positioning by trader category for major futures markets.',
+  }[section];
+}
