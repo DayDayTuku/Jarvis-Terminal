@@ -8,6 +8,10 @@ type IDXStock = {
   sector: string;
 };
 
+type SearchResponse = {
+  results?: IDXStock[];
+};
+
 export default function StockSearch({
   onSelect,
   placeholder = "Search ticker or company name...",
@@ -21,9 +25,7 @@ export default function StockSearch({
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    const q = query.trim();
-
-    if (!q) {
+    if (query.trim().length < 1) {
       setResults([]);
       setLoading(false);
       return;
@@ -33,20 +35,18 @@ export default function StockSearch({
       try {
         setLoading(true);
 
-        const response = await fetch(
-          `/api/search?q=${encodeURIComponent(q)}`
+        const res = await fetch(
+          `/api/search?q=${encodeURIComponent(query.trim())}`
         );
 
-        if (!response.ok) {
+        if (!res.ok) {
           setResults([]);
           return;
         }
 
-        const data = await response.json();
+        const data = (await res.json()) as SearchResponse;
 
-        setResults(
-          Array.isArray(data.results) ? data.results : []
-        );
+        setResults(Array.isArray(data.results) ? data.results : []);
       } catch (error) {
         console.error("Stock search failed:", error);
         setResults([]);
@@ -63,31 +63,26 @@ export default function StockSearch({
       <input
         type="text"
         value={query}
-        onChange={(event) => {
-          setQuery(event.target.value);
+        onChange={(e) => {
+          setQuery(e.target.value);
           setOpen(true);
         }}
         onFocus={() => setOpen(true)}
-        onBlur={() => {
-          setTimeout(() => setOpen(false), 150);
-        }}
-        aria-label="Search ticker or company"
         placeholder={placeholder}
-        autoComplete="off"
         className="w-full bg-black border border-neutral-800 text-white px-3 py-2 text-sm font-mono focus:outline-none focus:border-blue-500"
       />
 
-      {open && query.trim() !== "" && (
-        <div className="absolute left-0 right-0 top-full z-[9999] mt-1 max-h-72 overflow-y-auto bg-black border border-neutral-800 shadow-2xl">
+      {open && query.trim().length > 0 && (
+        <div className="absolute z-50 mt-1 w-full bg-black border border-neutral-800 max-h-64 overflow-y-auto">
           {loading && (
-            <div className="px-3 py-3 text-xs font-mono text-neutral-500">
-              Searching...
+            <div className="px-3 py-2 text-xs text-neutral-500 font-mono">
+              SEARCHING...
             </div>
           )}
 
           {!loading && results.length === 0 && (
-            <div className="px-3 py-3 text-xs font-mono text-neutral-500">
-              No Indonesian stocks found
+            <div className="px-3 py-2 text-xs text-neutral-600 font-mono">
+              NO RESULTS
             </div>
           )}
 
@@ -96,30 +91,25 @@ export default function StockSearch({
               <button
                 key={stock.ticker}
                 type="button"
-                onMouseDown={(event) => {
-                  event.preventDefault();
-                }}
                 onClick={() => {
                   onSelect(stock);
                   setQuery("");
                   setResults([]);
                   setOpen(false);
                 }}
-                className="w-full px-3 py-2 text-left hover:bg-neutral-900 border-b border-neutral-900 last:border-b-0"
+                className="w-full text-left px-3 py-2 hover:bg-neutral-900 flex justify-between items-center text-sm"
               >
-                <div className="flex items-center justify-between gap-3">
-                  <span className="font-mono text-sm text-white">
-                    {stock.ticker.replace(".JK", "")}
-                  </span>
+                <span className="text-white font-mono">
+                  {stock.ticker.replace(".JK", "")}
+                </span>
 
-                  <span className="flex-1 truncate text-xs text-neutral-400">
-                    {stock.name}
-                  </span>
+                <span className="text-neutral-500 text-xs truncate ml-2">
+                  {stock.name}
+                </span>
 
-                  <span className="text-[10px] text-neutral-600">
-                    {stock.sector}
-                  </span>
-                </div>
+                <span className="text-neutral-600 text-xs ml-2">
+                  {stock.sector}
+                </span>
               </button>
             ))}
         </div>
