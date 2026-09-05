@@ -112,9 +112,23 @@ button:focus-visible, textarea:focus-visible { outline: 1px solid var(--blue); o
 .sidebar-health i.partial,.compact-health i.partial { background: var(--orange); box-shadow: 0 0 7px color-mix(in srgb, var(--orange) 70%, transparent); }
 .sidebar-health i.good,.compact-health i.good,.connection-list i.live { background: var(--positive); box-shadow: 0 0 7px color-mix(in srgb, var(--positive) 70%, transparent); }
 .app-column { min-width: 0; padding: 0 18px 26px; }
-.global-bar { grid-template-columns: minmax(260px, 1fr) auto auto; gap: 28px; height: 58px; }
-.global-search { height: 32px; max-width: 460px; display: flex; align-items: center; border: 1px solid var(--line-strong); background: #050505; }
-.global-search span { padding: 0 10px; color: var(--blue); font-size: 17px; }.global-search input { width: 100%; height: 100%; border: 0; outline: 0; background: transparent; color: var(--text); font-size: 9px; }.global-search input::placeholder { color: #536171; }
+.global-bar { grid-template-columns: minmax(260px, 1fr) auto auto; gap: 28px; height: 58px; align-items: center; }
+.global-search { height: 34px; max-width: 460px; position: relative; width: 100%; }
+.stock-search-wrap { position: relative; width: 100%; max-width: 460px; }
+.stock-search-bar { display: flex; align-items: center; height: 34px; background: #05070a; border: 1px solid var(--line-strong); border-radius: 2px; transition: border-color 0.15s ease, box-shadow 0.15s ease; cursor: text; }
+.stock-search-bar.is-focused, .stock-search-bar:focus-within { border-color: var(--blue) !important; box-shadow: 0 0 0 1px rgba(72,166,255,0.25), 0 4px 16px rgba(0,0,0,0.5) !important; }
+.stock-search-icon { color: var(--blue) !important; font-size: 15px !important; padding: 0 !important; margin: 0 8px 0 10px !important; display: flex !important; align-items: center !important; user-select: none; }
+.stock-search-input { flex: 1; height: 100%; background: transparent !important; border: 0 !important; outline: 0 !important; color: var(--text) !important; font-family: var(--font-geist-mono), monospace !important; font-size: 11px !important; padding: 0 !important; margin: 0 !important; }
+.stock-search-input::placeholder { color: #536171 !important; }
+.stock-search-clear { background: transparent; border: 0; color: var(--muted); font-size: 15px; line-height: 1; padding: 2px 6px; cursor: pointer; border-radius: 2px; display: flex; align-items: center; justify-content: center; }
+.stock-search-clear:hover { color: var(--text); background: #151d27; }
+.stock-search-keycap { font-size: 8px !important; color: #4d5b6a !important; border: 1px solid #1c2734 !important; border-radius: 2px !important; padding: 1px 4px !important; margin: 0 8px 0 6px !important; user-select: none; font-family: var(--font-geist-mono), monospace !important; }
+.stock-search-dropdown { position: absolute; top: calc(100% + 4px); left: 0; width: 100%; min-width: 440px; background: #080d14fa; backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); border: 1px solid #1f2d3d; border-radius: 3px; box-shadow: 0 20px 40px rgba(0,0,0,0.85), 0 0 0 1px rgba(255,255,255,0.05); z-index: 1000; overflow: hidden; display: flex; flex-direction: column; }
+.stock-search-list::-webkit-scrollbar { width: 4px; }
+.stock-search-list::-webkit-scrollbar-track { background: #070a0f; }
+.stock-search-list::-webkit-scrollbar-thumb { background: #1c2d40; border-radius: 2px; }
+.stock-search-list::-webkit-scrollbar-thumb:hover { background: #2b435e; }
+@keyframes pulse { from { opacity: 0.4; } to { opacity: 1; } }
 .global-date,.feed-summary { display: flex; align-items: center; gap: 8px; font-size: 8px; }.global-date span,.global-date b,.feed-summary small { color: var(--muted); font-weight: 500; }.global-date strong,.feed-summary strong { font-size: 9px; letter-spacing: .06em; }.stale-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--orange); }
 .signal-strip { grid-template-columns: repeat(5, 1fr); background: #050505; }.signal-strip > div:first-child { padding-left: 14px; }
 .signal-strip .metric-card { min-height: 116px; display: flex; flex-direction: column; justify-content: center; gap: 5px; padding: 12px 14px; }

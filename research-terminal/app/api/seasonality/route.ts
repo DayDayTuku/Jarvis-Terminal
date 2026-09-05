@@ -4,7 +4,8 @@ const symbols: Record<string,string> = { BUMI: 'BUMI.JK', AMMN: 'AMMN.JK', ADRO:
 type Chart = { timestamp?: number[]; indicators: { quote: Array<{ close: Array<number | null> }> } };
 
 export async function GET(request: NextRequest) {
-  const ticker = (request.nextUrl.searchParams.get('ticker') ?? 'BUMI').toUpperCase(); const symbol = symbols[ticker];
+  const ticker = (request.nextUrl.searchParams.get('ticker') ?? 'BUMI').toUpperCase().replace('.JK', '');
+  const symbol = symbols[ticker] || (ticker === 'JKSE' ? '^JKSE' : `${ticker}.JK`);
   if (!symbol) return NextResponse.json({ status: 'error', error: 'Unsupported ticker' }, { status: 400 });
   try {
     const response = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?range=10y&interval=1d`, { headers: { 'user-agent': 'Mozilla/5.0', accept: 'application/json' }, cache: 'no-store' });

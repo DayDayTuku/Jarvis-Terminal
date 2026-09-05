@@ -77,6 +77,16 @@ export default function Home() {
 
   useEffect(() => { setSeasonality(null); fetch(`/api/seasonality?ticker=${seasonTicker}`).then((response)=>response.ok?response.json():Promise.reject()).then((data)=>setSeasonality(data as SeasonalityData)).catch(()=>setSeasonality(null)); }, [seasonTicker]);
 
+  const [notification, setNotification] = useState<string | null>(null);
+
+  const handleStockSelect = (stock: { ticker: string; name: string; sector: string }) => {
+    const cleanTicker = stock.ticker.replace('.JK', '').toUpperCase();
+    setSeasonTicker(cleanTicker);
+    setActive('SEASONALITY');
+    setNotification(`LOADED ${cleanTicker} (${stock.name}) INTO SEASONALITY ANALYSIS`);
+    setTimeout(() => setNotification(null), 4500);
+  };
+
   const indicators = fred?.indicators ?? fallbackIndicators; const yields = fred?.yields.map((item) => item.value) ?? fallbackYield;
   const watchlist = markets?.watchlist ?? fallbackWatch; const heatmap = markets?.heatmap ?? fallbackHeat;
   const marketChange = (name: string) => { const values = markets?.assets.find((item) => item.name === name)?.closes.filter((x): x is number => x !== null) ?? []; const last = values.at(-1) ?? 0; const prior = values.at(-2) ?? last; const recent = values.slice(-20); const average = recent.length ? recent.reduce((sum, value) => sum + value, 0) / recent.length : 0; return { last, average, change: prior ? ((last / prior) - 1) * 100 : 0 }; };
@@ -101,15 +111,10 @@ export default function Home() {
 
       <div className="app-column">
         <header className="topbar global-bar">
-          <div className="global-search">
-  <span>⌕</span>
-  <StockSearch
-    placeholder="Search tickers, indicators, notes"
-    onSelect={(stock) => {
-      console.log("Selected stock:", stock);
-    }}
-  />
-</div>
+          <StockSearch
+            placeholder="Search IDX tickers, companies (e.g. ABMM, BBCA)..."
+            onSelect={handleStockSelect}
+          />
           <div className="global-date"><span>THU</span><strong>03 SEP 2026</strong><b>WIB</b></div>
           <div className="feed-summary"><span className={liveCount ? 'live-dot' : 'stale-dot'} /><strong>{liveCount}/4 FEEDS LIVE</strong><small>DAILY CLOSE</small></div>
         </header>
@@ -150,7 +155,7 @@ export default function Home() {
 
         {active === 'CORRELATIONS' && <section className="panel correlation-panel actual-matrix"><PanelHead index="01" title="60-DAY ROLLING CORRELATION"><div className="legend"><span>NEGATIVE</span><i /><span>POSITIVE</span></div></PanelHead><div className="matrix-intro"><div><h3>REGIONAL GDELT FREQUENCY × ASSET RETURNS</h3><p>Pearson correlation of daily changes. This is a live keyword-risk proxy until Goldstein event history is available.</p></div><span>{liveCorrelationRows ? 'LIVE PROXY · NOT FULL GPR' : 'MATRIX VALUES ILLUSTRATIVE'}</span></div><div className="matrix correlation-only"><div className="matrix-row matrix-labels"><span />{['COAL ETF','NICKEL EQ.','OIL','DXY','JKSE'].map((item) => <b key={item}>{item}</b>)}</div>{(liveCorrelationRows ?? correlationRows).map((row) => <div className="matrix-row" key={row[0]}><b>{row[0]}</b>{row.slice(1).map((value,index) => { const n=Number(value); return <span key={index} className={Math.abs(n)>=.3 ? n>0 ? 'corr-pos' : 'corr-neg' : ''}>{value}</span>; })}</div>)}</div><div className="matrix-footnotes"><p><strong>COAL ETF</strong> COAL · coal-industry equity ETF proxy</p><p><strong>NICKEL EQUITY</strong> VALE · nickel-exposed producer equity proxy</p><p><strong>OIL</strong> WTI crude futures</p><p><strong>DXY</strong> US Dollar Index</p><p><strong>JKSE</strong> IDX Composite</p></div><PanelFoot left={liveCorrelationRows ? 'GDELT DOC + YAHOO SERIES CONNECTED' : 'LIVE SERIES UNAVAILABLE · ILLUSTRATIVE FALLBACK'} right="60 TRADING DAYS" /></section>}
 
-        {active === 'SEASONALITY' && <section className="panel seasonality-panel"><PanelHead index="01" title="MONTHLY RETURN SEASONALITY"><div className="ticker-switcher">{['BUMI','AMMN','ADRO','JKSE'].map((ticker)=><button key={ticker} onClick={()=>setSeasonTicker(ticker)} className={seasonTicker===ticker?'active':''}>{ticker}</button>)}</div></PanelHead>{seasonality ? <><div className="season-summary"><div><span>SELECTED SERIES</span><strong>{seasonality.ticker}</strong><small>{seasonality.symbol}</small></div><p>Average calendar-month return across completed monthly observations. Historical tendency only—not a forecast.</p><b>BASED ON {seasonality.years} YEARS OF HISTORICAL DATA · {seasonality.from}–{seasonality.through}</b></div><div className="season-grid">{seasonality.months.map((month)=><div key={month.month} className={`season-tile ${heatTone(month.average)}`}><span>{monthName(month.month)}</span><strong>{signed(month.average)}%</strong><small>{month.positiveRate.toFixed(0)}% POSITIVE · N={month.observations}</small></div>)}</div><div className="season-legend"><span>WEAKER AVERAGE</span><i/><span>STRONGER AVERAGE</span></div><PanelFoot left="AVERAGE MONTHLY CLOSE-TO-CLOSE RETURN" right="YAHOO FINANCE UPSTREAM · DAILY HISTORY" /></> : <FeedUnavailable title="SEASONALITY FEED UNAVAILABLE" body="No historical values are shown until Yahoo returns a valid 5–10 year price series." />}</section>}
+        {active === 'SEASONALITY' && <section className="panel seasonality-panel"><PanelHead index="01" title="MONTHLY RETURN SEASONALITY"><div className="ticker-switcher">{[...new Set([seasonTicker, 'BUMI', 'AMMN', 'ADRO', 'JKSE'])].map((ticker)=><button key={ticker} onClick={()=>setSeasonTicker(ticker)} className={seasonTicker===ticker?'active':''}>{ticker}</button>)}</div></PanelHead>{seasonality ? <><div className="season-summary"><div><span>SELECTED SERIES</span><strong>{seasonality.ticker}</strong><small>{seasonality.symbol}</small></div><p>Average calendar-month return across completed monthly observations. Historical tendency only—not a forecast.</p><b>BASED ON {seasonality.years} YEARS OF HISTORICAL DATA · {seasonality.from}–{seasonality.through}</b></div><div className="season-grid">{seasonality.months.map((month)=><div key={month.month} className={`season-tile ${heatTone(month.average)}`}><span>{monthName(month.month)}</span><strong>{signed(month.average)}%</strong><small>{month.positiveRate.toFixed(0)}% POSITIVE · N={month.observations}</small></div>)}</div><div className="season-legend"><span>WEAKER AVERAGE</span><i/><span>STRONGER AVERAGE</span></div><PanelFoot left="AVERAGE MONTHLY CLOSE-TO-CLOSE RETURN" right="YAHOO FINANCE UPSTREAM · DAILY HISTORY" /></> : <FeedUnavailable title="SEASONALITY FEED UNAVAILABLE" body="No historical values are shown until Yahoo returns a valid 5–10 year price series." />}</section>}
 
         {active === 'MARKET PARTICIPANT' && <section className="dashboard-grid cot-grid"><article className="panel cot-panel"><PanelHead index="01" title="CFTC COT POSITIONING"><div className="ticker-switcher">{['USD','GOLD','US10Y','BTC'].map((asset)=><button key={asset} onClick={()=>setCotAsset(asset)} className={cotAsset===asset?'active':''} disabled={!cot?.series.some((item)=>item.key===asset)}>{asset}</button>)}</div></PanelHead>{selectedCot ? <><div className="cot-summary"><div><span>CONTRACT</span><strong>{selectedCot.label}</strong></div><div><span>LATEST REPORT</span><strong>{formatDate(selectedCot.latest)}</strong></div><div><span>FREQUENCY</span><strong>WEEKLY · CFTC</strong></div></div><CotChart series={selectedCot} /><CotTable series={selectedCot} /><PanelFoot left="NET POSITION = LONG CONTRACTS − SHORT CONTRACTS" right={`UPDATED WEEKLY · THROUGH ${formatDate(selectedCot.latest)}`} /></> : <FeedUnavailable title="CFTC CONNECTION FAILED" body="No positioning values are shown because the public COT dataset did not return a valid series." />}</article></section>}
 
@@ -159,6 +164,48 @@ export default function Home() {
 
       {notesOpen && <div className="overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) setNotesOpen(false); }}><section className="drawer" role="dialog" aria-modal="true" aria-label="Research notes"><div className="drawer-head"><div><span>RESEARCH LOG</span><h2>UPDATE CURRENT THESIS</h2></div><button onClick={() => setNotesOpen(false)}>ESC</button></div><label htmlFor="note">NEW NOTE</label><textarea id="note" autoFocus value={note} maxLength={600} onChange={(e) => setNote(e.target.value)} placeholder="What changed in the data, and what would disprove your read?" /><div className="prompt-line"><span>Keep the claim testable.</span><span>{note.length} / 600</span></div><div className="drawer-actions"><button onClick={() => setNotesOpen(false)}>CANCEL</button><button className="primary-button" onClick={saveNote}>SAVE NOTE</button></div><div className="recent-note"><span>LATEST ENTRY</span><p>{savedNote}</p><small>03 SEP 2026 · 08:15 WIB</small></div></section></div>}
       {settingsOpen && <div className="overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) setSettingsOpen(false); }}><section className="drawer" role="dialog" aria-modal="true" aria-label="Terminal settings"><div className="drawer-head"><div><span>TERMINAL</span><h2>SETTINGS</h2></div><button onClick={() => setSettingsOpen(false)}>ESC</button></div><div className="setting-block"><h3>COLOR ACCESSIBILITY</h3><p>Choose a signal palette that keeps gains and losses distinct.</p><div className="scheme-list">{(['default','deuteranopia','protanopia','tritanopia'] as Scheme[]).map((item) => <button key={item} className={scheme===item?'selected':''} onClick={() => setScheme(item)}><i /><span>{item.toUpperCase()}</span><b>{scheme===item?'ON':''}</b></button>)}</div></div><div className="setting-block"><h3>DATA CONNECTIONS</h3><p>Technical feed detail is kept here so the daily view stays focused on decisions.</p><div className="settings-health connection-list"><p><i className={fred ? 'live' : ''} /><strong>FRED</strong><span>{fred ? `Updated ${fred.freshness}` : 'FRED_API_KEY not configured or upstream unavailable'}</span></p><p><i className={markets ? 'live' : ''} /><strong>IDX + SEASONALITY</strong><span>{markets ? `${markets.status} · Yahoo upstream` : 'Live request failed · illustrative values retained'}</span></p><p><i className={gdelt ? 'live' : ''} /><strong>GDELT DOC</strong><span>{gdelt ? 'Keyword-frequency series live · Goldstein pending' : 'Live request failed'}</span></p><p><i className={cot ? 'live' : ''} /><strong>CFTC COT</strong><span>{cot ? `${cot.status} · weekly public reports` : 'Public dataset request failed'}</span></p><p><i className={calendar ? 'live' : ''} /><strong>TRADINGECONOMICS</strong><span>{calendar ? 'Calendar connected' : 'TRADING_ECONOMICS_API_KEY required'}</span></p></div></div><button className="primary-button full" onClick={() => setSettingsOpen(false)}>APPLY SETTINGS</button></section></div>}
+
+      {notification && (
+        <div
+          style={{
+            position: 'fixed',
+            bottom: '24px',
+            right: '24px',
+            zIndex: 9999,
+            background: '#09131ef2',
+            backdropFilter: 'blur(12px)',
+            WebkitBackdropFilter: 'blur(12px)',
+            border: '1px solid #48a6ff',
+            boxShadow: '0 12px 32px rgba(0,0,0,0.85), 0 0 15px rgba(72,166,255,0.3)',
+            padding: '10px 16px',
+            borderRadius: '3px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '10px',
+            fontFamily: 'var(--font-geist-mono), monospace',
+            fontSize: '11px',
+            color: '#e8edf3',
+            letterSpacing: '0.04em',
+          }}
+        >
+          <span style={{ width: '7px', height: '7px', borderRadius: '50%', background: '#48a6ff', boxShadow: '0 0 8px #48a6ff', flexShrink: 0 }} />
+          <span>{notification}</span>
+          <button
+            onClick={() => setNotification(null)}
+            style={{
+              background: 'transparent',
+              border: 'none',
+              color: '#778596',
+              fontSize: '14px',
+              cursor: 'pointer',
+              padding: '0 0 0 6px',
+              lineHeight: 1,
+            }}
+          >
+            ×
+          </button>
+        </div>
+      )}
     </main>
   );
 }
