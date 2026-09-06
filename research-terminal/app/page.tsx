@@ -1,7 +1,8 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import StockSearch from '@/components/StockSearch';
+import StockSearch from '../components/StockSearch';
+import StockDetailModal from '../components/StockDetailModal';
 
 type Scheme = 'default' | 'deuteranopia' | 'protanopia' | 'tritanopia';
 type Section = 'OVERVIEW' | 'MACRO' | 'MARKETS' | 'GPR INDEX' | 'CORRELATIONS' | 'SEASONALITY' | 'MARKET PARTICIPANT';
@@ -78,17 +79,57 @@ export default function Home() {
   useEffect(() => { setSeasonality(null); fetch(`/api/seasonality?ticker=${seasonTicker}`).then((response)=>response.ok?response.json():Promise.reject()).then((data)=>setSeasonality(data as SeasonalityData)).catch(()=>setSeasonality(null)); }, [seasonTicker]);
 
   const [notification, setNotification] = useState<string | null>(null);
+  const [modalTicker, setModalTicker] = useState<string | null>(null);
+  const [customWatchlist, setCustomWatchlist] = useState<Array<{ ticker: string; price: number; change: number }>>([]);
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('jarvis_watchlist');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) setCustomWatchlist(parsed);
+      }
+    } catch {}
+  }, []);
 
   const handleStockSelect = (stock: { ticker: string; name: string; sector: string }) => {
-    const cleanTicker = stock.ticker.replace('.JK', '').toUpperCase();
-    setSeasonTicker(cleanTicker);
-    setActive('SEASONALITY');
-    setNotification(`LOADED ${cleanTicker} (${stock.name}) INTO SEASONALITY ANALYSIS`);
-    setTimeout(() => setNotification(null), 4500);
+    setModalTicker(stock.ticker);
+  };
+
+  const handleAddToWatchlist = (rawTicker: string) => {
+    const cleanTicker = rawTicker.replace('.JK', '').toUpperCase();
+    setCustomWatchlist((prev) => {
+      const exists = prev.some((item) => item.ticker === cleanTicker);
+      let updated;
+      if (exists) {
+        updated = prev.filter((item) => item.ticker !== cleanTicker);
+        setNotification(`REMOVED ${cleanTicker} FROM WATCHLIST`);
+      } else {
+        updated = [...prev, { ticker: cleanTicker, price: 0, change: 0 }];
+        setNotification(`ADDED ${cleanTicker} TO WATCHLIST`);
+      }
+      try {
+        localStorage.setItem('jarvis_watchlist', JSON.stringify(updated));
+      } catch {}
+      return updated;
+    });
+    setTimeout(() => setNotification(null), 4000);
   };
 
   const indicators = fred?.indicators ?? fallbackIndicators; const yields = fred?.yields.map((item) => item.value) ?? fallbackYield;
-  const watchlist = markets?.watchlist ?? fallbackWatch; const heatmap = markets?.heatmap ?? fallbackHeat;
+  const baseWatchlist = markets?.watchlist ?? fallbackWatch;
+  const watchlist = useMemo(() => {
+    if (!customWatchlist.length) return baseWatchlist;
+    const map = new Map<string, { ticker: string; price: number; change: number }>();
+    baseWatchlist.forEach((item) => map.set(item.ticker, item));
+    customWatchlist.forEach((item) => {
+      if (!map.has(item.ticker)) {
+        map.set(item.ticker, item);
+      }
+    });
+    return Array.from(map.values());
+  }, [baseWatchlist, customWatchlist]);
+  const heatmap = markets?.heatmap ?? fallbackHeat;
   const marketChange = (name: string) => { const values = markets?.assets.find((item) => item.name === name)?.closes.filter((x): x is number => x !== null) ?? []; const last = values.at(-1) ?? 0; const prior = values.at(-2) ?? last; const recent = values.slice(-20); const average = recent.length ? recent.reduce((sum, value) => sum + value, 0) / recent.length : 0; return { last, average, change: prior ? ((last / prior) - 1) * 100 : 0 }; };
   const dxy = marketChange('DXY'); const oil = marketChange('OIL'); const liveCount = Number(Boolean(fred)) + Number(Boolean(markets)) + Number(Boolean(gdelt)) + Number(Boolean(calendar));
   const currentRegime = (fred?.regime ?? fallbackTrail).at(-1)!;
@@ -130,7 +171,7 @@ export default function Home() {
         <div className="view-heading"><div><span>RESEARCH / {active}</span><h2>{active === 'OVERVIEW' ? 'Daily Research Overview' : active === 'GPR INDEX' ? 'Geopolitical Risk Index' : titleCase(active)}</h2></div><p>{sectionDescription(active)}</p></div>
 
         {active === 'OVERVIEW' && <section className="dashboard-grid overview-grid">
-          <Watchlist watchlist={watchlist} live={Boolean(markets)} />
+          <Watchlist watchlist={watchlist} live={Boolean(markets)} onSelectStock={(t) => setModalTicker(t)} />
           <Calendar data={calendar} />
           <article className="panel thesis-panel"><PanelHead index="03" title="CURRENT THESIS"><button className="quiet-button" onClick={() => setNotesOpen(true)}>UPDATE</button></PanelHead><div className="thesis-content compact"><span className="thesis-date">03 SEP 2026 · 08:15 WIB</span><h3>Sticky inflation is meeting softer growth.</h3><p>{savedNote}</p><div className="thesis-tags"><span>RATES</span><span>CHINA</span><span>ENERGY</span></div></div></article>
           <article className="panel implication-panel"><PanelHead index="04" title="DAILY IMPLICATIONS"><span className="compact-health" title={`${liveCount}/4 feeds live`}><i className={liveCount >= 3 ? 'good' : liveCount ? 'partial' : ''} />{liveCount}/4</span></PanelHead><div className="implication-list"><p><span>01</span><strong>Stay selective in cyclicals</strong><small>Weakening growth and sticky inflation lower the margin for error.</small></p><p><span>02</span><strong>Keep energy on the screen</strong><small>Oil strength supports cash flow, but ADRO and BUMI remain coal-led exposures.</small></p><p><span>03</span><strong>Size around event risk</strong><small>Elevated GPR argues for tighter stops and less crowded positions.</small></p></div></article>
@@ -143,8 +184,8 @@ export default function Home() {
         </section>}
 
         {active === 'MARKETS' && <section className="dashboard-grid markets-grid">
-          <article className="panel heatmap-panel"><PanelHead index="01" title="IDX SECTOR HEATMAP"><div className="range-switcher">{(['1D','1W'] as const).map((item) => <button key={item} onClick={() => setHeatPeriod(item)} className={heatPeriod === item ? 'active' : ''}>{item}</button>)}</div></PanelHead><div className="heatmap">{heatmap.map((item, index) => { const value = heatPeriod === '1D' ? item.daily : item.weekly; return <button key={item.label} onClick={() => setSelectedSector(item.label)} className={`heat-tile ${['xl','lg','md','lg','sm','sm','md','sm','md','lg','md'][index]} ${value === null ? 'no-data' : heatTone(value)} ${item.confidence === 'low' ? 'low-confidence' : ''} ${selectedHeat?.label === item.label ? 'selected' : ''}`}><span>{item.label}</span><strong>{value === null ? '—' : `${signed(value)}%`}</strong><small>{item.confidence === 'low' ? `LOW CONFIDENCE · ${item.validCount ?? 0}/${item.memberCount ?? 0} VALID` : 'VIEW MEMBERS →'}</small></button>; })}</div>{selectedHeat && <div className="heat-drilldown"><div><span>SELECTED SECTOR</span><strong>{selectedHeat.label}</strong><small>SIMPLE AVG · {selectedHeat.validCount ?? selectedHeat.constituents.length}/{selectedHeat.memberCount ?? selectedHeat.constituents.length} VALID</small></div>{selectedHeat.constituents.length ? selectedHeat.constituents.map((stock) => { const value = heatPeriod === '1D' ? stock.daily : stock.weekly; return <div key={stock.ticker}><span>{stock.ticker}</span><strong>{stock.price.toLocaleString('en-US',{maximumFractionDigits:2})}</strong><small className={value === null ? '' : value >= 0 ? 'positive' : 'negative'}>{value === null ? 'NO VALID RETURN' : `${signed(value)}%`}</small></div>}) : <p>Constituent feed unavailable for this sector.</p>}</div>}<PanelFoot left="SIMPLE AVERAGE OF VALID IDX-IC CONSTITUENT BASKETS" right={markets ? `${markets.status.toUpperCase()} · YAHOO UPSTREAM` : 'ILLUSTRATIVE DATA'} /></article>
-          <Watchlist watchlist={watchlist} live={Boolean(markets)} />
+          <article className="panel heatmap-panel"><PanelHead index="01" title="IDX SECTOR HEATMAP"><div className="range-switcher">{(['1D','1W'] as const).map((item) => <button key={item} onClick={() => setHeatPeriod(item)} className={heatPeriod === item ? 'active' : ''}>{item}</button>)}</div></PanelHead><div className="heatmap">{heatmap.map((item, index) => { const value = heatPeriod === '1D' ? item.daily : item.weekly; return <button key={item.label} onClick={() => setSelectedSector(item.label)} className={`heat-tile ${['xl','lg','md','lg','sm','sm','md','sm','md','lg','md'][index]} ${value === null ? 'no-data' : heatTone(value)} ${item.confidence === 'low' ? 'low-confidence' : ''} ${selectedHeat?.label === item.label ? 'selected' : ''}`}><span>{item.label}</span><strong>{value === null ? '—' : `${signed(value)}%`}</strong><small>{item.confidence === 'low' ? `LOW CONFIDENCE · ${item.validCount ?? 0}/${item.memberCount ?? 0} VALID` : 'VIEW MEMBERS →'}</small></button>; })}</div>{selectedHeat && <div className="heat-drilldown"><div><span>SELECTED SECTOR</span><strong>{selectedHeat.label}</strong><small>SIMPLE AVG · {selectedHeat.validCount ?? selectedHeat.constituents.length}/{selectedHeat.memberCount ?? selectedHeat.constituents.length} VALID</small></div>{selectedHeat.constituents.length ? selectedHeat.constituents.map((stock) => { const value = heatPeriod === '1D' ? stock.daily : stock.weekly; return <div key={stock.ticker} onClick={() => setModalTicker(stock.ticker)} style={{cursor:'pointer'}} title={`Click to view ${stock.ticker} fundamentals`}><span>{stock.ticker}</span><strong>{stock.price.toLocaleString('en-US',{maximumFractionDigits:2})}</strong><small className={value === null ? '' : value >= 0 ? 'positive' : 'negative'}>{value === null ? 'NO VALID RETURN' : `${signed(value)}%`}</small></div>}) : <p>Constituent feed unavailable for this sector.</p>}</div>}<PanelFoot left="SIMPLE AVERAGE OF VALID IDX-IC CONSTITUENT BASKETS" right={markets ? `${markets.status.toUpperCase()} · YAHOO UPSTREAM` : 'ILLUSTRATIVE DATA'} /></article>
+          <Watchlist watchlist={watchlist} live={Boolean(markets)} onSelectStock={(t) => setModalTicker(t)} />
           <Calendar data={calendar} />
         </section>}
 
@@ -206,6 +247,16 @@ export default function Home() {
           </button>
         </div>
       )}
+      {modalTicker && (
+        <StockDetailModal
+          ticker={modalTicker}
+          onClose={() => setModalTicker(null)}
+          onAddToWatchlist={handleAddToWatchlist}
+          isInWatchlist={watchlist.some(
+            (w) => w.ticker.toUpperCase() === modalTicker.replace('.JK', '').toUpperCase()
+          )}
+        />
+      )}
     </main>
   );
 }
@@ -220,7 +271,46 @@ function CotChart({series}:{series:CotSeries}){const canvas=useRef<HTMLCanvasEle
 function CotTable({series}:{series:CotSeries}){const rows=series.points.slice(-6).reverse();return <div className="cot-table"><div className="cot-row cot-head"><span>REPORT</span>{series.groups.map((group)=><span key={group}>{group}</span>)}</div>{rows.map((point,index)=>{const prior=series.points[series.points.length-2-index];return <div className="cot-row" key={point.date}><strong>{formatDate(point.date)}</strong>{series.groups.map((group)=>{const change=prior?(point.values[group]??0)-(prior.values[group]??0):0;return <span key={group}><b>{compact(point.values[group]??0)}</b><small className={change>=0?'positive':'negative'}>{change>=0?'+':''}{compact(change)} WoW</small></span>})}</div>})}</div>}
 function FeedUnavailable({title,body}:{title:string;body:string}){return <div className="feed-unavailable"><span>CONNECTION STATUS</span><strong>{title}</strong><p>{body}</p></div>}
 
-function Watchlist({watchlist,live}:{watchlist:Array<{ticker:string;price:number;change:number}>;live:boolean}) { return <article className="panel watch-panel"><PanelHead index="01" title="IDX WATCHLIST" /><div className="watch-table table-head"><span>TICKER</span><span>LAST</span><span>1D</span></div>{watchlist.map((stock)=><div className="watch-table" key={stock.ticker}><strong>{stock.ticker}</strong><span>{stock.price.toLocaleString('en-US',{maximumFractionDigits:2})}</span><span className={stock.change>=0?'positive':'negative'}>{signed(stock.change)}%</span></div>)}<PanelFoot left="BUMI · AMMN · ADRO" right={live?'LIVE · DAILY':'ILLUSTRATIVE DATA'} /></article>; }
+function Watchlist({watchlist,live,onSelectStock}:{watchlist:Array<{ticker:string;price:number;change:number}>;live:boolean;onSelectStock?:(ticker:string)=>void}) {
+  const [showSearch, setShowSearch] = useState(false);
+  return (
+    <article className="panel watch-panel">
+      <PanelHead index="01" title="IDX WATCHLIST">
+        <button
+          type="button"
+          onClick={() => setShowSearch((v) => !v)}
+          className="quiet-button"
+          style={{
+            fontSize: '9px',
+            color: showSearch ? '#48a6ff' : '#778596',
+            border: showSearch ? '1px solid #48a6ff' : '1px solid #233041',
+            background: showSearch ? '#0b1624' : 'transparent',
+            padding: '2px 8px',
+            borderRadius: '2px',
+            cursor: 'pointer',
+            marginLeft: 'auto',
+          }}
+        >
+          {showSearch ? '✕ CLOSE' : '+ ADD TICKER'}
+        </button>
+      </PanelHead>
+      {showSearch && (
+        <div style={{ padding: '8px', borderBottom: '1px solid var(--line, #1c2635)', background: '#05070a' }}>
+          <StockSearch
+            onSelect={(stock) => {
+              onSelectStock?.(stock.ticker);
+              setShowSearch(false);
+            }}
+            placeholder="Search IDX ticker (e.g. BBCA, ADRO)..."
+          />
+        </div>
+      )}
+      <div className="watch-table table-head"><span>TICKER</span><span>LAST</span><span>1D</span></div>
+      {watchlist.map((stock)=><div className="watch-table" key={stock.ticker} style={{cursor:'pointer'}} onClick={()=>onSelectStock?.(stock.ticker)} title={`Click to view ${stock.ticker} fundamentals`}><strong style={{color:'#48a6ff'}}>{stock.ticker}</strong><span>{stock.price ? stock.price.toLocaleString('en-US',{maximumFractionDigits:2}) : '—'}</span><span className={stock.change>=0?'positive':'negative'}>{signed(stock.change)}%</span></div>)}
+      <PanelFoot left="CLICK TICKER FOR DETAIL" right={live?'LIVE · DAILY':'ILLUSTRATIVE DATA'} />
+    </article>
+  );
+}
 function Calendar({data}:{data:CalendarData|null}){const rows=data?.events.map((event)=>{const date=new Date(event.date);return {time:Number.isNaN(date.getTime())?'—':date.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit',timeZone:'Asia/Jakarta'}),country:countryCode(event.country),event:event.event,forecast:event.forecast,prior:event.prior,status:event.importance>=3?'HIGH':'MED'}})??releases;return <article className="panel calendar-panel"><PanelHead index="02" title="ECONOMIC CALENDAR"><span className="demo-badge">{data?'LIVE':'DEMO'}</span></PanelHead><div className="date-rule"><strong>NEXT 7 DAYS</strong><span>{rows.length} RELEASES</span></div>{rows.slice(0,6).map((r,index)=><div className="release-row" key={`${r.event}-${index}`}><time>{r.time}</time><span className="country-tag">{r.country}</span><div><strong>{r.event}</strong><small>FCST {r.forecast} · PRIOR {r.prior}</small></div><span className={`importance ${r.status.toLowerCase()}`}>{r.status}</span></div>)}<PanelFoot left={data?'TRADINGECONOMICS LIVE':'TRADINGECONOMICS KEY NOT CONFIGURED'} right="WIB" /></article>}
 function YieldCurve({values,live}:{values:number[];live:boolean}){const spread=(values[4]-values[2])*100;return <article className="panel curve-panel"><PanelHead index="03" title="US TREASURY CURVE"><span className="curve-status"><i />{spread<0?'INVERTED':'NORMAL'} {signed(spread)} BP</span></PanelHead><div className="curve-chart"><div className="curve-bars">{values.map((point,index)=><div className="curve-column" key={index}><span>{point.toFixed(2)}%</span><i style={{height:`${Math.max(18,34+(point-3)*58)}px`}} /><b>{['3M','1Y','2Y','5Y','10Y','20Y','30Y'][index]}</b></div>)}</div><div className="curve-baseline" /></div><div className="curve-callouts"><div><span>2Y</span><strong>{values[2].toFixed(2)}%</strong></div><div><span>10Y</span><strong>{values[4].toFixed(2)}%</strong></div><div><span>30Y</span><strong>{values[6].toFixed(2)}%</strong></div></div><PanelFoot left="TREASURY CONSTANT MATURITY RATES" right={live?'FRED LIVE':'ILLUSTRATIVE DATA'} /></article>}
 function MetricCard({label,value,condition,implication,source,tone}:{label:string;value:string;condition:string;implication:string;source:string;tone?:string}){return <div className="metric-card"><span>{label}</span><div className="metric-reading"><strong className={tone}>{value}</strong><b>{condition}</b></div><p>{implication}</p><small>{source}</small></div>}

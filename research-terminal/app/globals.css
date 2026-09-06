@@ -168,3 +168,22 @@ body { min-height: 100%; background: #000; -webkit-text-size-adjust: 100%; overs
   .heat-drilldown > div { border-right: 0; border-bottom: 1px solid var(--line); }
   .heat-drilldown > div:last-child { border-bottom: 0; }
 }
+
+/* Stock Detail Modal Animation & Polish */
+.stock-modal-backdrop {
+  animation: modalFadeIn 0.18s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+.stock-modal-content {
+  animation: modalScaleIn 0.22s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+@keyframes modalFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes modalScaleIn {
+  from { opacity: 0; transform: scale(0.96) translateY(6px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+.watch-table-row:hover {
+  background: #0e1622 !important;
+}
