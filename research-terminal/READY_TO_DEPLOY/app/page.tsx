@@ -1,8 +1,8 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import StockSearch from '@/components/StockSearch';
-import StockDetailModal from '@/components/StockDetailModal';
+mport StockSearch from '../components/StockSearch';
+import StockDetailModal from '../components/StockDetailModal';
 
 type Scheme = 'default' | 'deuteranopia' | 'protanopia' | 'tritanopia';
 type Section = 'OVERVIEW' | 'MACRO' | 'MARKETS' | 'GPR INDEX' | 'CORRELATIONS' | 'SEASONALITY' | 'MARKET PARTICIPANT';
