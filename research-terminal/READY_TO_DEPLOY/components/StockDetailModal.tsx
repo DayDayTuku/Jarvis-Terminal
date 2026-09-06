@@ -64,9 +64,9 @@ export default function StockDetailModal({
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         return r.json();
       })
-      .then((d) => (d.error ? setError(d.error) : setData(d)))
-      .catch((err) => {
-        if (err.name !== "AbortError") {
+      .then((d: any) => (d?.error ? setError(d.error) : setData(d)))
+      .catch((err: any) => {
+        if (err?.name !== "AbortError") {
           setError("Failed to load stock data from Yahoo Finance");
         }
       })

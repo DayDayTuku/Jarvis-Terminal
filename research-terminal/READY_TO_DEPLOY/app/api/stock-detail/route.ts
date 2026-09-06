@@ -46,8 +46,8 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    const raw = await res.json();
-    const result = raw?.quoteSummary?.result?.[0];
+    const raw: any = await res.json();
+    const result: any = raw?.quoteSummary?.result?.[0];
 
     if (!result) {
       return NextResponse.json(
@@ -56,17 +56,17 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    const price = result.price;
-    const summary = result.summaryDetail;
-    const stats = result.defaultKeyStatistics;
-    const fin = result.financialData;
-    const profile = result.assetProfile;
-    const rec = result.recommendationTrend?.trend?.[0];
-    const earnings = result.earnings;
+    const price: any = result?.price;
+    const summary: any = result?.summaryDetail;
+    const stats: any = result?.defaultKeyStatistics;
+    const fin: any = result?.financialData;
+    const profile: any = result?.assetProfile;
+    const rec: any = result?.recommendationTrend?.trend?.[0];
+    const earnings: any = result?.earnings;
 
-    const income = result.incomeStatementHistory?.incomeStatementHistory?.[0];
-    const balance = result.balanceSheetHistory?.balanceSheetStatements?.[0];
-    const cashflow = result.cashflowStatementHistory?.cashflowStatements?.[0];
+    const income: any = result?.incomeStatementHistory?.incomeStatementHistory?.[0];
+    const balance: any = result?.balanceSheetHistory?.balanceSheetStatements?.[0];
+    const cashflow: any = result?.cashflowStatementHistory?.cashflowStatements?.[0];
 
     const g = (obj: any, path: string) =>
       path.split(".").reduce((o, k) => (o ? o[k]?.raw ?? o[k] : null), obj) ?? null;

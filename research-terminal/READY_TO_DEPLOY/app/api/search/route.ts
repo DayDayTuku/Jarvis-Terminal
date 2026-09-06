@@ -59,7 +59,7 @@ export async function GET(req: NextRequest) {
 
     // PENTING:
     // Kita kasih tahu TypeScript bentuk response dari Yahoo
-    const data: YahooSearchResponse = await res.json();
+    const data = (await res.json()) as YahooSearchResponse;
 
     const quotes = Array.isArray(data.quotes)
       ? data.quotes
