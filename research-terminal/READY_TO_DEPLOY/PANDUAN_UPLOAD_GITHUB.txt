@@ -1,0 +1,86 @@
+========================================================================
+JARVIS RESEARCH TERMINAL - PANDUAN DEPLOY & UPLOAD KE GITHUB / VERCEL
+========================================================================
+
+Folder ini berisi seluruh file terbaru yang SUDAH TERINTEGRASI PENUH
+dan SIAP LANGSUNG DI-DEPLOY ke repository GitHub & Vercel.
+
+------------------------------------------------------------------------
+APA SAJA FITUR TERBARU DI VERSI INI?
+------------------------------------------------------------------------
+1. Bloomberg Grade Stock Detail Modal (Pop-up Fundamental Saham):
+   - Klik tombol [DETAIL] di hasil pencarian saham untuk membuka modal.
+   - Klik nama saham mana pun di tabel "IDX WATCHLIST" atau di "HEATMAP DRILLDOWN"
+     untuk langsung membuka modal fundamental saham tersebut.
+   - 3 Tab Komprehensif:
+     * OVERVIEW: Key Ratios (P/E, Forward P/E, P/B, EV/EBITDA, ROE, Dividend Yield, Market Cap, 52W High/Low).
+     * FINANCIALS: Revenue, Operating Income, Net Income, Total Assets/Liabilities, Equity, Capex.
+     * ANALYST: Konsensus analis (Strong Buy, Buy, Hold, Sell) & Target Harga (Mean, High, Low).
+   - Tombol toggle [+ ADD TO WATCHLIST] / [- IN WATCHLIST] langsung dari dalam modal.
+   - Animasi buka-tutup halus khas Bloomberg Terminal gelap.
+   - Tombol ESC atau klik di luar modal untuk menutup.
+
+2. Bloomberg Search Bar Saham IDX:
+   - Pencarian real-time saham IHSG (.JK) via Yahoo Finance.
+   - Rekomendasi saham populer (BBCA, BBRI, BUMI, AMMN, ADRO, TLKM, ASII).
+   - Navigasi keyboard: Panah Atas/Bawah (↑ / ↓), Enter (↵), Escape (Esc).
+   - Tombol [DETAIL] cepat di tiap baris hasil pencarian.
+
+3. Dynamic Seasonality:
+   - Memilih baris saham langsung mengarahkan ke tab SEASONALITY dengan histori 10 tahun.
+
+------------------------------------------------------------------------
+STRUKTUR FILE DALAM FOLDER INI (READY_TO_DEPLOY):
+------------------------------------------------------------------------
+READY_TO_DEPLOY/
+  ├── app/
+  │    ├── globals.css                <- Animasi modal & styling terminal
+  │    ├── page.tsx                   <- Wiring utama terminal + modal + watchlist
+  │    └── api/
+  │         ├── search/
+  │         │    └── route.ts         <- Endpoint pencarian saham IDX
+  │         ├── seasonality/
+  │         │    └── route.ts         <- Endpoint seasonality saham dinamis
+  │         └── stock-detail/
+  │              └── route.ts         <- Endpoint modul fundamental Yahoo Finance
+  └── components/
+       ├── StockSearch.tsx            <- Komponen search bar + keyboard nav + tombol DETAIL
+       └── StockDetailModal.tsx       <- Komponen modal fundamental 3 tab
+
+------------------------------------------------------------------------
+CARA UPLOAD KE GITHUB (SANGAT MUDAH):
+------------------------------------------------------------------------
+
+OPSI 1: UPLOAD FOLDER VIA WEB GITHUB (DRAG & DROP)
+1. Buka browser dan pergi ke repository GitHub Jarvis Anda:
+   (Contoh: https://github.com/[username]/[repo-name])
+2. Masuk ke folder proyek web Anda (biasanya `research-terminal/`):
+3. Klik tombol "Add file" di pojok kanan atas -> pilih "Upload files".
+4. Buka Finder di Mac Anda:
+   Buka folder:
+   /Users/iggerzefanyasurbakti/Documents/ANTIGRAVITY/READY_TO_DEPLOY/
+5. Tarik (Drag & Drop) folder `app` dan `components` ke halaman GitHub tersebut.
+6. Pada kolom commit message di bawah, ketik:
+   "Feat: Add Bloomberg stock detail modal and integrate search & watchlist"
+7. Klik tombol hijau "Commit changes".
+
+OPSI 2: COPY-PASTE KODE SATU PER SATU (JIKA INGIN EDIT LANGSUNG DI GITHUB)
+Jika ingin menimpa file lewat tombol pensil (✏️) di GitHub:
+1. `READY_TO_DEPLOY/app/page.tsx`                   -> Timpa `app/page.tsx`
+2. `READY_TO_DEPLOY/app/globals.css`               -> Timpa `app/globals.css`
+3. `READY_TO_DEPLOY/app/api/stock-detail/route.ts`  -> Buat/timpa `app/api/stock-detail/route.ts`
+4. `READY_TO_DEPLOY/app/api/seasonality/route.ts`   -> Timpa `app/api/seasonality/route.ts`
+5. `READY_TO_DEPLOY/app/api/search/route.ts`        -> Timpa `app/api/search/route.ts`
+6. `READY_TO_DEPLOY/components/StockSearch.tsx`     -> Timpa `components/StockSearch.tsx`
+7. `READY_TO_DEPLOY/components/StockDetailModal.tsx`-> Buat/timpa `components/StockDetailModal.tsx`
+
+------------------------------------------------------------------------
+SETELAH DI-UPLOAD:
+------------------------------------------------------------------------
+1. Vercel akan otomatis mendeteksi commit baru dan melakukan deployment (kurang lebih 1-2 menit).
+2. Setelah status di Vercel "Ready", buka website Anda:
+   https://jarvis-terminal-eight.vercel.app/
+3. Tekan Cmd + Shift + R di browser (Hard Refresh) untuk membersihkan cache.
+4. Coba ketik kode saham (misal: "BBCA" atau "BUMI"), klik tombol [DETAIL],
+   atau klik salah satu saham di daftar IDX WATCHLIST untuk melihat modal fundamentalnya!
+========================================================================
