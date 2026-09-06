@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-mport StockSearch from '../components/StockSearch';
+import StockSearch from '../components/StockSearch';
 import StockDetailModal from '../components/StockDetailModal';
 
 type Scheme = 'default' | 'deuteranopia' | 'protanopia' | 'tritanopia';
