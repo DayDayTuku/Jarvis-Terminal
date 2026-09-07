@@ -4,7 +4,12 @@ import { IDX_UNIVERSE } from "@/lib/idx-universe";
 
 const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
 
-const TRANSIENT_STATUS = new Set([429, 500, 502, 503, 504]);
+const TRANSIENT_STATUS = new Set([500, 502, 503, 504]);
+const DETAIL_TTL_MS = 5 * 60 * 1000;
+const FALLBACK_TTL_MS = 30 * 1000;
+const YAHOO_COOLDOWN_MS = 2 * 60 * 1000;
+const detailCache = new Map<string, { expiresAt: number; data: Record<string, any> }>();
+let yahooCooldownUntil = 0;
 
 async function fetchWithRetry(url: string, options: any, attempts = 3) {
   let lastResponse: Response | null = null;
@@ -13,6 +18,10 @@ async function fetchWithRetry(url: string, options: any, attempts = 3) {
   for (let attempt = 0; attempt < attempts; attempt += 1) {
     try {
       const response = await fetch(url, options);
+      if (response.status === 429) {
+        yahooCooldownUntil = Date.now() + YAHOO_COOLDOWN_MS;
+        return response;
+      }
       if (!TRANSIENT_STATUS.has(response.status) || attempt === attempts - 1) {
         return response;
       }
@@ -33,6 +42,7 @@ let cachedCookie: string | null = null;
 let cacheExpiresAt = 0;
 
 async function getCrumbAndCookie(forceRefresh = false): Promise<{ crumb: string; cookie: string } | null> {
+  if (Date.now() < yahooCooldownUntil) return null;
   if (forceRefresh) {
     cachedCrumb = null;
     cachedCookie = null;
@@ -105,10 +115,57 @@ async function getBasicQuote(ticker: string) {
   }
 }
 
+function fallbackDetail(ticker: string) {
+  const universeStock = IDX_UNIVERSE.find((stock) => stock.ticker === ticker);
+  const coolingDown = Date.now() < yahooCooldownUntil;
+  return {
+    ticker,
+    name: universeStock?.name ?? ticker.replace(".JK", ""),
+    sector: universeStock?.sector ?? null,
+    industry: null,
+    currency: "IDR",
+    regularMarketPrice: null,
+    regularMarketChangePercent: null,
+    dataSource: "universe-fallback",
+    fundamentalsUnavailable: true,
+    retryAfterSeconds: coolingDown
+      ? Math.max(1, Math.ceil((yahooCooldownUntil - Date.now()) / 1000))
+      : null,
+    fundamentalsMessage: coolingDown
+      ? "Yahoo Finance rate limit reached. Requests are paused briefly to protect recovery; IDX universe context remains available."
+      : "Yahoo Finance is temporarily unavailable. Showing IDX universe context.",
+    unavailable: [
+      "regularMarketPrice", "marketCap", "trailingPE", "forwardPE", "priceToBook",
+      "eps", "dividendYield", "revenue", "profitMargin", "returnOnEquity",
+      "recommendationKey",
+    ],
+  };
+}
+
+function cacheDetail(ticker: string, data: Record<string, any>, ttl = DETAIL_TTL_MS) {
+  detailCache.set(ticker, { data, expiresAt: Date.now() + ttl });
+  return NextResponse.json(data, {
+    headers: {
+      "Cache-Control": `private, max-age=0, s-maxage=${Math.floor(ttl / 1000)}, stale-while-revalidate=300`,
+    },
+  });
+}
+
 export async function GET(req: NextRequest) {
-  const ticker = req.nextUrl.searchParams.get("ticker");
-  if (!ticker) {
+  const rawTicker = req.nextUrl.searchParams.get("ticker");
+  if (!rawTicker) {
     return NextResponse.json({ error: "ticker is required" }, { status: 400 });
+  }
+  const ticker = rawTicker.includes(".")
+    ? rawTicker.toUpperCase()
+    : `${rawTicker.toUpperCase()}.JK`;
+
+  const cached = detailCache.get(ticker);
+  if (cached && cached.expiresAt > Date.now()) {
+    return NextResponse.json({ ...cached.data, cacheHit: true });
+  }
+  if (Date.now() < yahooCooldownUntil) {
+    return cacheDetail(ticker, fallbackDetail(ticker), FALLBACK_TTL_MS);
   }
 
   let auth = await getCrumbAndCookie();
@@ -241,7 +298,7 @@ export async function GET(req: NextRequest) {
             .filter(([k, v]) => v === null && !["ticker", "name", "latestFinancials"].includes(k))
             .map(([k]) => k);
 
-          return NextResponse.json({ ...detail, unavailable });
+          return cacheDetail(ticker, { ...detail, unavailable });
         }
       }
     } catch {
@@ -249,14 +306,15 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  const basic = await getBasicQuote(ticker);
+  const basic = Date.now() < yahooCooldownUntil ? null : await getBasicQuote(ticker);
   if (basic) {
-    return NextResponse.json({
+    return cacheDetail(ticker, {
       ticker,
-      name: ticker,
+      name: IDX_UNIVERSE.find((stock) => stock.ticker === ticker)?.name ?? ticker,
+      sector: IDX_UNIVERSE.find((stock) => stock.ticker === ticker)?.sector ?? null,
       dataSource: "basic",
       fundamentalsUnavailable: true,
-      fundamentalsMessage: "Fundamental data unavailable from free source. Showing basic price data only.",
+      fundamentalsMessage: "Full fundamentals are unavailable. Showing cached basic price data.",
       ...basic,
       unavailable: [
         "marketCap", "trailingPE", "forwardPE", "priceToBook", "eps", "dividendYield",
@@ -265,27 +323,5 @@ export async function GET(req: NextRequest) {
     });
   }
 
-  const normalizedTicker = ticker.includes(".")
-    ? ticker.toUpperCase()
-    : `${ticker.toUpperCase()}.JK`;
-  const universeStock = IDX_UNIVERSE.find((stock) => stock.ticker === normalizedTicker);
-
-  return NextResponse.json({
-    ticker: normalizedTicker,
-    name: universeStock?.name ?? normalizedTicker.replace(".JK", ""),
-    sector: universeStock?.sector ?? null,
-    industry: null,
-    currency: "IDR",
-    regularMarketPrice: null,
-    regularMarketChangePercent: null,
-    dataSource: "universe-fallback",
-    fundamentalsUnavailable: true,
-    fundamentalsMessage:
-      "Yahoo Finance is temporarily unavailable. Showing IDX universe context; valuation fields will retry when reopened.",
-    unavailable: [
-      "regularMarketPrice", "marketCap", "trailingPE", "forwardPE", "priceToBook",
-      "eps", "dividendYield", "revenue", "profitMargin", "returnOnEquity",
-      "recommendationKey",
-    ],
-  });
+  return cacheDetail(ticker, fallbackDetail(ticker), FALLBACK_TTL_MS);
 }
