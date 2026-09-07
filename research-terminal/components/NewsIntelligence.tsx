@@ -71,15 +71,7 @@ export default function NewsIntelligence() {
 
   return (
     <section style={{ display: "grid", gap: 12 }}>
-      <header className="view-heading">
-        <div>
-          <span>INTELLIGENCE / BETA</span>
-          <h2>News Intelligence</h2>
-        </div>
-        <p>IDX, macro, and commodity headlines ranked by likely decision impact.</p>
-      </header>
-
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(3,minmax(0,1fr))", border: "1px solid var(--line-strong)", background: "#070a0f" }}>
+      <div className="news-stats" style={{ display: "grid", gridTemplateColumns: "repeat(3,minmax(0,1fr))", border: "1px solid var(--line-strong)", background: "#070a0f" }}>
         {[
           ["MATCHED STORIES", articles.length, "#e8edf3"],
           ["HIGH IMPACT", highImpactCount, "#ff6678"],
@@ -113,7 +105,7 @@ export default function NewsIntelligence() {
         ) : articles.length ? (
           <div>
             {articles.map((article) => (
-              <a key={article.id} href={article.url} target="_blank" rel="noopener noreferrer" style={{ display: "grid", gridTemplateColumns: "86px minmax(0,1fr) auto", gap: 12, padding: "13px 14px", borderBottom: "1px solid #151d27", color: "inherit", textDecoration: "none", alignItems: "start" }}>
+              <a key={article.id} href={article.url} target="_blank" rel="noopener noreferrer" className="news-row" style={{ display: "grid", gridTemplateColumns: "86px minmax(0,1fr) auto", gap: 12, padding: "13px 14px", borderBottom: "1px solid #151d27", color: "inherit", textDecoration: "none", alignItems: "start" }}>
                 <div>
                   <strong style={{ display: "block", color: colors[article.impact], fontSize: 8 }}>{article.impact} IMPACT</strong>
                   <span style={{ display: "block", marginTop: 5, color: toneColors[article.tone], fontSize: 7 }}>{article.tone}</span>
