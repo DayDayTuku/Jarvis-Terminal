@@ -34,6 +34,16 @@ export default function StockSearch({
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [activeIndex, setActiveIndex] = useState(-1);
+  const [recentStocks, setRecentStocks] = useState<IDXStock[]>([]);
+
+  useEffect(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem("jarvis_recent_stocks") ?? "[]");
+      if (Array.isArray(saved)) setRecentStocks(saved.slice(0, 5));
+    } catch {
+      setRecentStocks([]);
+    }
+  }, []);
 
   useEffect(() => {
     const normalized = query.trim();
@@ -80,6 +90,14 @@ export default function StockSearch({
   }, []);
 
   const selectStock = (stock: IDXStock) => {
+    const nextRecent = [
+      stock,
+      ...recentStocks.filter((item) => item.ticker !== stock.ticker),
+    ].slice(0, 5);
+    setRecentStocks(nextRecent);
+    try {
+      localStorage.setItem("jarvis_recent_stocks", JSON.stringify(nextRecent));
+    } catch {}
     onSelect(stock);
     setQuery("");
     setResults([]);
@@ -87,7 +105,9 @@ export default function StockSearch({
     setActiveIndex(-1);
   };
 
-  const showDropdown = open && query.trim().length > 0;
+  const isSearching = query.trim().length > 0;
+  const displayedStocks = isSearching ? results : recentStocks;
+  const showDropdown = open && (isSearching || recentStocks.length > 0);
 
   return (
     <div ref={containerRef} className="stock-search-wrap">
@@ -118,17 +138,17 @@ export default function StockSearch({
               inputRef.current?.blur();
               return;
             }
-            if (event.key === "ArrowDown" && results.length) {
+            if (event.key === "ArrowDown" && displayedStocks.length) {
               event.preventDefault();
-              setActiveIndex((index) => (index + 1) % results.length);
+              setActiveIndex((index) => (index + 1) % displayedStocks.length);
             }
-            if (event.key === "ArrowUp" && results.length) {
+            if (event.key === "ArrowUp" && displayedStocks.length) {
               event.preventDefault();
-              setActiveIndex((index) => (index <= 0 ? results.length - 1 : index - 1));
+              setActiveIndex((index) => (index <= 0 ? displayedStocks.length - 1 : index - 1));
             }
-            if (event.key === "Enter" && activeIndex >= 0 && results[activeIndex]) {
+            if (event.key === "Enter" && activeIndex >= 0 && displayedStocks[activeIndex]) {
               event.preventDefault();
-              selectStock(results[activeIndex]);
+              selectStock(displayedStocks[activeIndex]);
             }
           }}
           placeholder={placeholder}
@@ -177,17 +197,17 @@ export default function StockSearch({
               letterSpacing: ".1em",
             }}
           >
-            <span>IDX EQUITY SEARCH</span>
-            <span>{loading ? "SCANNING…" : `${results.length} MATCH${results.length === 1 ? "" : "ES"}`}</span>
+            <span>{isSearching ? "IDX EQUITY SEARCH" : "RECENTLY VIEWED"}</span>
+            <span>{isSearching ? (loading ? "SCANNING…" : `${results.length} MATCH${results.length === 1 ? "" : "ES"}`) : `${recentStocks.length}/5 SAVED`}</span>
           </div>
 
           <div className="stock-search-list" style={{ maxHeight: 272, overflowY: "auto" }}>
-            {!loading && results.length === 0 ? (
+            {!loading && isSearching && results.length === 0 ? (
               <div style={{ padding: "18px 11px", color: "#778596", fontSize: "10px" }}>
                 NO MATCHING IDX TICKER
               </div>
             ) : (
-              results.map((stock, index) => {
+              displayedStocks.map((stock, index) => {
                 const color = SECTOR_COLORS[stock.sector] || DEFAULT_COLOR;
                 return (
                   <button
