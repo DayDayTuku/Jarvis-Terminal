@@ -115,7 +115,7 @@ export default function StockDetailModal({
       });
 
     return () => controller.abort();
-  }, [tab, ticker, data, peerData.length, peerLoading]);
+  }, [tab, ticker, data, peerData.length]);
 
   // Handle escape key
   useEffect(() => {
