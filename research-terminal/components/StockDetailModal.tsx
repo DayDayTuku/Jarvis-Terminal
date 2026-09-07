@@ -107,9 +107,11 @@ export default function StockDetailModal({
           if (controller.signal.aborted) return;
           rows.push({ stock, detail: null });
         }
-        if (!controller.signal.aborted) setPeerData([...rows]);
       }
-      if (!controller.signal.aborted) setPeerLoading(false);
+      if (!controller.signal.aborted) {
+        setPeerData(rows);
+        setPeerLoading(false);
+      }
     })();
 
     return () => controller.abort();
