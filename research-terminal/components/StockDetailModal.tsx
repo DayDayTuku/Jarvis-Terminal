@@ -734,7 +734,7 @@ function PeerComparison({
 
       <div style={{ display: "flex", justifyContent: "space-between", gap: 12, color: "#536171", fontSize: 7, lineHeight: 1.5 }}>
         <span>PEER MEDIAN EXCLUDES THE SELECTED STOCK</span>
-        <span style={{ textAlign: "right" }}>{availablePeers.length}/{peers.length} PEER FUNDAMENTALS AVAILABLE</span>
+        <span style={{ textAlign: "right" }}>↔ SCROLL TABLE · {availablePeers.length}/{peers.length} PEER FUNDAMENTALS AVAILABLE</span>
       </div>
     </div>
   );
