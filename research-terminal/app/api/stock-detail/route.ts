@@ -1,9 +1,8 @@
-// app/api/stock-detail/route.ts (v3 — with crumb/cookie auth + fallback)
+// app/api/stock-detail/route.ts (v4 — all res.json() typed as any to fix build)
 import { NextRequest, NextResponse } from "next/server";
 
 const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
 
-// Simple in-memory cache for crumb/cookie (resets on cold start, that's fine — cheap to refetch)
 let cachedCrumb: string | null = null;
 let cachedCookie: string | null = null;
 let cacheExpiresAt = 0;
@@ -15,7 +14,6 @@ async function getCrumbAndCookie(): Promise<{ crumb: string; cookie: string } | 
   }
 
   try {
-    // Step 1: get session cookie
     const cookieRes = await fetch("https://fc.yahoo.com", {
       headers: { "User-Agent": UA },
       redirect: "manual",
@@ -24,7 +22,6 @@ async function getCrumbAndCookie(): Promise<{ crumb: string; cookie: string } | 
     if (!setCookie) return null;
     const cookie = setCookie.split(";")[0];
 
-    // Step 2: get crumb using that cookie
     const crumbRes = await fetch("https://query1.finance.yahoo.com/v1/test/getcrumb", {
       headers: { "User-Agent": UA, Cookie: cookie },
     });
@@ -33,7 +30,7 @@ async function getCrumbAndCookie(): Promise<{ crumb: string; cookie: string } | 
 
     cachedCrumb = crumb;
     cachedCookie = cookie;
-    cacheExpiresAt = now + 30 * 60 * 1000; // 30 min cache
+    cacheExpiresAt = now + 30 * 60 * 1000;
 
     return { crumb, cookie };
   } catch {
@@ -41,7 +38,6 @@ async function getCrumbAndCookie(): Promise<{ crumb: string; cookie: string } | 
   }
 }
 
-// Fallback: basic price/volume from the endpoint already proven stable elsewhere in this project
 async function getBasicQuote(ticker: string) {
   try {
     const res = await fetch(
@@ -52,8 +48,12 @@ async function getBasicQuote(ticker: string) {
     const result = data?.chart?.result?.[0];
     if (!result) return null;
 
-    const closes: number[] = result.indicators?.quote?.[0]?.close?.filter((c: number | null) => c !== null);
-    const volumes: number[] = result.indicators?.quote?.[0]?.volume?.filter((v: number | null) => v !== null);
+    const closes: number[] = (result.indicators?.quote?.[0]?.close ?? []).filter(
+      (c: number | null) => c !== null
+    );
+    const volumes: number[] = (result.indicators?.quote?.[0]?.volume ?? []).filter(
+      (v: number | null) => v !== null
+    );
     const meta = result.meta;
 
     if (!closes || closes.length < 1) return null;
@@ -100,7 +100,7 @@ export async function GET(req: NextRequest) {
       );
 
       if (res.ok) {
-        const raw = await res.json();
+        const raw: any = await res.json();
         const result = raw?.quoteSummary?.result?.[0];
 
         if (result) {
@@ -200,7 +200,6 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  // Fallback: crumb/cookie auth failed OR quoteSummary request failed even with auth
   const basic = await getBasicQuote(ticker);
   if (basic) {
     return NextResponse.json({
