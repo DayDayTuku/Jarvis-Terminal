@@ -104,7 +104,8 @@ export default function StockSearch({
 
         <input
           ref={inputRef}
-          type="text"\n          role="searchbox"
+          type="text"
+          role="searchbox"
           value={query}
           onChange={(event) => {
             setQuery(event.target.value);
