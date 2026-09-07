@@ -92,9 +92,34 @@ export default function Home() {
     } catch {}
   }, []);
 
-  const handleStockSelect = (stock: { ticker: string; name: string; sector: string }) => {
-    setModalTicker(stock.ticker);
+  const openStockDetail = (ticker: string) => {
+    if (!modalTicker) {
+      window.history.pushState(
+        { ...window.history.state, jarvisStockModal: true },
+        "",
+        window.location.href
+      );
+    }
+    setModalTicker(ticker);
   };
+
+  const handleStockSelect = (stock: { ticker: string; name: string; sector: string }) => {
+    openStockDetail(stock.ticker);
+  };
+
+  const closeStockDetail = () => {
+    if (window.history.state?.jarvisStockModal) {
+      window.history.back();
+    } else {
+      setModalTicker(null);
+    }
+  };
+
+  useEffect(() => {
+    const closeModalOnBack = () => setModalTicker(null);
+    window.addEventListener("popstate", closeModalOnBack);
+    return () => window.removeEventListener("popstate", closeModalOnBack);
+  }, []);
 
   const handleAddToWatchlist = (rawTicker: string) => {
     const cleanTicker = rawTicker.replace('.JK', '').toUpperCase();
@@ -137,6 +162,74 @@ export default function Home() {
   const liveCorrelationRows = useMemo(() => correlationMatrix(gdelt, markets), [gdelt, markets]);
   const selectedCot = cot?.series.find((item) => item.key === cotAsset) ?? cot?.series[0] ?? null;
 
+  const validSectorMoves = (markets?.heatmap ?? [])
+    .map((item) => item.daily)
+    .filter((value): value is number => typeof value === "number" && Number.isFinite(value));
+  const positiveSectors = validSectorMoves.filter((value) => value > 0).length;
+  const breadthAverage = validSectorMoves.length
+    ? validSectorMoves.reduce((sum, value) => sum + value, 0) / validSectorMoves.length
+    : null;
+  const curveSpread = fred && yields.length > 1 ? yields[yields.length - 1] - yields[0] : null;
+  const thesisEvidence: string[] = [];
+
+  let thesisHeadline = "Waiting for enough live data to form a defensible thesis.";
+  if (fred) {
+    if (currentRegime.growth < 0 && currentRegime.inflation > 0) {
+      thesisHeadline = "Stagflation pressure favors resilience over broad risk-taking.";
+    } else if (currentRegime.growth >= 0 && currentRegime.inflation > 0) {
+      thesisHeadline = "Growth is holding, but inflation keeps duration risk elevated.";
+    } else if (currentRegime.growth < 0) {
+      thesisHeadline = "Growth is weakening as inflation cools; quality and duration gain appeal.";
+    } else {
+      thesisHeadline = "Disinflation with resilient growth supports selective risk-taking.";
+    }
+    thesisEvidence.push(
+      `Macro regime: growth z-score ${signed(currentRegime.growth)}, inflation z-score ${signed(currentRegime.inflation)}.`
+    );
+    if (curveSpread !== null) {
+      thesisEvidence.push(
+        `Curve proxy is ${curveSpread >= 0 ? "positively sloped" : "inverted"} by ${Math.abs(curveSpread).toFixed(2)} percentage points.`
+      );
+    }
+  } else {
+    thesisEvidence.push("Macro regime feed is unavailable, so this read remains provisional.");
+  }
+
+  if (markets && breadthAverage !== null) {
+    thesisEvidence.push(
+      `IDX breadth: ${positiveSectors}/${validSectorMoves.length} sectors positive, averaging ${signed(breadthAverage)}% today.`
+    );
+    thesisEvidence.push(
+      `DXY ${signed(dxy.change)}%; oil ${signed(oil.change)}% versus the prior observation.`
+    );
+    if (!fred) {
+      thesisHeadline =
+        breadthAverage >= 0
+          ? "Positive IDX breadth supports selective exposure, pending macro confirmation."
+          : "Weak IDX breadth argues for patience until macro confirmation improves.";
+    }
+  } else {
+    thesisEvidence.push("Live market breadth is unavailable.");
+  }
+
+  if (gdelt) {
+    thesisEvidence.push(
+      `Geopolitical risk is ${gdelt.severityStatus.toLowerCase()} with a ${gdelt.frequencyScore.toFixed(0)} frequency score.`
+    );
+  } else {
+    thesisEvidence.push("Geopolitical-risk feed is unavailable.");
+  }
+
+  const thesisConfidence = liveCount >= 4 ? "HIGH" : liveCount >= 2 ? "MEDIUM" : "LOW";
+  const thesisTags = [
+    fred ? (currentRegime.inflation > 0 ? "INFLATION" : "DISINFLATION") : null,
+    markets ? (breadthAverage !== null && breadthAverage >= 0 ? "BREADTH +" : "BREADTH −") : null,
+    gdelt ? `GPR ${gdelt.severityStatus.toUpperCase()}` : null,
+  ].filter((tag): tag is string => Boolean(tag));
+  const thesisFreshness = [fred?.freshness, markets?.freshness, gdelt?.freshness]
+    .filter((value): value is string => Boolean(value))
+    .join(" · ") || "AWAITING LIVE FEEDS";
+
   const saveNote = () => { if (note.trim()) { setSavedNote(note.trim()); setNote(''); } setNotesOpen(false); };
 
   return (
@@ -171,9 +264,9 @@ export default function Home() {
         <div className="view-heading"><div><span>RESEARCH / {active}</span><h2>{active === 'OVERVIEW' ? 'Daily Research Overview' : active === 'GPR INDEX' ? 'Geopolitical Risk Index' : titleCase(active)}</h2></div><p>{sectionDescription(active)}</p></div>
 
         {active === 'OVERVIEW' && <section className="dashboard-grid overview-grid">
-          <Watchlist watchlist={watchlist} live={Boolean(markets)} onSelectStock={(t) => setModalTicker(t)} />
+          <Watchlist watchlist={watchlist} live={Boolean(markets)} onSelectStock={(t) => openStockDetail(t)} />
           <Calendar data={calendar} />
-          <article className="panel thesis-panel"><PanelHead index="03" title="CURRENT THESIS"><button className="quiet-button" onClick={() => setNotesOpen(true)}>UPDATE</button></PanelHead><div className="thesis-content compact"><span className="thesis-date">03 SEP 2026 · 08:15 WIB</span><h3>Sticky inflation is meeting softer growth.</h3><p>{savedNote}</p><div className="thesis-tags"><span>RATES</span><span>CHINA</span><span>ENERGY</span></div></div></article>
+          <article className="panel thesis-panel"><PanelHead index="03" title="CURRENT THESIS"><span className="compact-health" title={`${liveCount}/4 feeds live`}><i className={liveCount >= 3 ? 'good' : liveCount ? 'partial' : ''} />{thesisConfidence}</span></PanelHead><div className="thesis-content compact"><span className="thesis-date">{thesisFreshness} · {thesisConfidence} CONFIDENCE</span><h3>{thesisHeadline}</h3><p>{thesisEvidence.join(" ")}</p><p style={{borderTop:'1px solid var(--line)',paddingTop:'9px',marginTop:'9px'}}><strong style={{color:'#778596',fontSize:'8px',letterSpacing:'.08em'}}>ANALYST NOTE · </strong>{savedNote}</p><button className="quiet-button" onClick={() => setNotesOpen(true)} style={{justifySelf:'start'}}>UPDATE NOTE</button><div className="thesis-tags">{thesisTags.length ? thesisTags.map((tag) => <span key={tag}>{tag}</span>) : <span>LOW DATA</span>}</div></div></article>
           <article className="panel implication-panel"><PanelHead index="04" title="DAILY IMPLICATIONS"><span className="compact-health" title={`${liveCount}/4 feeds live`}><i className={liveCount >= 3 ? 'good' : liveCount ? 'partial' : ''} />{liveCount}/4</span></PanelHead><div className="implication-list"><p><span>01</span><strong>Stay selective in cyclicals</strong><small>Weakening growth and sticky inflation lower the margin for error.</small></p><p><span>02</span><strong>Keep energy on the screen</strong><small>Oil strength supports cash flow, but ADRO and BUMI remain coal-led exposures.</small></p><p><span>03</span><strong>Size around event risk</strong><small>Elevated GPR argues for tighter stops and less crowded positions.</small></p></div></article>
         </section>}
 
@@ -184,8 +277,8 @@ export default function Home() {
         </section>}
 
         {active === 'MARKETS' && <section className="dashboard-grid markets-grid">
-          <article className="panel heatmap-panel"><PanelHead index="01" title="IDX SECTOR HEATMAP"><div className="range-switcher">{(['1D','1W'] as const).map((item) => <button key={item} onClick={() => setHeatPeriod(item)} className={heatPeriod === item ? 'active' : ''}>{item}</button>)}</div></PanelHead><div className="heatmap">{heatmap.map((item, index) => { const value = heatPeriod === '1D' ? item.daily : item.weekly; return <button key={item.label} onClick={() => setSelectedSector(item.label)} className={`heat-tile ${['xl','lg','md','lg','sm','sm','md','sm','md','lg','md'][index]} ${value === null ? 'no-data' : heatTone(value)} ${item.confidence === 'low' ? 'low-confidence' : ''} ${selectedHeat?.label === item.label ? 'selected' : ''}`}><span>{item.label}</span><strong>{value === null ? '—' : `${signed(value)}%`}</strong><small>{item.confidence === 'low' ? `LOW CONFIDENCE · ${item.validCount ?? 0}/${item.memberCount ?? 0} VALID` : 'VIEW MEMBERS →'}</small></button>; })}</div>{selectedHeat && <div className="heat-drilldown"><div><span>SELECTED SECTOR</span><strong>{selectedHeat.label}</strong><small>SIMPLE AVG · {selectedHeat.validCount ?? selectedHeat.constituents.length}/{selectedHeat.memberCount ?? selectedHeat.constituents.length} VALID</small></div>{selectedHeat.constituents.length ? selectedHeat.constituents.map((stock) => { const value = heatPeriod === '1D' ? stock.daily : stock.weekly; return <div key={stock.ticker} onClick={() => setModalTicker(stock.ticker)} style={{cursor:'pointer'}} title={`Click to view ${stock.ticker} fundamentals`}><span>{stock.ticker}</span><strong>{stock.price.toLocaleString('en-US',{maximumFractionDigits:2})}</strong><small className={value === null ? '' : value >= 0 ? 'positive' : 'negative'}>{value === null ? 'NO VALID RETURN' : `${signed(value)}%`}</small></div>}) : <p>Constituent feed unavailable for this sector.</p>}</div>}<PanelFoot left="SIMPLE AVERAGE OF VALID IDX-IC CONSTITUENT BASKETS" right={markets ? `${markets.status.toUpperCase()} · YAHOO UPSTREAM` : 'ILLUSTRATIVE DATA'} /></article>
-          <Watchlist watchlist={watchlist} live={Boolean(markets)} onSelectStock={(t) => setModalTicker(t)} />
+          <article className="panel heatmap-panel"><PanelHead index="01" title="IDX SECTOR HEATMAP"><div className="range-switcher">{(['1D','1W'] as const).map((item) => <button key={item} onClick={() => setHeatPeriod(item)} className={heatPeriod === item ? 'active' : ''}>{item}</button>)}</div></PanelHead><div className="heatmap">{heatmap.map((item, index) => { const value = heatPeriod === '1D' ? item.daily : item.weekly; return <button key={item.label} onClick={() => setSelectedSector(item.label)} className={`heat-tile ${['xl','lg','md','lg','sm','sm','md','sm','md','lg','md'][index]} ${value === null ? 'no-data' : heatTone(value)} ${item.confidence === 'low' ? 'low-confidence' : ''} ${selectedHeat?.label === item.label ? 'selected' : ''}`}><span>{item.label}</span><strong>{value === null ? '—' : `${signed(value)}%`}</strong><small>{item.confidence === 'low' ? `LOW CONFIDENCE · ${item.validCount ?? 0}/${item.memberCount ?? 0} VALID` : 'VIEW MEMBERS →'}</small></button>; })}</div>{selectedHeat && <div className="heat-drilldown"><div><span>SELECTED SECTOR</span><strong>{selectedHeat.label}</strong><small>SIMPLE AVG · {selectedHeat.validCount ?? selectedHeat.constituents.length}/{selectedHeat.memberCount ?? selectedHeat.constituents.length} VALID</small></div>{selectedHeat.constituents.length ? selectedHeat.constituents.map((stock) => { const value = heatPeriod === '1D' ? stock.daily : stock.weekly; return <div key={stock.ticker} onClick={() => openStockDetail(stock.ticker)} style={{cursor:'pointer'}} title={`Click to view ${stock.ticker} fundamentals`}><span>{stock.ticker}</span><strong>{stock.price.toLocaleString('en-US',{maximumFractionDigits:2})}</strong><small className={value === null ? '' : value >= 0 ? 'positive' : 'negative'}>{value === null ? 'NO VALID RETURN' : `${signed(value)}%`}</small></div>}) : <p>Constituent feed unavailable for this sector.</p>}</div>}<PanelFoot left="SIMPLE AVERAGE OF VALID IDX-IC CONSTITUENT BASKETS" right={markets ? `${markets.status.toUpperCase()} · YAHOO UPSTREAM` : 'ILLUSTRATIVE DATA'} /></article>
+          <Watchlist watchlist={watchlist} live={Boolean(markets)} onSelectStock={(t) => openStockDetail(t)} />
           <Calendar data={calendar} />
         </section>}
 
@@ -250,7 +343,7 @@ export default function Home() {
       {modalTicker && (
         <StockDetailModal
           ticker={modalTicker}
-          onClose={() => setModalTicker(null)}
+          onClose={closeStockDetail}
           onAddToWatchlist={handleAddToWatchlist}
           isInWatchlist={watchlist.some(
             (w) => w.ticker.toUpperCase() === modalTicker.replace('.JK', '').toUpperCase()
