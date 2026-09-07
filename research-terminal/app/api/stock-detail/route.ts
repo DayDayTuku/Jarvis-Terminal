@@ -1,13 +1,43 @@
 // app/api/stock-detail/route.ts (v4 — all res.json() typed as any to fix build)
 import { NextRequest, NextResponse } from "next/server";
+import { IDX_UNIVERSE } from "@/lib/idx-universe";
 
 const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
+
+const TRANSIENT_STATUS = new Set([429, 500, 502, 503, 504]);
+
+async function fetchWithRetry(url: string, options: any, attempts = 3) {
+  let lastResponse: Response | null = null;
+  let lastError: unknown = null;
+
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    try {
+      const response = await fetch(url, options);
+      if (!TRANSIENT_STATUS.has(response.status) || attempt === attempts - 1) {
+        return response;
+      }
+      lastResponse = response;
+    } catch (error) {
+      lastError = error;
+      if (attempt === attempts - 1) throw error;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 180 * (attempt + 1)));
+  }
+
+  if (lastResponse) return lastResponse;
+  throw lastError ?? new Error("Yahoo request failed");
+}
 
 let cachedCrumb: string | null = null;
 let cachedCookie: string | null = null;
 let cacheExpiresAt = 0;
 
-async function getCrumbAndCookie(): Promise<{ crumb: string; cookie: string } | null> {
+async function getCrumbAndCookie(forceRefresh = false): Promise<{ crumb: string; cookie: string } | null> {
+  if (forceRefresh) {
+    cachedCrumb = null;
+    cachedCookie = null;
+    cacheExpiresAt = 0;
+  }
   const now = Date.now();
   if (cachedCrumb && cachedCookie && now < cacheExpiresAt) {
     return { crumb: cachedCrumb, cookie: cachedCookie };
@@ -40,7 +70,7 @@ async function getCrumbAndCookie(): Promise<{ crumb: string; cookie: string } | 
 
 async function getBasicQuote(ticker: string) {
   try {
-    const res = await fetch(
+    const res = await fetchWithRetry(
       `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?range=5d&interval=1d`,
       { headers: { "User-Agent": UA }, next: { revalidate: 300 } }
     );
@@ -81,7 +111,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "ticker is required" }, { status: 400 });
   }
 
-  const auth = await getCrumbAndCookie();
+  let auth = await getCrumbAndCookie();
 
   if (auth) {
     try {
@@ -91,13 +121,20 @@ export async function GET(req: NextRequest) {
         "recommendationTrend", "earnings", "assetProfile",
       ].join(",");
 
-      const res = await fetch(
-        `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${ticker}?modules=${modules}&crumb=${encodeURIComponent(auth.crumb)}`,
-        {
-          headers: { "User-Agent": UA, Cookie: auth.cookie, Accept: "application/json" },
-          next: { revalidate: 300 },
+      const quoteUrl = (credentials: { crumb: string; cookie: string }) =>
+        `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${ticker}?modules=${modules}&crumb=${encodeURIComponent(credentials.crumb)}`;
+      const quoteOptions = (credentials: { crumb: string; cookie: string }) => ({
+        headers: { "User-Agent": UA, Cookie: credentials.cookie, Accept: "application/json" },
+        next: { revalidate: 300 },
+      });
+
+      let res = await fetchWithRetry(quoteUrl(auth), quoteOptions(auth));
+      if (res.status === 401 || res.status === 403) {
+        auth = await getCrumbAndCookie(true);
+        if (auth) {
+          res = await fetchWithRetry(quoteUrl(auth), quoteOptions(auth));
         }
-      );
+      }
 
       if (res.ok) {
         const raw: any = await res.json();
@@ -216,8 +253,27 @@ export async function GET(req: NextRequest) {
     });
   }
 
-  return NextResponse.json(
-    { error: "Failed to load stock data from Yahoo Finance" },
-    { status: 502 }
-  );
+  const normalizedTicker = ticker.includes(".")
+    ? ticker.toUpperCase()
+    : `${ticker.toUpperCase()}.JK`;
+  const universeStock = IDX_UNIVERSE.find((stock) => stock.ticker === normalizedTicker);
+
+  return NextResponse.json({
+    ticker: normalizedTicker,
+    name: universeStock?.name ?? normalizedTicker.replace(".JK", ""),
+    sector: universeStock?.sector ?? null,
+    industry: null,
+    currency: "IDR",
+    regularMarketPrice: null,
+    regularMarketChangePercent: null,
+    dataSource: "universe-fallback",
+    fundamentalsUnavailable: true,
+    fundamentalsMessage:
+      "Yahoo Finance is temporarily unavailable. Showing IDX universe context; valuation fields will retry when reopened.",
+    unavailable: [
+      "regularMarketPrice", "marketCap", "trailingPE", "forwardPE", "priceToBook",
+      "eps", "dividendYield", "revenue", "profitMargin", "returnOnEquity",
+      "recommendationKey",
+    ],
+  });
 }
