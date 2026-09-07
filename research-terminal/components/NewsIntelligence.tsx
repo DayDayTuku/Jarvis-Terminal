@@ -50,7 +50,7 @@ export default function NewsIntelligence() {
     setError("");
     fetch("/api/news", { signal: controller.signal })
       .then(async (response) => {
-        const payload = await response.json();
+        const payload = (await response.json()) as NewsPayload;
         if (!response.ok && !payload?.articles?.length) throw new Error("News feed unavailable");
         return payload;
       })
