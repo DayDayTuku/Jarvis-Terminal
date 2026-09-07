@@ -62,12 +62,7 @@ export default function QuantLab({ markets, fred }: { markets: MarketData | null
 
   return (
     <section style={{ display: "grid", gap: 12 }}>
-      <header className="view-heading">
-        <div><span>MODELS / BETA</span><h2>Quant Lab</h2></div>
-        <p>Transparent cross-asset and IDX breadth signals. No black-box prediction.</p>
-      </header>
-
-      <div style={{ display: "grid", gridTemplateColumns: "1.15fr repeat(3,minmax(0,1fr))", border: "1px solid var(--line-strong)", background: "#070a0f" }}>
+      <div className="quant-summary" style={{ display: "grid", gridTemplateColumns: "1.15fr repeat(3,minmax(0,1fr))", border: "1px solid var(--line-strong)", background: "#070a0f" }}>
         <div style={{ padding: 14, borderRight: "1px solid var(--line)" }}>
           <span style={{ color: "#657284", fontSize: 8 }}>COMPOSITE RISK APPETITE</span>
           <strong style={{ display: "block", marginTop: 6, color: signalColor, fontSize: 15 }}>{signal}</strong>
@@ -85,7 +80,7 @@ export default function QuantLab({ markets, fred }: { markets: MarketData | null
         ))}
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1.2fr) minmax(0,.8fr)", gap: 12 }}>
+      <div className="quant-grid" style={{ display: "grid", gridTemplateColumns: "minmax(0,1.2fr) minmax(0,.8fr)", gap: 12 }}>
         <article className="panel">
           <div style={{ padding: "12px 14px", borderBottom: "1px solid var(--line)" }}>
             <strong style={{ color: "#48a6ff", fontSize: 9, letterSpacing: ".08em" }}>IDX SECTOR MOMENTUM RANK</strong>
