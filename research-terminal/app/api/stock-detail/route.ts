@@ -225,6 +225,18 @@ export async function GET(req: NextRequest) {
             dataSource: "full",
           };
 
+          // Yahoo occasionally mixes currencies/units for IDX valuation multiples.
+          // Reject impossible values rather than presenting them as investable signals.
+          if (typeof detail.trailingPE !== "number" || detail.trailingPE <= 0 || detail.trailingPE > 300) {
+            detail.trailingPE = null;
+          }
+          if (typeof detail.forwardPE !== "number" || detail.forwardPE <= 0 || detail.forwardPE > 300) {
+            detail.forwardPE = null;
+          }
+          if (typeof detail.priceToBook !== "number" || detail.priceToBook <= 0 || detail.priceToBook > 100) {
+            detail.priceToBook = null;
+          }
+
           const unavailable = Object.entries(detail)
             .filter(([k, v]) => v === null && !["ticker", "name", "latestFinancials"].includes(k))
             .map(([k]) => k);
