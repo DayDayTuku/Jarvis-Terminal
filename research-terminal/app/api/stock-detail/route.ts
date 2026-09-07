@@ -164,7 +164,11 @@ export async function GET(req: NextRequest) {
   if (cached && cached.expiresAt > Date.now()) {
     return NextResponse.json({ ...cached.data, cacheHit: true });
   }
-  if (Date.now() < yahooCooldownUntil) {
+  // The chart endpoint is materially more reliable for newer IDX listings.
+  // Capture a basic quote before quoteSummary can open the fundamentals circuit.
+  const basic = await getBasicQuote(ticker);
+
+  if (Date.now() < yahooCooldownUntil && !basic) {
     return cacheDetail(ticker, fallbackDetail(ticker), FALLBACK_TTL_MS);
   }
 
@@ -306,7 +310,6 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  const basic = Date.now() < yahooCooldownUntil ? null : await getBasicQuote(ticker);
   if (basic) {
     return cacheDetail(ticker, {
       ticker,
@@ -314,7 +317,7 @@ export async function GET(req: NextRequest) {
       sector: IDX_UNIVERSE.find((stock) => stock.ticker === ticker)?.sector ?? null,
       dataSource: "basic",
       fundamentalsUnavailable: true,
-      fundamentalsMessage: "Full fundamentals are unavailable. Showing cached basic price data.",
+      fundamentalsMessage: "Full fundamentals are unavailable for this issuer. Showing verified market-price data instead.",
       ...basic,
       unavailable: [
         "marketCap", "trailingPE", "forwardPE", "priceToBook", "eps", "dividendYield",
