@@ -3,9 +3,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import StockSearch from '../components/StockSearch';
 import StockDetailModal from '../components/StockDetailModal';
+import NewsIntelligence from '../components/NewsIntelligence';
+import QuantLab from '../components/QuantLab';
 
 type Scheme = 'default' | 'deuteranopia' | 'protanopia' | 'tritanopia';
-type Section = 'OVERVIEW' | 'MACRO' | 'MARKETS' | 'GPR INDEX' | 'CORRELATIONS' | 'SEASONALITY' | 'MARKET PARTICIPANT';
+type Section = 'OVERVIEW' | 'MACRO' | 'MARKETS' | 'NEWS' | 'QUANT LAB' | 'GPR INDEX' | 'CORRELATIONS' | 'SEASONALITY' | 'MARKET PARTICIPANT';
 type RegimePoint = { date: string; growth: number; inflation: number };
 type FredData = { status: string; freshness: string; indicators: Array<{ name: string; actual: number; mean: number; z: number; unit: string }>; yields: Array<{ maturity: string; value: number }>; regime: RegimePoint[] };
 type Constituent = { ticker: string; price: number; daily: number | null; weekly: number | null };
@@ -49,6 +51,7 @@ const correlationRows = [
 const gprBars = [25,29,27,34,31,38,41,37,46,43,52,49,55,61,57,64];
 const navigation: Array<{ label: Section; icon: string }> = [
   { label: 'OVERVIEW', icon: '⌂' }, { label: 'MACRO', icon: '∿' }, { label: 'MARKETS', icon: '◇' },
+  { label: 'NEWS', icon: '◫' }, { label: 'QUANT LAB', icon: 'Σ' },
   { label: 'GPR INDEX', icon: '◎' }, { label: 'CORRELATIONS', icon: '⠿' }, { label: 'SEASONALITY', icon: '▦' }, { label: 'MARKET PARTICIPANT', icon: '≋' },
 ];
 
@@ -281,6 +284,10 @@ export default function Home() {
           <Watchlist watchlist={watchlist} live={Boolean(markets)} onSelectStock={(t) => openStockDetail(t)} />
           <Calendar data={calendar} />
         </section>}
+
+        {active === 'NEWS' && <NewsIntelligence />}
+
+        {active === 'QUANT LAB' && <QuantLab markets={markets} fred={fred} />}
 
         {active === 'GPR INDEX' && <section className="dashboard-grid risk-grid">
           <article className="panel gpr-panel"><PanelHead index="01" title="GEOPOLITICAL RISK COMPOSITE"><span className="model-badge">FORMULA V1</span></PanelHead><div className="gpr-summary"><div className="gpr-score"><span>CURRENT COMPOSITE</span><strong>{gdelt ? '—' : '64.2'}</strong><b>{gdelt ? 'PARTIAL INPUT' : 'ILLUSTRATIVE'}</b></div><div className="gpr-formula"><span>COMPOSITE FORMULA</span><strong><b>60%</b> GOLDSTEIN EVENT SEVERITY <i>+</i> <b>40%</b> KEYWORD FREQUENCY</strong><small>Composite is withheld until both inputs are live and normalized on the same baseline.</small></div><div className="gpr-moves"><span>EVENT SEVERITY <b>{gdelt ? 'PENDING' : '68.8'}</b></span><span>KEYWORD FREQ. <b>{gdelt ? `${gdelt.frequencyScore.toFixed(1)} LIVE` : '57.3'}</b></span><span>FRESHNESS <b>{gdelt ? formatDate(gdelt.freshness) : 'DEMO'}</b></span></div></div><div className="gpr-chart"><div className="threshold-line"><span>ELEVATED 60</span></div>{gprBars.map((height,index) => <i key={index} className={index > 12 ? 'alert' : ''} style={{height:`${height}%`}} />)}</div><div className="regional-risk"><span>REGIONAL KEYWORD FREQUENCY</span>{(gdelt?.regions ?? [{region:'SEA',score:56.1},{region:'CHINA',score:71.4},{region:'US',score:62}]).map((region) => <div key={region.region}><b>{region.region}</b><i><em style={{width:`${region.score}%`}} /></i><strong>{region.score.toFixed(1)}</strong></div>)}</div><PanelFoot left={gdelt ? 'GDELT KEYWORD FREQUENCY LIVE · GOLDSTEIN EVENT FEED PENDING' : 'VALUES REMAIN ILLUSTRATIVE'} right="60 / 40 WEIGHTING" /></article>
