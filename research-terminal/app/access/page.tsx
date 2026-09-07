@@ -13,6 +13,7 @@ function AccessForm() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
   const [mode, setMode] = useState<'login' | 'signup'>('login');
 
   const submit = async (event: FormEvent) => {
@@ -45,63 +46,55 @@ function AccessForm() {
   return (
     <main className="access-page">
       <section className="access-card">
-        <img
-          className="access-logo"
-          src="/jarvis-logo.png"
-          alt="Jarvis"
-        />
+        <div className="access-welcome">
+          <img className="access-logo" src="/jarvis-logo.png" alt="Jarvis" />
+          <span className="access-eyebrow">RESEARCH TERMINAL · PRIVATE WORKSPACE</span>
+          <h1>See the market as a system.</h1>
+          <p>
+            Macro regimes, IDX signals, commodities, news intelligence, and your research notes—one focused workspace.
+          </p>
+          <div className="access-points">
+            <span><i /> Live data with honest fallback states</span>
+            <span><i /> Transparent models, never black-box calls</span>
+            <span><i /> Built for decisions, not endless scrolling</span>
+          </div>
+        </div>
 
-        <h1>JARVIS</h1>
+        <div className="access-form-pane">
+          <div className="access-mode" role="tablist" aria-label="Access mode">
+            <button type="button" role="tab" aria-selected={mode === 'login'} className={mode === 'login' ? 'active' : ''} onClick={() => { setMode('login'); setError(''); }}>LOG IN</button>
+            <button type="button" role="tab" aria-selected={mode === 'signup'} className={mode === 'signup' ? 'active' : ''} onClick={() => { setMode('signup'); setError(''); }}>CREATE ACCOUNT</button>
+          </div>
 
-        <p>
-          {mode === 'login'
-            ? 'Login dengan email untuk membuka terminal.'
-            : 'Buat akun baru untuk mengakses terminal.'}
-        </p>
+          <div className="access-form-heading">
+            <span>{mode === 'login' ? 'WELCOME BACK' : 'GET STARTED'}</span>
+            <h2>{mode === 'login' ? 'Continue your research.' : 'Build your market view.'}</h2>
+            <p>{mode === 'login' ? 'Enter your details to open the terminal.' : 'Create an account with your email. No payment details required.'}</p>
+          </div>
 
-        <form onSubmit={submit}>
-          <label htmlFor="email">EMAIL</label>
+          <form onSubmit={submit}>
+            <label htmlFor="email">EMAIL ADDRESS</label>
+            <input id="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="email" placeholder="you@example.com" autoFocus required />
 
-          <input
-            id="email"
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            autoComplete="email"
-            autoFocus
-            required
-          />
+            <label htmlFor="password">PASSWORD</label>
+            <div className="password-field">
+              <input id="password" type={showPassword ? 'text' : 'password'} value={password} onChange={(e) => setPassword(e.target.value)} autoComplete={mode === 'login' ? 'current-password' : 'new-password'} placeholder={mode === 'login' ? 'Your password' : 'Choose a secure password'} minLength={6} required />
+              <button type="button" onClick={() => setShowPassword((value) => !value)} aria-label={showPassword ? 'Hide password' : 'Show password'}>{showPassword ? 'HIDE' : 'SHOW'}</button>
+            </div>
 
-          <label htmlFor="password">PASSWORD</label>
+            <button className="access-submit" type="submit" disabled={loading}>
+              {loading ? 'OPENING TERMINAL…' : mode === 'login' ? 'OPEN JARVIS →' : 'CREATE ACCOUNT →'}
+            </button>
+            {error && <strong role="alert">{error}</strong>}
+          </form>
 
-          <input
-            id="password"
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            autoComplete="current-password"
-            required
-          />
-
-          <button type="submit" disabled={loading}>
-            {loading
-              ? 'CHECKING…'
-              : mode === 'login'
-                ? 'LOGIN'
-                : 'SIGN UP'}
-          </button>
-
-          {error && <strong role="alert">{error}</strong>}
-        </form>
-
-        <small
-          onClick={() => setMode(mode === 'login' ? 'signup' : 'login')}
-          style={{ cursor: 'pointer', textDecoration: 'underline' }}
-        >
-          {mode === 'login'
-            ? 'Belum punya akun? Sign up'
-            : 'Sudah punya akun? Login'}
-        </small>
+          <small>
+            {mode === 'login' ? 'New here? ' : 'Already have an account? '}
+            <button type="button" onClick={() => { setMode(mode === 'login' ? 'signup' : 'login'); setError(''); }}>
+              {mode === 'login' ? 'Create an account' : 'Log in'}
+            </button>
+          </small>
+        </div>
       </section>
     </main>
   );
