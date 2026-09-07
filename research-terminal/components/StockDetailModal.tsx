@@ -42,10 +42,13 @@ export default function StockDetailModal({
   const [peerData, setPeerData] = useState<Array<{ stock: IDXStock; detail: Detail | null }>>([]);
   const [peerLoading, setPeerLoading] = useState(false);
   const [peerError, setPeerError] = useState<string | null>(null);
+  const [retryKey, setRetryKey] = useState(0);
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
 
   useEffect(() => {
     setLoading(true);
     setError(null);
+    setData(null);
     setTab("Overview");
     setPeerData([]);
     setPeerError(null);
@@ -58,7 +61,14 @@ export default function StockDetailModal({
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         return r.json();
       })
-      .then((d: any) => (d?.error ? setError(d.error) : setData(d)))
+      .then((d: any) => {
+        if (d?.error) {
+          setError(d.error);
+        } else {
+          setData(d);
+          setLastUpdated(new Date());
+        }
+      })
       .catch((err: any) => {
         if (err?.name !== "AbortError") {
           setError("Failed to load stock data from Yahoo Finance");
@@ -67,7 +77,7 @@ export default function StockDetailModal({
       .finally(() => setLoading(false));
 
     return () => controller.abort();
-  }, [ticker]);
+  }, [ticker, retryKey]);
 
   useEffect(() => {
     if (tab !== "Peers" || !data || peerData.length || peerLoading) return;
@@ -216,6 +226,15 @@ export default function StockDetailModal({
                 {data.name}
                 {data.sector && ` · ${data.sector}`}
                 {data.industry && ` · ${data.industry}`}
+                {lastUpdated && (
+                  <span style={{ color: "#536171" }}>
+                    {" · "}UPDATED {lastUpdated.toLocaleTimeString("en-GB", {
+                      hour: "2-digit",
+                      minute: "2-digit",
+                      timeZone: "Asia/Jakarta",
+                    })} WIB
+                  </span>
+                )}
               </div>
             )}
           </div>
@@ -268,13 +287,33 @@ export default function StockDetailModal({
           {error && (
             <div
               style={{
+                minHeight: 220,
                 padding: "36px",
                 textAlign: "center",
                 color: "#ff6678",
                 fontSize: "12px",
+                display: "grid",
+                placeContent: "center",
+                gap: 14,
               }}
             >
-              {error}
+              <span>{error}</span>
+              <button
+                type="button"
+                onClick={() => setRetryKey((value) => value + 1)}
+                style={{
+                  border: "1px solid #48a6ff",
+                  background: "#0b1825",
+                  color: "#48a6ff",
+                  padding: "9px 14px",
+                  fontSize: 9,
+                  fontWeight: 700,
+                  letterSpacing: ".08em",
+                  cursor: "pointer",
+                }}
+              >
+                ↻ RETRY FUNDAMENTALS
+              </button>
             </div>
           )}
 
@@ -331,8 +370,29 @@ export default function StockDetailModal({
                   color: "#d9a066",
                   fontSize: 9,
                   lineHeight: 1.5,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  gap: 14,
                 }}>
-                  DATA DEGRADED · {data.fundamentalsMessage}
+                  <span>DATA DEGRADED · {data.fundamentalsMessage}</span>
+                  <button
+                    type="button"
+                    onClick={() => setRetryKey((value) => value + 1)}
+                    style={{
+                      flexShrink: 0,
+                      border: "1px solid #8a5c2c",
+                      background: "#21170d",
+                      color: "#ffb66c",
+                      padding: "6px 8px",
+                      fontSize: 8,
+                      fontWeight: 700,
+                      letterSpacing: ".06em",
+                      cursor: "pointer",
+                    }}
+                  >
+                    ↻ RETRY
+                  </button>
                 </div>
               )}
 
