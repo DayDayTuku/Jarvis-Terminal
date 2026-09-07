@@ -14,7 +14,8 @@ button:focus-visible, textarea:focus-visible { outline: 1px solid var(--blue); o
 .terminal-shell[data-scheme='protanopia'] { --positive: #43b9d1; --negative: #f1bd49; }
 .terminal-shell[data-scheme='tritanopia'] { --positive: #ef6db5; --negative: #55cbd3; }
 .access-page { min-height: 100vh; display: grid; place-items: center; padding: 24px; background: linear-gradient(#151515 1px, transparent 1px), linear-gradient(90deg, #151515 1px, transparent 1px), #000; background-size: 44px 44px, 44px 44px, auto; }
-.access-card { width: min(420px, 100%); padding: 34px; border: 1px solid var(--line-strong); background: #070707f5; box-shadow: 0 28px 70px #0009; }.access-logo { display: block; width: 82px; height: 82px; object-fit: cover; margin: -10px 0 8px -12px; }.access-card h1 { margin: 0 0 11px; font: 620 24px var(--font-geist-sans); letter-spacing: .1em; }.access-card > p { margin: 0 0 28px; color: #9aa6b4; font: 400 12px/1.55 var(--font-geist-sans); }.access-card form { display: grid; }.access-card label { color: var(--muted); font-size: 8px; margin-bottom: 8px; }.access-card input { height: 43px; padding: 0 12px; border: 1px solid var(--line-strong); background: #000; color: var(--text); }.access-card form button { margin-top: 10px; height: 42px; border: 0; background: var(--blue); color: #05101b; font-weight: 750; cursor: pointer; }.access-card form button:disabled { opacity: .65; }.access-card form strong { margin-top: 10px; color: var(--negative); font: 500 11px var(--font-geist-sans); }.access-card > small { display: block; margin-top: 20px; color: var(--muted); font-size: 8px; }
+.access-card { width: min(420px, 100%); padding: 34px; border: 1px solid var(--line-strong); background: #070707f5; box-shadow: 0 28px 70px #0009; }.access-logo-shell { width: 82px; height: 82px; margin: -10px 0 8px -12px; display: grid; place-items: center; overflow: hidden; border-radius: 18px; background: #48a6ff; border: 1px solid #6db9ff; box-shadow: 0 0 0 4px #07121d, 0 8px 24px #000a; }
+.access-logo { display: block; width: 82px; height: 82px; object-fit: cover; mix-blend-mode: multiply; }.access-card h1 { margin: 0 0 11px; font: 620 24px var(--font-geist-sans); letter-spacing: .1em; }.access-card > p { margin: 0 0 28px; color: #9aa6b4; font: 400 12px/1.55 var(--font-geist-sans); }.access-card form { display: grid; }.access-card label { color: var(--muted); font-size: 8px; margin-bottom: 8px; }.access-card input { height: 43px; padding: 0 12px; border: 1px solid var(--line-strong); background: #000; color: var(--text); }.access-card form button { margin-top: 10px; height: 42px; border: 0; background: var(--blue); color: #05101b; font-weight: 750; cursor: pointer; }.access-card form button:disabled { opacity: .65; }.access-card form strong { margin-top: 10px; color: var(--negative); font: 500 11px var(--font-geist-sans); }.access-card > small { display: block; margin-top: 20px; color: var(--muted); font-size: 8px; }
 .topbar { height: 66px; display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; border-bottom: 1px solid var(--line-strong); }
 .brand-block, .panel-head > div { display: flex; align-items: center; gap: 11px; }
 .brand-block h1 { margin: 0 0 3px; font-family: var(--font-geist-sans); font-size: 14px; letter-spacing: .12em; }
@@ -186,4 +187,24 @@ body { min-height: 100%; background: #000; -webkit-text-size-adjust: 100%; overs
 }
 .watch-table-row:hover {
   background: #0e1622 !important;
+}
+
+
+/* Keep the raster brand mark legible on narrow displays, including white-backed exports. */
+@media (max-width: 720px) {
+  .side-brand {
+    background: #48a6ff;
+    border-bottom-color: #6db9ff;
+    overflow: hidden;
+  }
+  .side-brand img {
+    width: 54px;
+    height: 54px;
+    mix-blend-mode: multiply;
+    border-radius: 12px;
+  }
+  .access-logo-shell {
+    border-radius: 16px;
+    box-shadow: 0 0 0 4px #07121d, 0 10px 28px #000c;
+  }
 }

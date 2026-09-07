@@ -21,6 +21,32 @@ function fmtBig(v: number | null) {
   return v.toLocaleString();
 }
 
+function localUniverseFallback(ticker: string, message: string): Detail | null {
+  const normalized = ticker.includes(".")
+    ? ticker.toUpperCase()
+    : `${ticker.toUpperCase()}.JK`;
+  const stock = IDX_UNIVERSE.find((item) => item.ticker === normalized);
+  if (!stock) return null;
+  return {
+    ticker: normalized,
+    name: stock.name,
+    sector: stock.sector,
+    currency: "IDR",
+    unavailable: [
+      "regularMarketPrice", "regularMarketChangePercent", "marketCap", "volume",
+      "avgVolume", "dayLow", "dayHigh", "fiftyTwoWeekLow", "fiftyTwoWeekHigh",
+      "trailingPE", "forwardPE", "priceToBook", "pegRatio", "eps", "bookValue",
+      "dividendYield", "payoutRatio", "beta", "employees", "nextEarningsDate",
+      "revenue", "revenueGrowth", "grossProfit", "ebitda", "profitMargin",
+      "operatingMargin", "returnOnAssets", "returnOnEquity", "totalCash",
+      "totalDebt", "debtToEquity", "currentRatio", "quickRatio", "freeCashflow",
+      "operatingCashflow",
+    ],
+    fundamentalsMessage: message,
+    source: "idx-universe-fallback",
+  };
+}
+
 const TABS = ["Overview", "Financials", "Risk Scan", "Peers", "Scenarios", "Analyst"] as const;
 type Tab = (typeof TABS)[number];
 
@@ -63,7 +89,16 @@ export default function StockDetailModal({
       })
       .then((d: any) => {
         if (d?.error) {
-          setError(d.error);
+          const fallback = localUniverseFallback(
+            ticker,
+            "Live fundamentals are temporarily unavailable. Showing verified IDX identity while the data source recovers."
+          );
+          if (fallback) {
+            setData(fallback);
+            setLastUpdated(new Date());
+          } else {
+            setError(d.error);
+          }
         } else {
           setData(d);
           setLastUpdated(new Date());
@@ -71,7 +106,16 @@ export default function StockDetailModal({
       })
       .catch((err: any) => {
         if (err?.name !== "AbortError") {
-          setError("Failed to load stock data from Yahoo Finance");
+          const fallback = localUniverseFallback(
+            ticker,
+            "The live-data response could not be read. Showing verified IDX identity; retry fundamentals shortly."
+          );
+          if (fallback) {
+            setData(fallback);
+            setLastUpdated(new Date());
+          } else {
+            setError("Failed to load stock data");
+          }
         }
       })
       .finally(() => setLoading(false));

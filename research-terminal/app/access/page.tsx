@@ -45,11 +45,13 @@ function AccessForm() {
   return (
     <main className="access-page">
       <section className="access-card">
-        <img
-          className="access-logo"
-          src="/jarvis-logo.png"
-          alt="Jarvis"
-        />
+        <div className="access-logo-shell">
+          <img
+            className="access-logo"
+            src="/jarvis-logo.png"
+            alt="Jarvis"
+          />
+        </div>
 
         <h1>JARVIS</h1>
 
