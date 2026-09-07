@@ -108,7 +108,7 @@ export async function GET() {
       return true;
     })
     .sort((a, b) => {
-      const impactRank = { HIGH: 0, MEDIUM: 1, LOW: 2 };
+      const impactRank: Record<string, number> = { HIGH: 0, MEDIUM: 1, LOW: 2 };
       const impactDiff = impactRank[a.impact] - impactRank[b.impact];
       if (impactDiff) return impactDiff;
       return String(b.publishedAt ?? "").localeCompare(String(a.publishedAt ?? ""));
