@@ -1,30 +1,24 @@
-// components/StockSearch.tsx (v2 — sector color coding)
 "use client";
 
-import { useState, useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
 
 type IDXStock = { ticker: string; name: string; sector: string };
 
-// One color per sector — adjust hex values to match the terminal's existing palette if needed
 const SECTOR_COLORS: Record<string, string> = {
-  "Energy": "text-orange-400",
-  "Basic Materials": "text-amber-400",
-  "Industrials": "text-yellow-400",
-  "Consumer Cyclicals": "text-pink-400",
-  "Consumer Non-Cyclicals": "text-rose-400",
-  "Healthcare": "text-emerald-400",
-  "Financials": "text-blue-400",
-  "Properties & Real Estate": "text-purple-400",
-  "Technology": "text-cyan-400",
-  "Infrastructures": "text-teal-400",
-  "Transportation & Logistics": "text-lime-400",
+  Energy: "#ff9840",
+  "Basic Materials": "#d9ac54",
+  Industrials: "#d8c75f",
+  "Consumer Cyclicals": "#ef78ad",
+  "Consumer Non-Cyclicals": "#ff7f8d",
+  Healthcare: "#43d4a3",
+  Financials: "#48a6ff",
+  "Properties & Real Estate": "#b58aff",
+  Technology: "#4fd7e8",
+  Infrastructures: "#49c8bd",
+  "Transportation & Logistics": "#9fd65c",
 };
 
-const DEFAULT_COLOR = "text-neutral-400";
-
-function sectorColor(sector: string) {
-  return SECTOR_COLORS[sector] || DEFAULT_COLOR;
-}
+const DEFAULT_COLOR = "#778596";
 
 export default function StockSearch({
   onSelect,
@@ -33,67 +27,209 @@ export default function StockSearch({
   onSelect: (stock: IDXStock) => void;
   placeholder?: string;
 }) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<IDXStock[]>([]);
   const [open, setOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [activeIndex, setActiveIndex] = useState(-1);
 
   useEffect(() => {
-    if (query.trim().length < 1) {
+    const normalized = query.trim();
+    if (!normalized) {
       setResults([]);
+      setLoading(false);
+      setActiveIndex(-1);
       return;
     }
-    const timeout = setTimeout(async () => {
+
+    const controller = new AbortController();
+    const timeout = window.setTimeout(async () => {
+      setLoading(true);
       try {
-        const res = await fetch(`/api/search?q=${encodeURIComponent(query)}`);
-       const data = await res.json() as { results: IDXStock[] };
-      } catch {
-        setResults([]);
+        const response = await fetch(
+          `/api/search?q=${encodeURIComponent(normalized)}`,
+          { signal: controller.signal }
+        );
+        if (!response.ok) throw new Error("Search request failed");
+        const data = (await response.json()) as { results?: IDXStock[] };
+        setResults(Array.isArray(data.results) ? data.results : []);
+        setActiveIndex(-1);
+      } catch (error) {
+        if (!(error instanceof DOMException && error.name === "AbortError")) {
+          setResults([]);
+        }
+      } finally {
+        if (!controller.signal.aborted) setLoading(false);
       }
-    }, 200);
-    return () => clearTimeout(timeout);
+    }, 180);
+
+    return () => {
+      window.clearTimeout(timeout);
+      controller.abort();
+    };
   }, [query]);
 
+  useEffect(() => {
+    const closeOnOutsideClick = (event: MouseEvent) => {
+      if (!containerRef.current?.contains(event.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", closeOnOutsideClick);
+    return () => document.removeEventListener("mousedown", closeOnOutsideClick);
+  }, []);
+
+  const selectStock = (stock: IDXStock) => {
+    onSelect(stock);
+    setQuery("");
+    setResults([]);
+    setOpen(false);
+    setActiveIndex(-1);
+  };
+
+  const showDropdown = open && query.trim().length > 0;
+
   return (
-    <div className="relative">
-      <input
-        type="text"
-        value={query}
-        onChange={(e) => {
-          setQuery(e.target.value);
-          setOpen(true);
-        }}
-        onFocus={() => setOpen(true)}
-        placeholder={placeholder}
-        className="w-full bg-black border border-neutral-800 text-white px-3 py-2 text-sm font-mono focus:outline-none focus:border-blue-500"
-      />
-      {open && results.length > 0 && (
-        <div className="absolute z-50 mt-1 w-full bg-black border border-neutral-800 max-h-64 overflow-y-auto">
-          {results.map((stock) => (
-            <button
-              key={stock.ticker}
-              onClick={() => {
-                onSelect(stock);
-                setQuery("");
-                setResults([]);
-                setOpen(false);
-              }}
-              className="w-full text-left px-3 py-2 hover:bg-neutral-900 flex justify-between items-center text-sm"
-            >
-              <span className={`font-mono font-bold ${sectorColor(stock.sector)}`}>
-                {stock.ticker.replace(".JK", "")}
-              </span>
-              <span className="text-neutral-500 text-xs truncate ml-2 flex-1">
-                {stock.name}
-              </span>
-              <span
-                className={`text-[10px] ml-2 px-1.5 py-0.5 border border-current ${sectorColor(
-                  stock.sector
-                )}`}
-              >
-                {stock.sector}
-              </span>
-            </button>
-          ))}
+    <div ref={containerRef} className="stock-search-wrap">
+      <div
+        className={`stock-search-bar ${open ? "is-focused" : ""}`}
+        onClick={() => inputRef.current?.focus()}
+      >
+        <span className="stock-search-icon" aria-hidden="true">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+            <circle cx="11" cy="11" r="6.5" stroke="currentColor" strokeWidth="1.7" />
+            <path d="m16 16 4 4" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+          </svg>
+        </span>
+
+        <input
+          ref={inputRef}
+          type="search"
+          value={query}
+          onChange={(event) => {
+            setQuery(event.target.value);
+            setOpen(true);
+          }}
+          onFocus={() => setOpen(true)}
+          onKeyDown={(event) => {
+            if (event.key === "Escape") {
+              setOpen(false);
+              inputRef.current?.blur();
+              return;
+            }
+            if (event.key === "ArrowDown" && results.length) {
+              event.preventDefault();
+              setActiveIndex((index) => (index + 1) % results.length);
+            }
+            if (event.key === "ArrowUp" && results.length) {
+              event.preventDefault();
+              setActiveIndex((index) => (index <= 0 ? results.length - 1 : index - 1));
+            }
+            if (event.key === "Enter" && activeIndex >= 0 && results[activeIndex]) {
+              event.preventDefault();
+              selectStock(results[activeIndex]);
+            }
+          }}
+          placeholder={placeholder}
+          className="stock-search-input"
+          aria-label="Search IDX stocks"
+          aria-expanded={showDropdown}
+          aria-controls="stock-search-results"
+          aria-autocomplete="list"
+          autoComplete="off"
+        />
+
+        {query ? (
+          <button
+            type="button"
+            className="stock-search-clear"
+            aria-label="Clear search"
+            onClick={(event) => {
+              event.stopPropagation();
+              setQuery("");
+              setResults([]);
+              inputRef.current?.focus();
+            }}
+          >
+            ×
+          </button>
+        ) : (
+          <span className="stock-search-keycap" aria-hidden="true">/</span>
+        )}
+      </div>
+
+      {showDropdown && (
+        <div
+          id="stock-search-results"
+          role="listbox"
+          className="stock-search-dropdown"
+          style={{ minWidth: "min(440px, calc(100vw - 84px))" }}
+        >
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              padding: "8px 11px",
+              borderBottom: "1px solid #1f2d3d",
+              color: "#778596",
+              fontSize: "8px",
+              letterSpacing: ".1em",
+            }}
+          >
+            <span>IDX EQUITY SEARCH</span>
+            <span>{loading ? "SCANNING…" : `${results.length} MATCH${results.length === 1 ? "" : "ES"}`}</span>
+          </div>
+
+          <div className="stock-search-list" style={{ maxHeight: 272, overflowY: "auto" }}>
+            {!loading && results.length === 0 ? (
+              <div style={{ padding: "18px 11px", color: "#778596", fontSize: "10px" }}>
+                NO MATCHING IDX TICKER
+              </div>
+            ) : (
+              results.map((stock, index) => {
+                const color = SECTOR_COLORS[stock.sector] || DEFAULT_COLOR;
+                return (
+                  <button
+                    type="button"
+                    role="option"
+                    aria-selected={index === activeIndex}
+                    key={stock.ticker}
+                    onMouseEnter={() => setActiveIndex(index)}
+                    onClick={() => selectStock(stock)}
+                    style={{
+                      width: "100%",
+                      minHeight: 48,
+                      display: "grid",
+                      gridTemplateColumns: "74px minmax(0, 1fr) auto",
+                      alignItems: "center",
+                      gap: 10,
+                      padding: "8px 11px",
+                      border: 0,
+                      borderBottom: "1px solid #151e29",
+                      background: index === activeIndex ? "#0e1824" : "transparent",
+                      color: "#e8edf3",
+                      textAlign: "left",
+                      cursor: "pointer",
+                    }}
+                  >
+                    <strong style={{ color, letterSpacing: ".06em" }}>
+                      {stock.ticker.replace(".JK", "")}
+                    </strong>
+                    <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "#a3adba", fontSize: 10 }}>
+                      {stock.name}
+                    </span>
+                    <span style={{ color, border: `1px solid ${color}66`, padding: "3px 5px", fontSize: 7, whiteSpace: "nowrap" }}>
+                      {stock.sector.toUpperCase()}
+                    </span>
+                  </button>
+                );
+              })
+            )}
+          </div>
+
+          <div style={{ padding: "7px 11px", color: "#536171", fontSize: 7, letterSpacing: ".08em" }}>
+            ↑↓ NAVIGATE · ENTER OPEN · ESC CLOSE
+          </div>
         </div>
       )}
     </div>
