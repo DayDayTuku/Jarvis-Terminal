@@ -45,8 +45,7 @@ export default function StockSearch({
     const timeout = setTimeout(async () => {
       try {
         const res = await fetch(`/api/search?q=${encodeURIComponent(query)}`);
-        const data = await res.json();
-        setResults(data.results || []);
+       const data = await res.json() as { results: IDXStock[] };
       } catch {
         setResults([]);
       }
