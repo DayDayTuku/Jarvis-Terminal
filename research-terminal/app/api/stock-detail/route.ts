@@ -48,7 +48,7 @@ async function getBasicQuote(ticker: string) {
       `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?range=5d&interval=1d`,
       { headers: { "User-Agent": UA }, next: { revalidate: 300 } }
     );
-    const data = await res.json();
+    const data: any = await res.json();
     const result = data?.chart?.result?.[0];
     if (!result) return null;
 
