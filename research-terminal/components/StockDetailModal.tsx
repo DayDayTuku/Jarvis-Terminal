@@ -92,27 +92,27 @@ export default function StockDetailModal({
     setPeerLoading(true);
     setPeerError(null);
 
-    Promise.all(
-      peers.map(async (stock) => {
+    (async () => {
+      const rows: Array<{ stock: IDXStock; detail: Detail | null }> = [];
+      for (const stock of peers) {
+        if (controller.signal.aborted) return;
         try {
           const response = await fetch(
             `/api/stock-detail?ticker=${encodeURIComponent(stock.ticker)}`,
             { signal: controller.signal }
           );
-          if (!response.ok) return { stock, detail: null };
-          const detail = (await response.json()) as Detail;
-          return { stock, detail: detail?.error ? null : detail };
+          const detail = response.ok ? ((await response.json()) as Detail) : null;
+          rows.push({ stock, detail: detail?.error ? null : detail });
         } catch {
-          return { stock, detail: null };
+          if (controller.signal.aborted) return;
+          rows.push({ stock, detail: null });
         }
-      })
-    )
-      .then((rows) => {
-        if (!controller.signal.aborted) setPeerData(rows);
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setPeerLoading(false);
-      });
+      }
+      if (!controller.signal.aborted) {
+        setPeerData(rows);
+        setPeerLoading(false);
+      }
+    })();
 
     return () => controller.abort();
   }, [tab, ticker, data, peerData.length]);
@@ -323,6 +323,19 @@ export default function StockDetailModal({
                 </div>
               </div>
 
+              {data.fundamentalsMessage && (
+                <div style={{
+                  padding: "9px 18px",
+                  borderBottom: "1px solid #5b3b20",
+                  background: "#171008",
+                  color: "#d9a066",
+                  fontSize: 9,
+                  lineHeight: 1.5,
+                }}>
+                  DATA DEGRADED · {data.fundamentalsMessage}
+                </div>
+              )}
+
               {/* Tab Navigation */}
               <div
                 style={{
@@ -385,6 +398,24 @@ export default function StockDetailModal({
                     <Row label="Beta" value={fmtNum(data.beta)} na={na("beta")} />
                     <Row label="Employees" value={data.employees ? data.employees.toLocaleString() : "—"} na={na("employees")} />
                     <Row label="Next Earnings" value={data.nextEarningsDate ?? "—"} na={na("nextEarningsDate")} />
+                    <button
+                      type="button"
+                      onClick={() => setTab("Peers")}
+                      style={{
+                        gridColumn: "1 / -1",
+                        marginTop: 8,
+                        minHeight: 38,
+                        border: "1px solid #235886",
+                        background: "linear-gradient(90deg, #091522, #0b1b2b)",
+                        color: "#48a6ff",
+                        fontSize: 9,
+                        fontWeight: 700,
+                        letterSpacing: ".08em",
+                        cursor: "pointer",
+                      }}
+                    >
+                      COMPARE WITH SAME-SECTOR PEERS →
+                    </button>
                   </div>
                 )}
 
