@@ -4,6 +4,21 @@ import { createClient } from '../../../utils/supabase/server';
 const validCategories = new Set(['BUG', 'DATA', 'FEATURE', 'OTHER']);
 const validStatuses = new Set(['new', 'reviewing', 'resolved']);
 
+type FeedbackRequest = {
+  kind?: unknown;
+  message?: unknown;
+  website?: unknown;
+  section?: unknown;
+  ticker?: unknown;
+  url?: unknown;
+  contactOkay?: unknown;
+};
+
+type FeedbackUpdateRequest = {
+  id?: unknown;
+  status?: unknown;
+};
+
 function isAdmin(user: { app_metadata?: Record<string, unknown> } | null) {
   return user?.app_metadata?.role === 'admin';
 }
@@ -14,7 +29,7 @@ export async function POST(request: NextRequest) {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return NextResponse.json({ error: 'Please sign in before sending feedback.' }, { status: 401 });
 
-    const body = await request.json();
+    const body = (await request.json()) as FeedbackRequest;
     const category = typeof body.kind === 'string' ? body.kind.toUpperCase() : '';
     const message = typeof body.message === 'string' ? body.message.trim() : '';
     const honeypot = typeof body.website === 'string' ? body.website : '';
@@ -71,7 +86,7 @@ export async function PATCH(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user || !isAdmin(user)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
 
-  const body = await request.json();
+  const body = (await request.json()) as FeedbackUpdateRequest;
   const id = typeof body.id === 'string' ? body.id : '';
   const status = typeof body.status === 'string' ? body.status : '';
   if (!id || !validStatuses.has(status)) {
