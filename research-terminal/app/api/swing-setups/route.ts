@@ -120,7 +120,7 @@ export async function GET() {
       next: { revalidate: 900 },
     });
     if (!response.ok) throw new Error(`Scanner upstream returned ${response.status}`);
-    const payload = await response.json();
+    const payload: any = await response.json();
     const setups = (Array.isArray(payload?.data) ? payload.data : [])
       .map((item: { d?: unknown[] }) => Object.fromEntries(COLUMNS.map((key, index) => [key, item.d?.[index] ?? null])) as RawRow)
       .map(classify)
