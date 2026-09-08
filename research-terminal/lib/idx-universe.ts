@@ -141,6 +141,68 @@ export const IDX_UNIVERSE: IDXStock[] = [
   { ticker: "SOCI.JK", name: "Soechi Lines", sector: "Transportation & Logistics" },
   { ticker: "WEHA.JK", name: "WEHA Transportasi Indonesia", sector: "Transportation & Logistics" },
 
+  // Second-liner expansion — sector-diverse names for discovery, peers, and portfolio tools
+  { ticker: "SGER.JK", name: "Sumber Global Energy", sector: "Energy" },
+  { ticker: "KKGI.JK", name: "Resource Alam Indonesia", sector: "Energy" },
+  { ticker: "MYOH.JK", name: "Samindo Resources", sector: "Energy" },
+  { ticker: "TOBA.JK", name: "TBS Energi Utama", sector: "Energy" },
+  { ticker: "SMMT.JK", name: "Golden Eagle Energy", sector: "Energy" },
+
+  { ticker: "TINS.JK", name: "Timah", sector: "Basic Materials" },
+  { ticker: "NICL.JK", name: "PAM Mineral", sector: "Basic Materials" },
+  { ticker: "CITA.JK", name: "Cita Mineral Investindo", sector: "Basic Materials" },
+  { ticker: "IMPC.JK", name: "Impack Pratama Industri", sector: "Basic Materials" },
+  { ticker: "AVIA.JK", name: "Avia Avian", sector: "Basic Materials" },
+
+  { ticker: "VKTR.JK", name: "VKTR Teknologi Mobilitas", sector: "Industrials" },
+  { ticker: "SCCO.JK", name: "Supreme Cable Manufacturing & Commerce", sector: "Industrials" },
+  { ticker: "KOBX.JK", name: "Kobexindo Tractors", sector: "Industrials" },
+  { ticker: "GMFI.JK", name: "Garuda Maintenance Facility Aero Asia", sector: "Industrials" },
+  { ticker: "KUAS.JK", name: "Ace Oldfields", sector: "Industrials" },
+
+  { ticker: "RALS.JK", name: "Ramayana Lestari Sentosa", sector: "Consumer Cyclicals" },
+  { ticker: "WOOD.JK", name: "Integra Indocabinet", sector: "Consumer Cyclicals" },
+  { ticker: "CARS.JK", name: "Industri dan Perdagangan Bintraco Dharma", sector: "Consumer Cyclicals" },
+  { ticker: "BOGA.JK", name: "Bintang Oto Global", sector: "Consumer Cyclicals" },
+
+  { ticker: "CLEO.JK", name: "Sariguna Primatirta", sector: "Consumer Non-Cyclicals" },
+  { ticker: "ROTI.JK", name: "Nippon Indosari Corpindo", sector: "Consumer Non-Cyclicals" },
+  { ticker: "STTP.JK", name: "Siantar Top", sector: "Consumer Non-Cyclicals" },
+  { ticker: "DMND.JK", name: "Diamond Food Indonesia", sector: "Consumer Non-Cyclicals" },
+  { ticker: "MIDI.JK", name: "Midi Utama Indonesia", sector: "Consumer Non-Cyclicals" },
+  { ticker: "MLBI.JK", name: "Multi Bintang Indonesia", sector: "Consumer Non-Cyclicals" },
+
+  { ticker: "PRDA.JK", name: "Prodia Widyahusada", sector: "Healthcare" },
+  { ticker: "DVLA.JK", name: "Darya-Varia Laboratoria", sector: "Healthcare" },
+  { ticker: "MERK.JK", name: "Merck", sector: "Healthcare" },
+  { ticker: "PYFA.JK", name: "Pyridam Farma", sector: "Healthcare" },
+
+  { ticker: "BFIN.JK", name: "BFI Finance Indonesia", sector: "Financials" },
+  { ticker: "WOMF.JK", name: "Wahana Ottomitra Multiartha", sector: "Financials" },
+  { ticker: "TUGU.JK", name: "Asuransi Tugu Pratama Indonesia", sector: "Financials" },
+  { ticker: "BJBR.JK", name: "Bank Pembangunan Daerah Jawa Barat dan Banten", sector: "Financials" },
+  { ticker: "BJTM.JK", name: "Bank Pembangunan Daerah Jawa Timur", sector: "Financials" },
+
+  { ticker: "JRPT.JK", name: "Jaya Real Property", sector: "Properties & Real Estate" },
+  { ticker: "MTLA.JK", name: "Metropolitan Land", sector: "Properties & Real Estate" },
+  { ticker: "RDTX.JK", name: "Roda Vivatex", sector: "Properties & Real Estate" },
+  { ticker: "BEST.JK", name: "Bekasi Fajar Industrial Estate", sector: "Properties & Real Estate" },
+
+  { ticker: "MTDL.JK", name: "Metrodata Electronics", sector: "Technology" },
+  { ticker: "CHIP.JK", name: "Pelita Teknologi Global", sector: "Technology" },
+  { ticker: "AXIO.JK", name: "Tera Data Indonusa", sector: "Technology" },
+  { ticker: "WIRG.JK", name: "WIR Asia", sector: "Technology" },
+
+  { ticker: "CMNP.JK", name: "Citra Marga Nusaphala Persada", sector: "Infrastructures" },
+  { ticker: "RAJA.JK", name: "Rukun Raharja", sector: "Infrastructures" },
+  { ticker: "KEEN.JK", name: "Kencana Energi Lestari", sector: "Infrastructures" },
+  { ticker: "POWR.JK", name: "Cikarang Listrindo", sector: "Infrastructures" },
+
+  { ticker: "MBSS.JK", name: "Mitrabahtera Segara Sejati", sector: "Transportation & Logistics" },
+  { ticker: "HATM.JK", name: "Habco Trans Maritima", sector: "Transportation & Logistics" },
+  { ticker: "IPCM.JK", name: "Jasa Armada Indonesia", sector: "Transportation & Logistics" },
+  { ticker: "WINS.JK", name: "Wintermar Offshore Marine", sector: "Transportation & Logistics" },
+
 ];
 
 export function searchIDXStocks(query: string): IDXStock[] {
