@@ -14,7 +14,11 @@ type GdeltArticle = {
 const TOPICS: Array<{ topic: Topic; query: string }> = [
   {
     topic: "IDX",
-    query: '(Indonesia OR Jakarta) (IHSG OR IDX OR "Indonesia Stock Exchange" OR rupiah OR saham)',
+    query: 'domainis:idx.co.id',
+  },
+  {
+    topic: "IDX",
+    query: '(Indonesia OR Jakarta) (IHSG OR IDX OR BEI OR "Indonesia Stock Exchange" OR rupiah OR saham OR emiten)',
   },
   {
     topic: "MACRO",
