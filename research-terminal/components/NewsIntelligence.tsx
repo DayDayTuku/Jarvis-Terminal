@@ -84,6 +84,17 @@ export default function NewsIntelligence() {
         ))}
       </div>
 
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "11px 13px", border: "1px solid #25415a", borderRadius: 3, background: "#08131e", flexWrap: "wrap" }}>
+        <div>
+          <strong style={{ display: "block", color: "#48a6ff", fontSize: 9, letterSpacing: ".08em" }}>OFFICIAL IDX DISCLOSURES</strong>
+          <span style={{ display: "block", marginTop: 4, color: "#778596", fontSize: 8 }}>GDELT coverage is supplemented with direct official-source access.</span>
+        </div>
+        <div style={{ display: "flex", gap: 7 }}>
+          <a href="https://www.idx.co.id/id/berita/pengumuman/" target="_blank" rel="noopener noreferrer" style={{ padding: "7px 9px", border: "1px solid #356892", color: "#a8d3ff", textDecoration: "none", fontSize: 8 }}>ANNOUNCEMENTS ↗</a>
+          <a href="https://www.idx.co.id/id/berita/siaran-pers/" target="_blank" rel="noopener noreferrer" style={{ padding: "7px 9px", border: "1px solid #356892", color: "#a8d3ff", textDecoration: "none", fontSize: 8 }}>PRESS RELEASES ↗</a>
+        </div>
+      </div>
+
       <article className="panel">
         <div style={{ minHeight: 48, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "8px 12px", borderBottom: "1px solid var(--line)", flexWrap: "wrap" }}>
           <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
