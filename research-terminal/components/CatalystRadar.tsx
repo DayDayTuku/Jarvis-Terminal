@@ -60,9 +60,9 @@ export default function CatalystRadar() {
     setError("");
     fetch("/api/catalysts", { signal: controller.signal })
       .then(async (response) => {
-        const payload = await response.json();
+        const payload = await response.json() as NewsPayload;
         if (!response.ok && !payload?.articles?.length) throw new Error("Catalyst feed unavailable.");
-        return payload as NewsPayload;
+        return payload;
       })
       .then(setData)
       .catch((reason) => { if (reason?.name !== "AbortError") setError("Catalyst feed is temporarily unavailable."); })
