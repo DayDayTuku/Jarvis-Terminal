@@ -41,9 +41,9 @@ const SIGNALS: Record<string, SignalDefinition> = {
   jkse_pullback: {
     label: "JKSE 1M pullback",
     source: "^JKSE",
-    description: "Triggered when the Jakarta Composite falls at least 7% over 20 sessions.",
+    description: "Triggered when the Jakarta Composite falls at least 5% over 20 sessions.",
     warmup: 20,
-    test: (values, index) => trailingReturn(values, index, 20) <= -0.07,
+    test: (values, index) => trailingReturn(values, index, 20) <= -0.05,
   },
   jkse_trend_reclaim: {
     label: "JKSE reclaims 200D trend",
@@ -55,29 +55,36 @@ const SIGNALS: Record<string, SignalDefinition> = {
   dxy_surge: {
     label: "DXY 1M surge",
     source: "DX-Y.NYB",
-    description: "Triggered when the US Dollar Index gains at least 3% over 20 sessions.",
+    description: "Triggered when the US Dollar Index gains at least 2.5% over 20 sessions.",
     warmup: 20,
-    test: (values, index) => trailingReturn(values, index, 20) >= 0.03,
+    test: (values, index) => trailingReturn(values, index, 20) >= 0.025,
   },
   oil_rally: {
     label: "WTI 1M rally",
     source: "CL=F",
-    description: "Triggered when WTI crude gains at least 10% over 20 sessions.",
+    description: "Triggered when WTI crude gains at least 8% over 20 sessions.",
     warmup: 20,
-    test: (values, index) => trailingReturn(values, index, 20) >= 0.10,
+    test: (values, index) => trailingReturn(values, index, 20) >= 0.08,
   },
-  coal_rally: {
-    label: "Coal proxy 1M rally",
-    source: "COAL",
-    description: "Triggered when the WisdomTree Coal market proxy gains at least 10% over 20 sessions.",
+  dxy_selloff: {
+    label: "DXY 1M selloff",
+    source: "DX-Y.NYB",
+    description: "Triggered when the US Dollar Index falls at least 2.5% over 20 sessions.",
     warmup: 20,
-    test: (values, index) => trailingReturn(values, index, 20) >= 0.10,
+    test: (values, index) => trailingReturn(values, index, 20) <= -0.025,
+  },
+  oil_selloff: {
+    label: "WTI 1M selloff",
+    source: "CL=F",
+    description: "Triggered when WTI crude falls at least 8% over 20 sessions.",
+    warmup: 20,
+    test: (values, index) => trailingReturn(values, index, 20) <= -0.08,
   },
 };
 
 async function fetchChart(symbol: string): Promise<Point[]> {
   const encoded = encodeURIComponent(symbol);
-  const path = `/v8/finance/chart/${encoded}?range=10y&interval=1d&events=div%2Csplits`;
+  const path = `/v8/finance/chart/${encoded}?range=20y&interval=1d&events=div%2Csplits`;
   let lastError = "Yahoo Finance request failed";
 
   for (const host of ["https://query1.finance.yahoo.com", "https://query2.finance.yahoo.com"]) {
@@ -225,8 +232,9 @@ export async function GET(request: NextRequest) {
       worstDrawdown60: allDrawdowns.length ? Math.min(...allDrawdowns) : null,
       integrity: {
         completedSamples,
+        minimumVisible: 15,
         minimumRecommended: 30,
-        rating: completedSamples >= 30 ? "STANDARD" : completedSamples >= 12 ? "LIMITED" : "FRAGILE",
+        rating: completedSamples >= 30 ? "STANDARD" : completedSamples >= 15 ? "LIMITED" : "HIDDEN",
         note: "Signals are evaluated at the close, episodes are separated by at least 20 sessions, and forward returns use adjusted prices. Results exclude incomplete 60-session windows.",
       },
       freshness: new Date().toISOString(),
