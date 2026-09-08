@@ -209,9 +209,12 @@ export async function GET(req: NextRequest) {
           const profile = result.assetProfile;
           const rec = result.recommendationTrend?.trend?.[0];
           const earnings = result.earnings;
-          const income = result.incomeStatementHistory?.incomeStatementHistory?.[0];
-          const balance = result.balanceSheetHistory?.balanceSheetStatements?.[0];
-          const cashflow = result.cashflowStatementHistory?.cashflowStatements?.[0];
+          const incomeHistory = result.incomeStatementHistory?.incomeStatementHistory ?? [];
+          const balanceHistory = result.balanceSheetHistory?.balanceSheetStatements ?? [];
+          const cashflowHistory = result.cashflowStatementHistory?.cashflowStatements ?? [];
+          const income = incomeHistory[0];
+          const balance = balanceHistory[0];
+          const cashflow = cashflowHistory[0];
 
           const g = (obj: any, path: string) =>
             path.split(".").reduce((o, k) => (o ? o[k]?.raw ?? o[k] : null), obj) ?? null;
@@ -282,6 +285,25 @@ export async function GET(req: NextRequest) {
               operatingCashflowStmt: g(cashflow, "totalCashFromOperatingActivities"),
               capex: g(cashflow, "capitalExpenditures"),
             } : null,
+            financialHistory: incomeHistory.slice(0, 4).map((statement: any, index: number) => {
+              const statementDate = statement.endDate?.fmt ?? null;
+              const matchedBalance = balanceHistory.find((item: any) => item.endDate?.fmt === statementDate) ?? balanceHistory[index];
+              const matchedCashflow = cashflowHistory.find((item: any) => item.endDate?.fmt === statementDate) ?? cashflowHistory[index];
+              return {
+                fiscalYear: statementDate,
+                totalRevenue: g(statement, "totalRevenue"),
+                grossProfit: g(statement, "grossProfit"),
+                operatingIncome: g(statement, "operatingIncome"),
+                netIncome: g(statement, "netIncome"),
+                totalAssets: g(matchedBalance, "totalAssets"),
+                totalLiabilities: g(matchedBalance, "totalLiab"),
+                totalEquity: g(matchedBalance, "totalStockholderEquity"),
+                receivables: g(matchedBalance, "netReceivables"),
+                inventory: g(matchedBalance, "inventory"),
+                operatingCashflow: g(matchedCashflow, "totalCashFromOperatingActivities"),
+                capex: g(matchedCashflow, "capitalExpenditures"),
+              };
+            }),
             nextEarningsDate: earnings?.earningsChart?.earningsDate?.[0]?.fmt ?? null,
             dataSource: "full",
           };
