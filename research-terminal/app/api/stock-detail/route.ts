@@ -135,7 +135,29 @@ function yearlyRows(block: any): any[] {
     .sort((a: any, b: any) => String(b.date ?? "").localeCompare(String(a.date ?? "")));
 }
 
+const NUMERIC_DETAIL_FIELDS = [
+  "regularMarketPrice", "regularMarketChangePercent", "previousClose", "dayLow", "dayHigh",
+  "volume", "avgVolume", "marketCap", "sharesOutstanding", "fiftyTwoWeekLow",
+  "fiftyTwoWeekHigh", "trailingPE", "forwardPE", "priceToBook", "pegRatio",
+  "enterpriseValue", "profitMargin", "operatingMargin", "returnOnAssets", "returnOnEquity",
+  "revenue", "revenueGrowth", "grossProfit", "ebitda", "totalDebt", "totalCash",
+  "currentRatio", "quickRatio", "debtToEquity", "freeCashflow", "operatingCashflow",
+  "eps", "forwardEps", "bookValue", "dividendYield", "dividendRate", "payoutRatio",
+  "beta", "targetMeanPrice", "targetHighPrice", "targetLowPrice", "numberOfAnalystOpinions",
+  "strongBuy", "buy", "hold", "sell", "strongSell",
+] as const;
+
+function normalizeDetailNumbers(detail: Record<string, any>) {
+  for (const field of NUMERIC_DETAIL_FIELDS) {
+    if (detail[field] !== null && detail[field] !== undefined) {
+      detail[field] = finiteNumber(detail[field]);
+    }
+  }
+  return detail;
+}
+
 function deriveValuations(detail: Record<string, any>) {
+  normalizeDetailNumbers(detail);
   const derivedFields: string[] = Array.isArray(detail.derivedFields) ? detail.derivedFields : [];
   const price = finiteNumber(detail.regularMarketPrice);
   const shares = finiteNumber(detail.sharesOutstanding);
