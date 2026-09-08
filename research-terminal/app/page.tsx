@@ -242,7 +242,7 @@ export default function Home() {
       <aside className="side-nav">
         <div className="side-brand" aria-label="Jarvis"><img src="/jarvis-logo.png" alt="" /></div>
         <nav aria-label="Research sections">
-          {navigation.map((item) => <button key={item.label} aria-label={item.label} data-label={['NEWS','QUANT LAB','PORTFOLIO'].includes(item.label) ? `${item.label} · BETA` : item.label} title={['NEWS','QUANT LAB','PORTFOLIO','CATALYSTS'].includes(item.label) ? `${item.label} · BETA` : item.label} onClick={() => setActive(item.label)} className={active === item.label ? 'active' : ''}><span aria-hidden="true">{item.icon}</span></button>)}
+          {navigation.map((item) => <button key={item.label} aria-label={item.label} data-label={['NEWS','QUANT LAB','PORTFOLIO'].includes(item.label) ? `${item.label} · BETA` : item.label} title={['NEWS','QUANT LAB','PORTFOLIO'].includes(item.label) ? `${item.label} · BETA` : item.label} onClick={() => setActive(item.label)} className={active === item.label ? 'active' : ''}><span aria-hidden="true">{item.icon}</span></button>)}
         </nav>
         <div className="side-tools"><button aria-label="Notes" data-label="NOTES" title="Notes" onClick={() => setNotesOpen(true)}><span aria-hidden="true">✎</span></button><button aria-label="Settings" data-label="SETTINGS" title="Settings" onClick={() => setSettingsOpen(true)}><span aria-hidden="true">⚙</span></button></div>
         <button className="sidebar-health" aria-label={`${liveCount} of 4 data feeds live`} data-label={`${liveCount}/4 FEEDS LIVE`} title={`${liveCount}/4 feeds live`} onClick={() => setSettingsOpen(true)}><i className={liveCount >= 3 ? 'good' : liveCount ? 'partial' : ''} /></button>
