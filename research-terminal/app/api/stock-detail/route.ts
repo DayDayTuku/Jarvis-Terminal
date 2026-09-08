@@ -115,6 +115,54 @@ async function getBasicQuote(ticker: string) {
   }
 }
 
+
+async function getAnnualFinancialHistory(ticker: string) {
+  const metricFields: Record<string, string> = {
+    annualTotalRevenue: "totalRevenue",
+    annualGrossProfit: "grossProfit",
+    annualOperatingIncome: "operatingIncome",
+    annualNetIncome: "netIncome",
+    annualTotalAssets: "totalAssets",
+    annualTotalLiabilitiesNetMinorityInterest: "totalLiabilities",
+    annualStockholdersEquity: "totalEquity",
+    annualAccountsReceivable: "receivables",
+    annualInventory: "inventory",
+    annualOperatingCashFlow: "operatingCashflow",
+    annualCapitalExpenditure: "capex",
+  };
+  const types = Object.keys(metricFields).join(",");
+  const period2 = Math.floor(Date.now() / 1000);
+  const period1 = period2 - 7 * 365 * 24 * 60 * 60;
+  const url = `https://query2.finance.yahoo.com/ws/fundamentals-timeseries/v1/finance/timeseries/${encodeURIComponent(ticker)}?symbol=${encodeURIComponent(ticker)}&type=${types}&period1=${period1}&period2=${period2}`;
+  try {
+    const response = await fetch(url, {
+      headers: { "User-Agent": UA, Accept: "application/json" },
+      signal: AbortSignal.timeout(10000),
+      next: { revalidate: 3600 },
+    });
+    if (!response.ok) return [];
+    const payload: any = await response.json();
+    const series: any[] = payload?.timeseries?.result ?? [];
+    const byYear = new Map<string, Record<string, any>>();
+    for (const metric of series) {
+      const type = metric?.meta?.type?.[0];
+      const field = metricFields[type];
+      if (!field) continue;
+      for (const observation of metric?.[type] ?? []) {
+        const fiscalYear = observation?.asOfDate;
+        const raw = observation?.reportedValue?.raw;
+        if (!fiscalYear || typeof raw !== "number" || !Number.isFinite(raw)) continue;
+        const row = byYear.get(fiscalYear) ?? { fiscalYear };
+        row[field] = raw;
+        byYear.set(fiscalYear, row);
+      }
+    }
+    return [...byYear.values()].sort((a, b) => String(b.fiscalYear).localeCompare(String(a.fiscalYear))).slice(0, 4);
+  } catch {
+    return [];
+  }
+}
+
 function fallbackDetail(ticker: string) {
   const universeStock = IDX_UNIVERSE.find((stock) => stock.ticker === ticker);
   const coolingDown = Date.now() < yahooCooldownUntil;
@@ -166,7 +214,7 @@ export async function GET(req: NextRequest) {
   }
   // The chart endpoint is materially more reliable for newer IDX listings.
   // Capture a basic quote before quoteSummary can open the fundamentals circuit.
-  const basic = await getBasicQuote(ticker);
+  const [basic, annualHistory] = await Promise.all([getBasicQuote(ticker), getAnnualFinancialHistory(ticker)]);
 
   if (Date.now() < yahooCooldownUntil && !basic) {
     return cacheDetail(ticker, fallbackDetail(ticker), FALLBACK_TTL_MS);
@@ -285,7 +333,7 @@ export async function GET(req: NextRequest) {
               operatingCashflowStmt: g(cashflow, "totalCashFromOperatingActivities"),
               capex: g(cashflow, "capitalExpenditures"),
             } : null,
-            financialHistory: incomeHistory.slice(0, 4).map((statement: any, index: number) => {
+            financialHistory: annualHistory.length ? annualHistory : incomeHistory.slice(0, 4).map((statement: any, index: number) => {
               const statementDate = statement.endDate?.fmt ?? null;
               const matchedBalance = balanceHistory.find((item: any) => item.endDate?.fmt === statementDate) ?? balanceHistory[index];
               const matchedCashflow = cashflowHistory.find((item: any) => item.endDate?.fmt === statementDate) ?? cashflowHistory[index];
@@ -332,7 +380,7 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  if (basic) {
+  if (basic || annualHistory.length) {
     return cacheDetail(ticker, {
       ticker,
       name: IDX_UNIVERSE.find((stock) => stock.ticker === ticker)?.name ?? ticker,
@@ -340,7 +388,8 @@ export async function GET(req: NextRequest) {
       dataSource: "basic",
       fundamentalsUnavailable: true,
       fundamentalsMessage: "Full fundamentals are unavailable for this issuer. Showing verified market-price data instead.",
-      ...basic,
+      ...(basic ?? {}),
+      financialHistory: annualHistory,
       unavailable: [
         "marketCap", "trailingPE", "forwardPE", "priceToBook", "eps", "dividendYield",
         "revenue", "profitMargin", "returnOnEquity", "recommendationKey",

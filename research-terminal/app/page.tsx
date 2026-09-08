@@ -6,10 +6,9 @@ import StockDetailModal from '../components/StockDetailModal';
 import NewsIntelligence from '../components/NewsIntelligence';
 import QuantLab from '../components/QuantLab';
 import PortfolioStressLab from '../components/PortfolioStressLab';
-import CatalystRadar from '../components/CatalystRadar';
 
 type Scheme = 'default' | 'deuteranopia' | 'protanopia' | 'tritanopia';
-type Section = 'OVERVIEW' | 'MACRO' | 'MARKETS' | 'NEWS' | 'QUANT LAB' | 'PORTFOLIO' | 'CATALYSTS' | 'GPR INDEX' | 'CORRELATIONS' | 'SEASONALITY' | 'MARKET PARTICIPANT';
+type Section = 'OVERVIEW' | 'MACRO' | 'MARKETS' | 'NEWS' | 'QUANT LAB' | 'PORTFOLIO' | 'GPR INDEX' | 'CORRELATIONS' | 'SEASONALITY' | 'MARKET PARTICIPANT';
 type RegimePoint = { date: string; growth: number; inflation: number };
 type FredData = { status: string; freshness: string; indicators: Array<{ name: string; actual: number; mean: number; z: number; unit: string }>; yields: Array<{ maturity: string; value: number }>; regime: RegimePoint[] };
 type Constituent = { ticker: string; price: number; daily: number | null; weekly: number | null };
@@ -54,7 +53,7 @@ const gprBars = [25,29,27,34,31,38,41,37,46,43,52,49,55,61,57,64];
 const navigation: Array<{ label: Section; icon: string }> = [
   { label: 'OVERVIEW', icon: '⌂' }, { label: 'MACRO', icon: '∿' }, { label: 'MARKETS', icon: '◇' },
   { label: 'NEWS', icon: '◫' }, { label: 'QUANT LAB', icon: 'Σ' },
-  { label: 'PORTFOLIO', icon: '◈' }, { label: 'CATALYSTS', icon: '⚡' },
+  { label: 'PORTFOLIO', icon: '◈' },
   { label: 'GPR INDEX', icon: '◎' }, { label: 'CORRELATIONS', icon: '⠿' }, { label: 'SEASONALITY', icon: '▦' }, { label: 'MARKET PARTICIPANT', icon: '≋' },
 ];
 
@@ -243,7 +242,7 @@ export default function Home() {
       <aside className="side-nav">
         <div className="side-brand" aria-label="Jarvis"><img src="/jarvis-logo.png" alt="" /></div>
         <nav aria-label="Research sections">
-          {navigation.map((item) => <button key={item.label} aria-label={item.label} data-label={['NEWS','QUANT LAB','PORTFOLIO','CATALYSTS'].includes(item.label) ? `${item.label} · BETA` : item.label} title={['NEWS','QUANT LAB','PORTFOLIO','CATALYSTS'].includes(item.label) ? `${item.label} · BETA` : item.label} onClick={() => setActive(item.label)} className={active === item.label ? 'active' : ''}><span aria-hidden="true">{item.icon}</span></button>)}
+          {navigation.map((item) => <button key={item.label} aria-label={item.label} data-label={['NEWS','QUANT LAB','PORTFOLIO'].includes(item.label) ? `${item.label} · BETA` : item.label} title={['NEWS','QUANT LAB','PORTFOLIO'].includes(item.label) ? `${item.label} · BETA` : item.label} onClick={() => setActive(item.label)} className={active === item.label ? 'active' : ''}><span aria-hidden="true">{item.icon}</span></button>)}
         </nav>
         <div className="side-tools"><button aria-label="Notes" data-label="NOTES" title="Notes" onClick={() => setNotesOpen(true)}><span aria-hidden="true">✎</span></button><button aria-label="Settings" data-label="SETTINGS" title="Settings" onClick={() => setSettingsOpen(true)}><span aria-hidden="true">⚙</span></button></div>
         <button className="sidebar-health" aria-label={`${liveCount} of 4 data feeds live`} data-label={`${liveCount}/4 FEEDS LIVE`} title={`${liveCount}/4 feeds live`} onClick={() => setSettingsOpen(true)}><i className={liveCount >= 3 ? 'good' : liveCount ? 'partial' : ''} /></button>
@@ -293,8 +292,6 @@ export default function Home() {
         {active === 'QUANT LAB' && <QuantLab markets={markets} fred={fred} />}
 
         {active === 'PORTFOLIO' && <PortfolioStressLab />}
-
-        {active === 'CATALYSTS' && <CatalystRadar />}
 
         {active === 'GPR INDEX' && <section className="dashboard-grid risk-grid">
           <article className="panel gpr-panel"><PanelHead index="01" title="GEOPOLITICAL RISK COMPOSITE"><span className="model-badge">FORMULA V1</span></PanelHead><div className="gpr-summary"><div className="gpr-score"><span>CURRENT COMPOSITE</span><strong>{gdelt ? '—' : '64.2'}</strong><b>{gdelt ? 'PARTIAL INPUT' : 'ILLUSTRATIVE'}</b></div><div className="gpr-formula"><span>COMPOSITE FORMULA</span><strong><b>60%</b> GOLDSTEIN EVENT SEVERITY <i>+</i> <b>40%</b> KEYWORD FREQUENCY</strong><small>Composite is withheld until both inputs are live and normalized on the same baseline.</small></div><div className="gpr-moves"><span>EVENT SEVERITY <b>{gdelt ? 'PENDING' : '68.8'}</b></span><span>KEYWORD FREQ. <b>{gdelt ? `${gdelt.frequencyScore.toFixed(1)} LIVE` : '57.3'}</b></span><span>FRESHNESS <b>{gdelt ? formatDate(gdelt.freshness) : 'DEMO'}</b></span></div></div><div className="gpr-chart"><div className="threshold-line"><span>ELEVATED 60</span></div>{gprBars.map((height,index) => <i key={index} className={index > 12 ? 'alert' : ''} style={{height:`${height}%`}} />)}</div><div className="regional-risk"><span>REGIONAL KEYWORD FREQUENCY</span>{(gdelt?.regions ?? [{region:'SEA',score:56.1},{region:'CHINA',score:71.4},{region:'US',score:62}]).map((region) => <div key={region.region}><b>{region.region}</b><i><em style={{width:`${region.score}%`}} /></i><strong>{region.score.toFixed(1)}</strong></div>)}</div><PanelFoot left={gdelt ? 'GDELT KEYWORD FREQUENCY LIVE · GOLDSTEIN EVENT FEED PENDING' : 'VALUES REMAIN ILLUSTRATIVE'} right="60 / 40 WEIGHTING" /></article>
@@ -463,4 +460,4 @@ function compact(value:number){const absolute=Math.abs(value);const sign=value<0
 function pearson(xs:number[],ys:number[]){if(xs.length<10||xs.length!==ys.length)return null;const mx=xs.reduce((a,b)=>a+b,0)/xs.length;const my=ys.reduce((a,b)=>a+b,0)/ys.length;let top=0,xx=0,yy=0;for(let i=0;i<xs.length;i++){const dx=xs[i]-mx,dy=ys[i]-my;top+=dx*dy;xx+=dx*dx;yy+=dy*dy}const bottom=Math.sqrt(xx*yy);return bottom?top/bottom:null}
 function correlationMatrix(gdelt:GdeltData|null,markets:MarketData|null){if(!gdelt||!markets||markets.assets.length<5)return null;const assetNames=['COAL','NICKEL','OIL','DXY','JKSE'];const rows=gdelt.regions.map((region)=>{const riskByDate=new Map(region.timeline.map((point,index)=>{const prior=region.timeline[index-1]?.value;return [point.date,prior&&prior!==0?(point.value/prior-1)*100:null]}));const values=assetNames.map((name)=>{const asset=markets.assets.find((item)=>item.name===name);if(!asset)return null;const xs:number[]=[],ys:number[]=[];asset.timestamps.forEach((stamp,index)=>{const close=asset.closes[index],prior=asset.closes[index-1];const date=new Date(stamp*1000).toISOString().slice(0,10);const risk=riskByDate.get(date);if(close!==null&&prior!==null&&prior&&risk!==null&&risk!==undefined){xs.push(risk);ys.push((close/prior-1)*100)}});return pearson(xs.slice(-60),ys.slice(-60))});if(values.some((value)=>value===null))return null;return [`${region.region} GPR`,...values.map((value)=>value!.toFixed(2))]});return rows.some((row)=>row===null)?null:rows as string[][]}
 function titleCase(value:string){return value.toLowerCase().replace(/\b\w/g,(x)=>x.toUpperCase())}
-function sectionDescription(section:Section){return ({OVERVIEW:'The readings that need attention before the next research session.',MACRO:'Live FRED signals for growth, inflation and the Treasury curve.',MARKETS:'Daily and weekly market performance with the IDX watchlist.',NEWS:'Beta · IDX, macro, and commodity coverage ranked by decision impact.','QUANT LAB':'Beta · Transparent cross-asset and IDX breadth signals.',PORTFOLIO:'Beta · Personal factor exposure, concentration, and scenario stress testing.',CATALYSTS:'Beta · Watchlist-matched corporate catalysts with privacy-safe local issuer matching.', 'GPR INDEX':'Auditable geopolitical risk inputs, weights and regional scores.',CORRELATIONS:'Rolling relationships between regional risk and selected market series.',SEASONALITY:'Historical monthly return tendencies across selected IDX names and the benchmark.','MARKET PARTICIPANT':'Weekly CFTC positioning by trader category for major futures markets.'})[section]}
+function sectionDescription(section:Section){return ({OVERVIEW:'The readings that need attention before the next research session.',MACRO:'Live FRED signals for growth, inflation and the Treasury curve.',MARKETS:'Daily and weekly market performance with the IDX watchlist.',NEWS:'Beta · IDX, macro, and commodity coverage ranked by decision impact.','QUANT LAB':'Beta · Transparent cross-asset and IDX breadth signals.',PORTFOLIO:'Beta · Personal factor exposure, concentration, and scenario stress testing.', 'GPR INDEX':'Auditable geopolitical risk inputs, weights and regional scores.',CORRELATIONS:'Rolling relationships between regional risk and selected market series.',SEASONALITY:'Historical monthly return tendencies across selected IDX names and the benchmark.','MARKET PARTICIPANT':'Weekly CFTC positioning by trader category for major futures markets.'})[section]}

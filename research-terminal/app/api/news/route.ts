@@ -21,10 +21,6 @@ const TOPICS: Array<{ topic: Topic; query: string }> = [
     query: '(Indonesia OR Jakarta) (IHSG OR IDX OR BEI OR "Indonesia Stock Exchange" OR rupiah OR saham OR emiten)',
   },
   {
-    topic: "IDX",
-    query: '(Indonesia OR IDX OR Jakarta) (earnings OR "net profit" OR laba OR dividend OR dividen OR "rights issue" OR buyback OR acquisition OR merger OR RUPS OR "stock split")',
-  },
-  {
     topic: "MACRO",
     query: '("Bank Indonesia" OR rupiah OR Indonesia inflation OR "Federal Reserve" OR interest rates)',
   },
