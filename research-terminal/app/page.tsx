@@ -56,7 +56,7 @@ const navigation: Array<{ label: Section; icon: string }> = [
   { label: 'OVERVIEW', icon: '⌂' }, { label: 'MACRO', icon: '∿' }, { label: 'MARKETS', icon: '◇' },
   { label: 'NEWS', icon: '◫' }, { label: 'QUANT LAB', icon: 'Σ' },
   { label: 'PORTFOLIO', icon: '◈' },
-  { label: 'GPR INDEX', icon: '◎' }, { label: 'CORRELATIONS', icon: '⠿' }, { label: 'SEASONALITY', icon: '▦' }, { label: 'MARKET PARTICIPANT', icon: '≋' },
+  { label: 'CORRELATIONS', icon: '⠿' }, { label: 'SEASONALITY', icon: '▦' }, { label: 'MARKET PARTICIPANT', icon: '≋' },
 ];
 
 function sectionSlug(section: Section) {
@@ -329,7 +329,7 @@ export default function Home() {
 
         {active === 'NEWS' && <NewsIntelligence />}
 
-        {active === 'QUANT LAB' && <QuantLab markets={markets} fred={fred} />}
+        {active === 'QUANT LAB' && <QuantLab markets={markets} fred={fred} onSelectStock={openStockDetail} />}
 
         {active === 'PORTFOLIO' && <PortfolioStressLab />}
 

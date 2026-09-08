@@ -1,297 +1,203 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 type MarketData = {
   freshness: string;
-  heatmap: Array<{ label: string; daily: number | null; weekly: number | null; confidence?: string; validCount?: number; memberCount?: number }>;
-  assets: Array<{ name: string; closes: Array<number | null> }>;
+  heatmap: Array<{ label: string; daily: number | null; weekly: number | null }>;
 };
-type FredData = {
-  freshness: string;
-  regime: Array<{ date: string; growth: number; inflation: number }>;
+type FredData = { freshness: string; regime: Array<{ date: string; growth: number; inflation: number }> };
+type SetupKey = "all" | "breakout" | "pullback" | "momentum" | "reversal";
+type Setup = {
+  ticker: string; name: string; setup: Exclude<SetupKey, "all">; score: number;
+  close: number; change: number | null; volume: number; relativeVolume: number | null;
+  rsi: number | null; marketCap: number | null; distance20: number | null;
+  reasons: string[]; caution: string; entryLow: number; entryHigh: number;
+  invalidation: number; target: number; riskReward: number;
+};
+type ScannerData = {
+  status: string; asOf: string; universe: number; scanned: number;
+  methodology: string; setups: Setup[]; message?: string;
 };
 
-function clean(values: Array<number | null>) {
-  return values.filter((value): value is number => typeof value === "number" && Number.isFinite(value));
+const setupMeta = {
+  breakout: { label: "BREAKOUT", subtitle: "Breaking resistance with stronger volume", color: "#48a6ff" },
+  pullback: { label: "HEALTHY PULLBACK", subtitle: "Uptrend returning to support", color: "#43d4a3" },
+  momentum: { label: "MOMENTUM", subtitle: "Trend remains strong, but not extreme", color: "#b889ff" },
+  reversal: { label: "REVERSAL", subtitle: "Early rebound near a recent low", color: "#ffb45e" },
+} as const;
+
+function price(value: number | null) {
+  return value === null ? "—" : new Intl.NumberFormat("id-ID", { maximumFractionDigits: 0 }).format(value);
 }
-function change(values: number[], sessions: number) {
-  const last = values.at(-1);
-  const prior = values.at(-(sessions + 1));
-  return last && prior ? ((last / prior) - 1) * 100 : null;
+function compact(value: number | null) {
+  if (value === null) return "—";
+  if (value >= 1e12) return `${(value / 1e12).toFixed(1)}T`;
+  if (value >= 1e9) return `${(value / 1e9).toFixed(1)}B`;
+  if (value >= 1e6) return `${(value / 1e6).toFixed(1)}M`;
+  return price(value);
 }
-function volatility(values: number[]) {
-  const returns = values.slice(-21).flatMap((value, index, list) =>
-    index && list[index - 1] ? [(value / list[index - 1]) - 1] : []
-  );
-  if (returns.length < 5) return null;
-  const mean = returns.reduce((sum, value) => sum + value, 0) / returns.length;
-  const variance = returns.reduce((sum, value) => sum + (value - mean) ** 2, 0) / returns.length;
-  return Math.sqrt(variance) * Math.sqrt(252) * 100;
-}
-function fmt(value: number | null, suffix = "%") {
-  return value === null ? "—" : `${value >= 0 ? "+" : ""}${value.toFixed(2)}${suffix}`;
+function pct(value: number | null, digits = 1) {
+  return value === null ? "—" : `${value >= 0 ? "+" : ""}${value.toFixed(digits)}%`;
 }
 
-export default function QuantLab({ markets, fred }: { markets: MarketData | null; fred: FredData | null }) {
-  const sectors = (markets?.heatmap ?? [])
-    .filter((item) => typeof item.weekly === "number")
-    .sort((a, b) => (b.weekly ?? 0) - (a.weekly ?? 0));
-  const daily = sectors.flatMap((item) => typeof item.daily === "number" ? [item.daily] : []);
-  const breadth = daily.length ? daily.filter((value) => value > 0).length / daily.length * 100 : null;
-  const dispersion = daily.length
-    ? Math.sqrt(daily.reduce((sum, value) => sum + (value - daily.reduce((a, b) => a + b, 0) / daily.length) ** 2, 0) / daily.length)
-    : null;
-  const assets = (markets?.assets ?? []).map((asset) => {
-    const values = clean(asset.closes);
-    return { name: asset.name, oneWeek: change(values, 5), oneMonth: change(values, 20), vol: volatility(values) };
-  });
-  const dxy = assets.find((asset) => asset.name === "DXY");
-  const jkse = assets.find((asset) => asset.name === "JKSE");
-  const regime = fred?.regime.at(-1) ?? null;
+export default function QuantLab({
+  markets,
+  fred,
+  onSelectStock,
+}: {
+  markets: MarketData | null;
+  fred: FredData | null;
+  onSelectStock?: (ticker: string) => void;
+}) {
+  const [data, setData] = useState<ScannerData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [filter, setFilter] = useState<SetupKey>("all");
+  const [selected, setSelected] = useState<Setup | null>(null);
+  const [showMethod, setShowMethod] = useState(false);
 
-  const components = [
-    breadth === null ? null : (breadth - 50) / 10,
-    jkse?.oneMonth === null || jkse?.oneMonth === undefined ? null : jkse.oneMonth / 3,
-    dxy?.oneMonth === null || dxy?.oneMonth === undefined ? null : -dxy.oneMonth / 3,
-    regime ? regime.growth : null,
-    regime ? -regime.inflation : null,
-  ].filter((value): value is number => typeof value === "number" && Number.isFinite(value));
-  const rawScore = components.length ? components.reduce((sum, value) => sum + value, 0) / components.length : null;
-  const riskScore = rawScore === null ? null : Math.max(0, Math.min(100, 50 + rawScore * 15));
-  const signal = riskScore === null ? "INSUFFICIENT DATA" : riskScore >= 65 ? "RISK-ON" : riskScore <= 35 ? "RISK-OFF" : "NEUTRAL";
-  const signalColor = riskScore === null ? "#778596" : riskScore >= 65 ? "#43d4a3" : riskScore <= 35 ? "#ff6678" : "#ffb45e";
+  const load = () => {
+    setLoading(true);
+    fetch("/api/swing-setups")
+      .then((response) => response.ok ? response.json() : response.json().then((body: any) => Promise.reject(new Error(body?.message ?? "Scanner unavailable"))))
+      .then((payload) => setData(payload as ScannerData))
+      .catch((error) => setData({ status: "unavailable", asOf: new Date().toISOString(), universe: 0, scanned: 0, methodology: "", setups: [], message: error instanceof Error ? error.message : "Scanner unavailable" }))
+      .finally(() => setLoading(false));
+  };
+  useEffect(load, []);
+
+  const visible = useMemo(() => {
+    const rows = data?.setups ?? [];
+    return (filter === "all" ? rows : rows.filter((row) => row.setup === filter)).slice(0, 30);
+  }, [data, filter]);
+  useEffect(() => {
+    if (!selected || !visible.some((item) => item.ticker === selected.ticker)) setSelected(visible[0] ?? null);
+  }, [filter, data]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const counts = (data?.setups ?? []).reduce<Record<string, number>>((acc, row) => {
+    acc[row.setup] = (acc[row.setup] ?? 0) + 1;
+    return acc;
+  }, {});
+  const breadth = (markets?.heatmap ?? []).filter((item) => typeof item.daily === "number");
+  const positive = breadth.filter((item) => (item.daily ?? 0) > 0).length;
+  const marketTone = !breadth.length ? "Market context unavailable" : positive / breadth.length >= .65 ? "Broad market support is constructive" : positive / breadth.length <= .35 ? "Market breadth is weak—reduce position size" : "Market breadth is mixed—stay selective";
+  const regime = fred?.regime.at(-1);
+  const macroTone = !regime ? "Macro filter unavailable" : regime.inflation > .75 ? "Inflation pressure is elevated" : regime.growth < -.75 ? "Growth backdrop is soft" : "Macro backdrop is not at an extreme";
 
   return (
     <section style={{ display: "grid", gap: 12 }}>
-      <div className="quant-summary" style={{ display: "grid", gridTemplateColumns: "1.15fr repeat(3,minmax(0,1fr))", border: "1px solid var(--line-strong)", background: "#070a0f" }}>
-        <div style={{ padding: 14, borderRight: "1px solid var(--line)" }}>
-          <span style={{ color: "#657284", fontSize: 8 }}>COMPOSITE RISK APPETITE</span>
-          <strong style={{ display: "block", marginTop: 6, color: signalColor, fontSize: 15 }}>{signal}</strong>
-          <small style={{ color: "#778596" }}>{riskScore === null ? "—" : `${riskScore.toFixed(0)}/100`} · {components.length}/5 inputs</small>
+      <article className="panel" style={{ overflow: "hidden" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", gap: 16, padding: "18px 18px 16px", borderBottom: "1px solid var(--line)", flexWrap: "wrap" }}>
+          <div style={{ maxWidth: 680 }}>
+            <span style={{ color: "#48a6ff", fontSize: 8, letterSpacing: ".12em" }}>SETUP FINDER · BETA</span>
+            <h2 style={{ margin: "7px 0 5px", fontSize: 21 }}>What may be setting up for the next 3–20 sessions?</h2>
+            <p style={{ margin: 0, color: "#8793a3", font: "400 11px/1.55 var(--font-geist-sans)" }}>End-of-day shortlist for semi-swing research. Pick a setup, review the trading plan, then validate the chart before acting.</p>
+          </div>
+          <button onClick={load} disabled={loading} style={{ alignSelf: "center", minHeight: 34, padding: "0 14px", border: "1px solid #263547", background: "#0a111a", color: "#c8d2de", fontSize: 8, cursor: "pointer" }}>{loading ? "SCANNING…" : "↻ REFRESH SCAN"}</button>
         </div>
-        {[
-          ["IDX BREADTH", breadth === null ? "—" : `${breadth.toFixed(0)}%`],
-          ["DISPERSION", dispersion === null ? "—" : `${dispersion.toFixed(2)}%`],
-          ["JKSE 1M", fmt(jkse?.oneMonth ?? null)],
-        ].map(([label, value]) => (
-          <div key={label} style={{ padding: 14, borderRight: "1px solid var(--line)" }}>
-            <span style={{ color: "#657284", fontSize: 8 }}>{label}</span>
-            <strong style={{ display: "block", marginTop: 6, color: "#e8edf3", fontSize: 17 }}>{value}</strong>
-          </div>
-        ))}
-      </div>
 
-      <div className="quant-grid" style={{ display: "grid", gridTemplateColumns: "minmax(0,1.2fr) minmax(0,.8fr)", gap: 12 }}>
-        <article className="panel">
-          <div style={{ padding: "12px 14px", borderBottom: "1px solid var(--line)" }}>
-            <strong style={{ color: "#48a6ff", fontSize: 9, letterSpacing: ".08em" }}>IDX SECTOR MOMENTUM RANK</strong>
-          </div>
-          <div style={{ display: "grid" }}>
-            {sectors.length ? sectors.map((sector, index) => {
-              const width = Math.min(100, Math.max(4, 50 + (sector.weekly ?? 0) * 7));
-              return (
-                <div key={sector.label} style={{ display: "grid", gridTemplateColumns: "26px minmax(120px,1fr) 74px", gap: 9, alignItems: "center", padding: "10px 12px", borderBottom: "1px solid #151d27" }}>
-                  <span style={{ color: "#536171", fontSize: 9 }}>{String(index + 1).padStart(2, "0")}</span>
-                  <div style={{ minWidth: 0 }}>
-                    <strong style={{ display: "block", color: "#dce3eb", fontSize: 9, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{sector.label}</strong>
-                    <div style={{ height: 3, marginTop: 6, background: "#111923" }}><i style={{ display: "block", width: `${width}%`, height: "100%", background: (sector.weekly ?? 0) >= 0 ? "#43d4a3" : "#ff6678" }} /></div>
-                  </div>
-                  <strong style={{ textAlign: "right", color: (sector.weekly ?? 0) >= 0 ? "#43d4a3" : "#ff6678", fontSize: 10 }}>{fmt(sector.weekly)}</strong>
-                </div>
-              );
-            }) : <div style={{ minHeight: 260, display: "grid", placeContent: "center", color: "#778596", fontSize: 10 }}>SECTOR DATA UNAVAILABLE</div>}
-          </div>
-        </article>
+        <div className="quant-summary" style={{ display: "grid", gridTemplateColumns: "repeat(3,minmax(0,1fr))", borderBottom: "1px solid var(--line)" }}>
+          <div style={{ padding: 13 }}><span style={{ color: "#657284", fontSize: 7 }}>MARKET CHECK</span><strong style={{ display: "block", marginTop: 5, fontSize: 10 }}>{marketTone}</strong></div>
+          <div style={{ padding: 13, borderLeft: "1px solid var(--line)" }}><span style={{ color: "#657284", fontSize: 7 }}>MACRO GUARDRAIL</span><strong style={{ display: "block", marginTop: 5, fontSize: 10 }}>{macroTone}</strong></div>
+          <div style={{ padding: 13, borderLeft: "1px solid var(--line)" }}><span style={{ color: "#657284", fontSize: 7 }}>DATA COVERAGE</span><strong style={{ display: "block", marginTop: 5, fontSize: 10 }}>{data ? `${data.scanned}/${data.universe} stocks · closing data` : "Checking universe…"}</strong></div>
+        </div>
 
-        <article className="panel">
-          <div style={{ padding: "12px 14px", borderBottom: "1px solid var(--line)" }}>
-            <strong style={{ color: "#48a6ff", fontSize: 9, letterSpacing: ".08em" }}>CROSS-ASSET FACTORS</strong>
-          </div>
-          {assets.length ? assets.map((asset) => (
-            <div key={asset.name} style={{ display: "grid", gridTemplateColumns: "1fr repeat(3,62px)", gap: 6, padding: "11px 12px", borderBottom: "1px solid #151d27", alignItems: "center" }}>
-              <strong style={{ color: "#dce3eb", fontSize: 9 }}>{asset.name}</strong>
-              <span style={{ color: (asset.oneWeek ?? 0) >= 0 ? "#43d4a3" : "#ff6678", textAlign: "right", fontSize: 8 }}>{fmt(asset.oneWeek)}</span>
-              <span style={{ color: (asset.oneMonth ?? 0) >= 0 ? "#43d4a3" : "#ff6678", textAlign: "right", fontSize: 8 }}>{fmt(asset.oneMonth)}</span>
-              <span style={{ color: "#a3adba", textAlign: "right", fontSize: 8 }}>{asset.vol === null ? "—" : `${asset.vol.toFixed(1)}%`}</span>
+        <div style={{ display: "flex", gap: 7, padding: 12, overflowX: "auto", borderBottom: "1px solid var(--line)" }}>
+          {(["all", "breakout", "pullback", "momentum", "reversal"] as SetupKey[]).map((key) => {
+            const active = filter === key;
+            const count = key === "all" ? data?.setups.length ?? 0 : counts[key] ?? 0;
+            return <button key={key} onClick={() => setFilter(key)} style={{ flex: "0 0 auto", minHeight: 34, padding: "0 12px", border: `1px solid ${active ? "#48a6ff" : "#202b38"}`, background: active ? "#0a1b2d" : "#090d13", color: active ? "#eef6ff" : "#8390a0", fontSize: 8, cursor: "pointer" }}>{key === "all" ? "BEST SETUPS" : setupMeta[key].label} · {count}</button>;
+          })}
+        </div>
+
+        {loading && <div style={{ minHeight: 330, display: "grid", placeContent: "center", color: "#778596", fontSize: 9 }}>SCANNING CLOSING PRICE, TREND, MOMENTUM, AND VOLUME…</div>}
+        {!loading && !visible.length && <div style={{ minHeight: 330, display: "grid", placeContent: "center", justifyItems: "center", gap: 9, padding: 30, textAlign: "center" }}><strong style={{ fontSize: 12 }}>No qualified setups right now</strong><span style={{ color: "#778596", font: "400 10px var(--font-geist-sans)" }}>{data?.message ?? "That is a valid result—do not force a trade."}</span></div>}
+        {!loading && visible.length > 0 && (
+          <div className="quant-grid" style={{ display: "grid", gridTemplateColumns: "minmax(330px,.9fr) minmax(360px,1.1fr)" }}>
+            <div style={{ maxHeight: 610, overflowY: "auto", borderRight: "1px solid var(--line)" }}>
+              {visible.map((item) => {
+                const meta = setupMeta[item.setup];
+                const active = selected?.ticker === item.ticker;
+                return (
+                  <button key={item.ticker} onClick={() => setSelected(item)} style={{ width: "100%", display: "grid", gridTemplateColumns: "50px minmax(0,1fr) 70px", gap: 10, alignItems: "center", padding: "13px 14px", border: 0, borderBottom: "1px solid #151d27", borderLeft: `2px solid ${active ? meta.color : "transparent"}`, background: active ? "#0c131d" : "transparent", color: "inherit", textAlign: "left", cursor: "pointer" }}>
+                    <strong style={{ color: meta.color, fontSize: 15 }}>{item.score}</strong>
+                    <span style={{ minWidth: 0 }}><b style={{ display: "block", fontSize: 11 }}>{item.ticker}</b><small style={{ display: "block", marginTop: 3, color: "#778596", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{meta.label} · {meta.subtitle}</small></span>
+                    <span style={{ textAlign: "right" }}><b style={{ display: "block", fontSize: 10 }}>{price(item.close)}</b><small style={{ color: (item.change ?? 0) >= 0 ? "#43d4a3" : "#ff6678" }}>{pct(item.change)}</small></span>
+                  </button>
+                );
+              })}
             </div>
-          )) : <div style={{ minHeight: 260, display: "grid", placeContent: "center", color: "#778596", fontSize: 10 }}>ASSET DATA UNAVAILABLE</div>}
-          {assets.length > 0 && <div style={{ display: "grid", gridTemplateColumns: "1fr repeat(3,62px)", padding: "8px 12px", color: "#536171", fontSize: 7 }}><span>FACTOR</span><span style={{textAlign:"right"}}>1W</span><span style={{textAlign:"right"}}>1M</span><span style={{textAlign:"right"}}>ANN.VOL</span></div>}
-        </article>
-      </div>
 
-      <SignalReplay />
+            {selected && <div style={{ padding: 18 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start" }}>
+                <div><span style={{ color: setupMeta[selected.setup].color, fontSize: 8 }}>{setupMeta[selected.setup].label} · SCORE {selected.score}/100</span><h3 style={{ margin: "7px 0 3px", fontSize: 20 }}>{selected.ticker}</h3><small style={{ color: "#778596" }}>{selected.name}</small></div>
+                <button onClick={() => onSelectStock?.(`${selected.ticker}.JK`)} style={{ minHeight: 32, padding: "0 11px", border: "1px solid #263547", background: "#0a111a", color: "#dce6f0", fontSize: 8, cursor: "pointer" }}>OPEN STOCK DETAIL →</button>
+              </div>
 
-      <div style={{ padding: "10px 12px", border: "1px solid #1b2a3a", background: "#071019", color: "#657284", fontSize: 8, lineHeight: 1.6 }}>
-        MODEL: equal-weighted IDX breadth, JKSE 1M momentum, inverse DXY 1M momentum, growth z-score, and inverse inflation z-score. Score is descriptive—not a forecast or trading recommendation. {markets ? `Markets updated ${markets.freshness}.` : "Market feed unavailable."} {fred ? `Macro updated ${fred.freshness}.` : "Macro feed unavailable."}
-      </div>
+              <div style={{ marginTop: 18, padding: 14, border: "1px solid #203248", background: "#08121d" }}>
+                <span style={{ color: "#6f7f91", fontSize: 7 }}>POSSIBLE PLAN · NOT AN ORDER</span>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 10, marginTop: 11 }}>
+                  {[["ENTRY AREA", `${price(selected.entryLow)}–${price(selected.entryHigh)}`], ["INVALID BELOW", price(selected.invalidation)], ["FIRST TARGET", price(selected.target)], ["RISK / REWARD", `1 : ${selected.riskReward.toFixed(1)}`]].map(([label, value]) => <div key={label}><span style={{ color: "#657284", fontSize: 7 }}>{label}</span><strong style={{ display: "block", marginTop: 5, fontSize: 11 }}>{value}</strong></div>)}
+                </div>
+              </div>
+
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 12 }}>
+                <div style={{ padding: 13, border: "1px solid var(--line)" }}><span style={{ color: "#657284", fontSize: 7 }}>WHY IT APPEARED</span>{selected.reasons.map((reason) => <p key={reason} style={{ margin: "8px 0 0", color: "#c2ccd7", font: "400 10px/1.45 var(--font-geist-sans)" }}>✓ {reason}</p>)}</div>
+                <div style={{ padding: 13, border: "1px solid #3a2920", background: "#130e0a" }}><span style={{ color: "#ffb45e", fontSize: 7 }}>WHAT INVALIDATES THE IDEA</span><p style={{ margin: "8px 0 0", color: "#c7b6a1", font: "400 10px/1.5 var(--font-geist-sans)" }}>{selected.caution}</p></div>
+              </div>
+
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 1, marginTop: 12, background: "var(--line)" }}>
+                {[["CLOSE", price(selected.close)], ["RSI", selected.rsi?.toFixed(0) ?? "—"], ["REL. VOLUME", selected.relativeVolume === null ? "—" : `${selected.relativeVolume.toFixed(1)}×`], ["MARKET CAP", compact(selected.marketCap)]].map(([label, value]) => <div key={label} style={{ padding: 11, background: "#090d13" }}><span style={{ color: "#657284", fontSize: 7 }}>{label}</span><strong style={{ display: "block", marginTop: 5, fontSize: 10 }}>{value}</strong></div>)}
+              </div>
+            </div>}
+          </div>
+        )}
+      </article>
+
+      <article className="panel">
+        <button onClick={() => setShowMethod((value) => !value)} style={{ width: "100%", display: "flex", justifyContent: "space-between", padding: "13px 15px", border: 0, background: "transparent", color: "#9ba8b7", fontSize: 8, cursor: "pointer" }}><span>HOW THE SCORE WORKS</span><span>{showMethod ? "HIDE ↑" : "SEE CALCULATION ↓"}</span></button>
+        {showMethod && <div style={{ padding: "0 15px 15px", color: "#778596", font: "400 10px/1.6 var(--font-geist-sans)" }}>The shortlist uses closing-price structure, 20/50/200-day trends, RSI, relative volume, and recent highs/lows. Illiquid shares are filtered out. The plan levels are mechanical research guides, not predictions. Always verify corporate actions, news, liquidity, and the live chart before entering.</div>}
+      </article>
+
+      <SimpleReplay />
     </section>
   );
 }
 
-
-type ReplayStats = {
-  observations: number;
-  mean: number | null;
-  median: number | null;
-  winRate: number | null;
-  p25: number | null;
-  p75: number | null;
-};
 type ReplayData = {
-  status: string;
-  signal: { key: string; label: string; description: string; source: string };
-  target: { key: string; label: string; symbol: string };
-  currentActive: boolean;
-  latestSignalDate: string | null;
-  history: { from: string; through: string; years: number };
-  results: Array<{ horizon: number; signal: ReplayStats; baseline: ReplayStats; edgeMedian: number | null }>;
-  events: Array<{ date: string; return5: number | null; return20: number | null; return60: number | null; maxDrawdown60: number | null }>;
-  worstDrawdown60: number | null;
-  integrity: { completedSamples: number; minimumVisible: number; minimumRecommended: number; rating: string; note: string };
-  freshness: string;
+  status: string; currentActive: boolean; latestSignalDate: string | null;
+  results: Array<{ horizon: number; signal: { observations: number; median: number | null; winRate: number | null }; baseline: { median: number | null }; edgeMedian: number | null }>;
+  integrity: { completedSamples: number; minimumVisible: number; rating: string; note: string };
 };
+const replaySignals = [["jkse_pullback", "Market pullback"], ["jkse_trend_reclaim", "Market reclaims long-term trend"], ["dxy_surge", "US dollar surge"], ["oil_rally", "Oil rally"]] as const;
+const replayTargets = [["JKSE", "Jakarta Composite"], ["ADRO", "ADRO"], ["PTBA", "PTBA"], ["ANTM", "ANTM"], ["BBCA", "BBCA"]] as const;
+function returnPct(value: number | null) { return value === null ? "—" : `${value >= 0 ? "+" : ""}${(value * 100).toFixed(1)}%`; }
 
-const replaySignals = [
-  ["jkse_pullback", "JKSE 1M PULLBACK"],
-  ["jkse_trend_reclaim", "JKSE RECLAIMS 200D"],
-  ["dxy_surge", "DXY 1M SURGE"],
-  ["dxy_selloff", "DXY 1M SELLOFF"],
-  ["oil_rally", "WTI 1M RALLY"],
-  ["oil_selloff", "WTI 1M SELLOFF"],
-] as const;
-const replayTargets = [
-  ["JKSE", "JAKARTA COMPOSITE"],
-  ["ADRO", "ADRO"],
-  ["PTBA", "PTBA"],
-  ["ANTM", "ANTM"],
-  ["BBCA", "BBCA"],
-] as const;
-
-function pct(value: number | null, digits = 1) {
-  return value === null ? "—" : `${value >= 0 ? "+" : ""}${(value * 100).toFixed(digits)}%`;
-}
-
-function SignalReplay() {
+function SimpleReplay() {
   const [signal, setSignal] = useState("jkse_pullback");
   const [target, setTarget] = useState("JKSE");
   const [data, setData] = useState<ReplayData | null>(null);
   const [loading, setLoading] = useState(true);
-  const [failed, setFailed] = useState(false);
-
   useEffect(() => {
     const controller = new AbortController();
     setLoading(true);
-    setFailed(false);
-    fetch(`/api/signal-replay?signal=${encodeURIComponent(signal)}&target=${encodeURIComponent(target)}`, { signal: controller.signal })
-      .then((response) => response.ok ? response.json() : Promise.reject(new Error("Historical feed unavailable")))
-      .then((payload) => setData(payload as ReplayData))
-      .catch((error) => {
-        if (error instanceof Error && error.name === "AbortError") return;
-        setData(null);
-        setFailed(true);
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setLoading(false);
-      });
+    fetch(`/api/signal-replay?signal=${signal}&target=${target}`, { signal: controller.signal })
+      .then((response) => response.ok ? response.json() : Promise.reject())
+      .then((value) => setData(value as ReplayData)).catch(() => setData(null)).finally(() => setLoading(false));
     return () => controller.abort();
   }, [signal, target]);
-
-  const horizon20 = data?.results.find((result) => result.horizon === 20);
-  const edge = horizon20?.edgeMedian ?? null;
-  const verdict = edge === null
-    ? "INSUFFICIENT EVIDENCE"
-    : data!.integrity.completedSamples < data!.integrity.minimumVisible
-      ? "FRAGILE SAMPLE"
-      : edge > 0.015
-        ? "POSITIVE HISTORICAL EDGE"
-        : edge < -0.015
-          ? "NEGATIVE HISTORICAL EDGE"
-          : "NO MEANINGFUL EDGE";
-  const verdictTone = edge !== null && edge > 0.015 ? "positive" : edge !== null && edge < -0.015 ? "negative" : "";
-
-  return (
-    <article className="panel replay-panel">
-      <div className="replay-head">
-        <div>
-          <span>SIGNAL REPLAY · BETA · 6 LIVE CONDITIONS</span>
-          <h3>What happened after conditions like this?</h3>
-          <p>Conditional forward returns—not a buy/sell strategy.</p>
-        </div>
-        <div className="replay-controls">
-          <label>
-            HISTORICAL CONDITION
-            <select value={signal} onChange={(event) => setSignal(event.target.value)}>
-              {replaySignals.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-            </select>
-          </label>
-          <label>
-            TEST ON
-            <select value={target} onChange={(event) => setTarget(event.target.value)}>
-              {replayTargets.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-            </select>
-          </label>
-        </div>
-      </div>
-
-      {loading && <div className="replay-state">REPLAYING UP TO 20 YEARS OF ADJUSTED PRICE HISTORY…</div>}
-      {failed && <div className="replay-state error">HISTORICAL FEED UNAVAILABLE · TRY ANOTHER SIGNAL OR RELOAD</div>}
-      {!loading && data?.integrity.rating === "HIDDEN" && <div className="replay-state">SCENARIO HIDDEN · FEWER THAN {data.integrity.minimumVisible} COMPLETE EPISODES</div>}
-      {!loading && data && data.integrity.rating !== "HIDDEN" && (
-        <>
-          <div className="replay-verdict">
-            <div>
-              <span>20D READ</span>
-              <strong className={verdictTone}>{verdict}</strong>
-              <small>Median edge versus the target&apos;s unconditional return: {pct(edge)}</small>
-            </div>
-            <div>
-              <span>CONDITION NOW</span>
-              <strong className={data.currentActive ? "active-signal" : ""}>{data.currentActive ? "ACTIVE" : "INACTIVE"}</strong>
-              <small>Last completed trigger {data.latestSignalDate ?? "—"}</small>
-            </div>
-            <div>
-              <span>SAMPLE INTEGRITY</span>
-              <strong>{data.integrity.rating}</strong>
-              <small>{data.integrity.completedSamples} episodes · recommended ≥{data.integrity.minimumRecommended}</small>
-            </div>
-            <div>
-              <span>WORST 60D PATH</span>
-              <strong className="negative">{pct(data.worstDrawdown60)}</strong>
-              <small>Worst drawdown after any trigger</small>
-            </div>
-          </div>
-
-          <div className="replay-body">
-            <div className="replay-results">
-              <div className="replay-row replay-table-head">
-                <span>HORIZON</span><span>MEDIAN</span><span>BASELINE</span><span>EDGE</span><span>WIN RATE</span><span>RANGE P25–P75</span><span>N</span>
-              </div>
-              {data.results.map((result) => (
-                <div className="replay-row" key={result.horizon}>
-                  <strong>{result.horizon}D</strong>
-                  <span className={(result.signal.median ?? 0) >= 0 ? "positive" : "negative"}>{pct(result.signal.median)}</span>
-                  <span>{pct(result.baseline.median)}</span>
-                  <span className={(result.edgeMedian ?? 0) >= 0 ? "positive" : "negative"}>{pct(result.edgeMedian)}</span>
-                  <span>{result.signal.winRate === null ? "—" : `${(result.signal.winRate * 100).toFixed(0)}%`}</span>
-                  <span>{pct(result.signal.p25)} → {pct(result.signal.p75)}</span>
-                  <span>{result.signal.observations}</span>
-                </div>
-              ))}
-            </div>
-            <div className="replay-events">
-              <div className="replay-events-head"><span>RECENT TRIGGERS</span><span>20D / 60D</span></div>
-              {data.events.length ? data.events.slice(0, 6).map((event) => (
-                <div key={event.date}><strong>{event.date}</strong><span className={(event.return20 ?? 0) >= 0 ? "positive" : "negative"}>{pct(event.return20)}</span><span className={(event.return60 ?? 0) >= 0 ? "positive" : "negative"}>{pct(event.return60)}</span></div>
-              )) : <p>NO COMPLETED EPISODES IN AVAILABLE HISTORY</p>}
-            </div>
-          </div>
-
-          <div className="replay-method">
-            <strong>{data.signal.label}:</strong> {data.signal.description} Tested on {data.target.label} across {data.history.years.toFixed(1)} years ({data.history.from}–{data.history.through}). {data.integrity.note} Baseline uses every eligible trading date; no transaction costs are modeled.
-          </div>
-        </>
-      )}
-    </article>
-  );
+  const result = data?.results.find((row) => row.horizon === 20);
+  return <article className="panel" style={{ overflow: "hidden" }}>
+    <div style={{ padding: 15, borderBottom: "1px solid var(--line)" }}><span style={{ color: "#48a6ff", fontSize: 8 }}>HISTORICAL CHECK · BETA</span><h3 style={{ margin: "7px 0 4px", fontSize: 15 }}>What happened after similar market conditions?</h3><p style={{ margin: 0, color: "#778596", font: "400 10px var(--font-geist-sans)" }}>Use history to challenge an idea—not to guarantee the next return.</p></div>
+    <div style={{ display: "flex", gap: 10, padding: 12, flexWrap: "wrap", borderBottom: "1px solid var(--line)" }}>
+      <label style={{ display: "grid", gap: 5, color: "#657284", fontSize: 7 }}>WHEN THIS HAPPENED<select value={signal} onChange={(e) => setSignal(e.target.value)}>{replaySignals.map(([v,l]) => <option key={v} value={v}>{l}</option>)}</select></label>
+      <label style={{ display: "grid", gap: 5, color: "#657284", fontSize: 7 }}>CHECK THE NEXT RETURN OF<select value={target} onChange={(e) => setTarget(e.target.value)}>{replayTargets.map(([v,l]) => <option key={v} value={v}>{l}</option>)}</select></label>
+    </div>
+    <div style={{ minHeight: 118, padding: 16 }}>
+      {loading ? <span style={{ color: "#778596", fontSize: 9 }}>CHECKING HISTORY…</span> : result && data && data.integrity.rating !== "HIDDEN" ? <div>
+        <strong style={{ display: "block", font: "600 16px/1.4 var(--font-geist-sans)" }}>Across {result.signal.observations} similar episodes, {Math.round((result.signal.winRate ?? 0) * 100)}% produced a positive 20-session return.</strong>
+        <p style={{ color: "#8793a3", font: "400 11px/1.55 var(--font-geist-sans)" }}>Median return was {returnPct(result.signal.median)}, versus a normal baseline of {returnPct(result.baseline.median)}. Historical edge: {returnPct(result.edgeMedian)}. Sample quality: {data.integrity.rating.toLowerCase()}.</p>
+      </div> : <span style={{ color: "#778596", fontSize: 9 }}>Not enough reliable historical episodes for this combination.</span>}
+    </div>
+  </article>;
 }
