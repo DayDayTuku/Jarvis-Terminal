@@ -411,7 +411,33 @@ function Watchlist({watchlist,live,onSelectStock}:{watchlist:Array<{ticker:strin
     </article>
   );
 }
-function Calendar({data}:{data:CalendarData|null}){const rows=data?.events.map((event)=>{const date=new Date(event.date);return {time:Number.isNaN(date.getTime())?'—':date.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit',timeZone:'Asia/Jakarta'}),country:countryCode(event.country),event:event.event,forecast:event.forecast,prior:event.prior,status:event.importance>=3?'HIGH':'MED'}})??releases;return <article className="panel calendar-panel"><PanelHead index="02" title="ECONOMIC CALENDAR"><span className="demo-badge">{data?'LIVE':'DEMO'}</span></PanelHead><div className="date-rule"><strong>NEXT 7 DAYS</strong><span>{rows.length} RELEASES</span></div>{rows.slice(0,6).map((r,index)=><div className="release-row" key={`${r.event}-${index}`}><time>{r.time}</time><span className="country-tag">{r.country}</span><div><strong>{r.event}</strong><small>FCST {r.forecast} · PRIOR {r.prior}</small></div><span className={`importance ${r.status.toLowerCase()}`}>{r.status}</span></div>)}<PanelFoot left={data?'TRADINGECONOMICS LIVE':'TRADINGECONOMICS KEY NOT CONFIGURED'} right="WIB" /></article>}
+function Calendar({data}:{data:CalendarData|null}){
+  const rows=data?.events.map((event)=>{
+    const date=new Date(event.date);
+    const valid=!Number.isNaN(date.getTime());
+    return {
+      date:valid?date.toLocaleDateString('en-GB',{weekday:'short',day:'2-digit',month:'short',timeZone:'Asia/Jakarta'}).toUpperCase():'DATE TBD',
+      time:valid?date.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit',timeZone:'Asia/Jakarta'}):'—',
+      country:countryCode(event.country),
+      event:event.event,
+      forecast:event.forecast,
+      prior:event.prior,
+      status:event.importance>=3?'HIGH':'MED'
+    }
+  })??releases.map((event,index)=>({...event,date:index===0?'NEXT RELEASE':'UPCOMING'}));
+  const indonesiaCount=rows.filter((row)=>row.country==='ID').length;
+  return <article className="panel calendar-panel">
+    <PanelHead index="02" title="ECONOMIC CALENDAR"><span className="demo-badge">{data?'LIVE':'DEMO'}</span></PanelHead>
+    <div className="date-rule"><strong>NEXT 7 DAYS · WIB</strong><span>{indonesiaCount} INDONESIA · {rows.length} TOTAL</span></div>
+    {rows.slice(0,10).map((r,index)=><div className="release-row" key={`${r.date}-${r.event}-${index}`}>
+      <time><b>{r.date}</b><span>{r.time} WIB</span></time>
+      <span className="country-tag">{r.country}</span>
+      <div><strong>{r.event}</strong><small>FCST {r.forecast} · PRIOR {r.prior}</small></div>
+      <span className={`importance ${r.status.toLowerCase()}`}>{r.status}</span>
+    </div>)}
+    <PanelFoot left={data?'TRADINGECONOMICS · ID PRIORITIZED':'TRADINGECONOMICS KEY NOT CONFIGURED'} right="DATES + TIMES IN WIB" />
+  </article>
+}
 function YieldCurve({values,live}:{values:number[];live:boolean}){const spread=(values[4]-values[2])*100;return <article className="panel curve-panel"><PanelHead index="03" title="US TREASURY CURVE"><span className="curve-status"><i />{spread<0?'INVERTED':'NORMAL'} {signed(spread)} BP</span></PanelHead><div className="curve-chart"><div className="curve-bars">{values.map((point,index)=><div className="curve-column" key={index}><span>{point.toFixed(2)}%</span><i style={{height:`${Math.max(18,34+(point-3)*58)}px`}} /><b>{['3M','1Y','2Y','5Y','10Y','20Y','30Y'][index]}</b></div>)}</div><div className="curve-baseline" /></div><div className="curve-callouts"><div><span>2Y</span><strong>{values[2].toFixed(2)}%</strong></div><div><span>10Y</span><strong>{values[4].toFixed(2)}%</strong></div><div><span>30Y</span><strong>{values[6].toFixed(2)}%</strong></div></div><PanelFoot left="TREASURY CONSTANT MATURITY RATES" right={live?'FRED LIVE':'ILLUSTRATIVE DATA'} /></article>}
 function MetricCard({label,value,condition,implication,source,tone}:{label:string;value:string;condition:string;implication:string;source:string;tone?:string}){return <div className="metric-card"><span>{label}</span><div className="metric-reading"><strong className={tone}>{value}</strong><b>{condition}</b></div><p>{implication}</p><small>{source}</small></div>}
 function PanelHead({index: _index,title,children}:{index:string;title:string;children?:React.ReactNode}){return <header className="panel-head"><div><h2>{title}</h2></div>{children}</header>}
