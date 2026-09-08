@@ -1,5 +1,7 @@
 "use client";
 
+import { useEffect, useState } from "react";
+
 type MarketData = {
   freshness: string;
   heatmap: Array<{ label: string; daily: number | null; weekly: number | null; confidence?: string; validCount?: number; memberCount?: number }>;
@@ -118,9 +120,176 @@ export default function QuantLab({ markets, fred }: { markets: MarketData | null
         </article>
       </div>
 
+      <SignalReplay />
+
       <div style={{ padding: "10px 12px", border: "1px solid #1b2a3a", background: "#071019", color: "#657284", fontSize: 8, lineHeight: 1.6 }}>
         MODEL: equal-weighted IDX breadth, JKSE 1M momentum, inverse DXY 1M momentum, growth z-score, and inverse inflation z-score. Score is descriptive—not a forecast or trading recommendation. {markets ? `Markets updated ${markets.freshness}.` : "Market feed unavailable."} {fred ? `Macro updated ${fred.freshness}.` : "Macro feed unavailable."}
       </div>
     </section>
+  );
+}
+
+
+type ReplayStats = {
+  observations: number;
+  mean: number | null;
+  median: number | null;
+  winRate: number | null;
+  p25: number | null;
+  p75: number | null;
+};
+type ReplayData = {
+  status: string;
+  signal: { key: string; label: string; description: string; source: string };
+  target: { key: string; label: string; symbol: string };
+  currentActive: boolean;
+  latestSignalDate: string | null;
+  history: { from: string; through: string; years: number };
+  results: Array<{ horizon: number; signal: ReplayStats; baseline: ReplayStats; edgeMedian: number | null }>;
+  events: Array<{ date: string; return5: number | null; return20: number | null; return60: number | null; maxDrawdown60: number | null }>;
+  worstDrawdown60: number | null;
+  integrity: { completedSamples: number; minimumRecommended: number; rating: string; note: string };
+  freshness: string;
+};
+
+const replaySignals = [
+  ["jkse_pullback", "JKSE 1M PULLBACK"],
+  ["jkse_trend_reclaim", "JKSE RECLAIMS 200D"],
+  ["dxy_surge", "DXY 1M SURGE"],
+  ["oil_rally", "WTI 1M RALLY"],
+  ["coal_rally", "COAL PROXY RALLY"],
+] as const;
+const replayTargets = [
+  ["JKSE", "JAKARTA COMPOSITE"],
+  ["ADRO", "ADRO"],
+  ["PTBA", "PTBA"],
+  ["ANTM", "ANTM"],
+  ["BBCA", "BBCA"],
+] as const;
+
+function pct(value: number | null, digits = 1) {
+  return value === null ? "—" : `${value >= 0 ? "+" : ""}${(value * 100).toFixed(digits)}%`;
+}
+
+function SignalReplay() {
+  const [signal, setSignal] = useState("jkse_pullback");
+  const [target, setTarget] = useState("JKSE");
+  const [data, setData] = useState<ReplayData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    setLoading(true);
+    setFailed(false);
+    fetch(`/api/signal-replay?signal=${encodeURIComponent(signal)}&target=${encodeURIComponent(target)}`, { signal: controller.signal })
+      .then((response) => response.ok ? response.json() : Promise.reject(new Error("Historical feed unavailable")))
+      .then((payload) => setData(payload as ReplayData))
+      .catch((error) => {
+        if (error instanceof Error && error.name === "AbortError") return;
+        setData(null);
+        setFailed(true);
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setLoading(false);
+      });
+    return () => controller.abort();
+  }, [signal, target]);
+
+  const horizon20 = data?.results.find((result) => result.horizon === 20);
+  const edge = horizon20?.edgeMedian ?? null;
+  const verdict = edge === null
+    ? "INSUFFICIENT EVIDENCE"
+    : data!.integrity.completedSamples < 12
+      ? "FRAGILE SAMPLE"
+      : edge > 0.015
+        ? "POSITIVE HISTORICAL EDGE"
+        : edge < -0.015
+          ? "NEGATIVE HISTORICAL EDGE"
+          : "NO MEANINGFUL EDGE";
+  const verdictTone = edge !== null && edge > 0.015 ? "positive" : edge !== null && edge < -0.015 ? "negative" : "";
+
+  return (
+    <article className="panel replay-panel">
+      <div className="replay-head">
+        <div>
+          <span>SIGNAL REPLAY · BETA</span>
+          <h3>What happened after conditions like this?</h3>
+          <p>Conditional forward returns—not a buy/sell strategy.</p>
+        </div>
+        <div className="replay-controls">
+          <label>
+            HISTORICAL CONDITION
+            <select value={signal} onChange={(event) => setSignal(event.target.value)}>
+              {replaySignals.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+            </select>
+          </label>
+          <label>
+            TEST ON
+            <select value={target} onChange={(event) => setTarget(event.target.value)}>
+              {replayTargets.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+            </select>
+          </label>
+        </div>
+      </div>
+
+      {loading && <div className="replay-state">REPLAYING 10 YEARS OF ADJUSTED PRICE HISTORY…</div>}
+      {failed && <div className="replay-state error">HISTORICAL FEED UNAVAILABLE · TRY ANOTHER SIGNAL OR RELOAD</div>}
+      {!loading && data && (
+        <>
+          <div className="replay-verdict">
+            <div>
+              <span>20D READ</span>
+              <strong className={verdictTone}>{verdict}</strong>
+              <small>Median edge versus the target&apos;s unconditional return: {pct(edge)}</small>
+            </div>
+            <div>
+              <span>CONDITION NOW</span>
+              <strong className={data.currentActive ? "active-signal" : ""}>{data.currentActive ? "ACTIVE" : "INACTIVE"}</strong>
+              <small>Last completed trigger {data.latestSignalDate ?? "—"}</small>
+            </div>
+            <div>
+              <span>SAMPLE INTEGRITY</span>
+              <strong>{data.integrity.rating}</strong>
+              <small>{data.integrity.completedSamples} episodes · recommended ≥{data.integrity.minimumRecommended}</small>
+            </div>
+            <div>
+              <span>WORST 60D PATH</span>
+              <strong className="negative">{pct(data.worstDrawdown60)}</strong>
+              <small>Worst drawdown after any trigger</small>
+            </div>
+          </div>
+
+          <div className="replay-body">
+            <div className="replay-results">
+              <div className="replay-row replay-table-head">
+                <span>HORIZON</span><span>MEDIAN</span><span>BASELINE</span><span>EDGE</span><span>WIN RATE</span><span>RANGE P25–P75</span><span>N</span>
+              </div>
+              {data.results.map((result) => (
+                <div className="replay-row" key={result.horizon}>
+                  <strong>{result.horizon}D</strong>
+                  <span className={(result.signal.median ?? 0) >= 0 ? "positive" : "negative"}>{pct(result.signal.median)}</span>
+                  <span>{pct(result.baseline.median)}</span>
+                  <span className={(result.edgeMedian ?? 0) >= 0 ? "positive" : "negative"}>{pct(result.edgeMedian)}</span>
+                  <span>{result.signal.winRate === null ? "—" : `${(result.signal.winRate * 100).toFixed(0)}%`}</span>
+                  <span>{pct(result.signal.p25)} → {pct(result.signal.p75)}</span>
+                  <span>{result.signal.observations}</span>
+                </div>
+              ))}
+            </div>
+            <div className="replay-events">
+              <div className="replay-events-head"><span>RECENT TRIGGERS</span><span>20D / 60D</span></div>
+              {data.events.length ? data.events.slice(0, 6).map((event) => (
+                <div key={event.date}><strong>{event.date}</strong><span className={(event.return20 ?? 0) >= 0 ? "positive" : "negative"}>{pct(event.return20)}</span><span className={(event.return60 ?? 0) >= 0 ? "positive" : "negative"}>{pct(event.return60)}</span></div>
+              )) : <p>NO COMPLETED EPISODES IN AVAILABLE HISTORY</p>}
+            </div>
+          </div>
+
+          <div className="replay-method">
+            <strong>{data.signal.label}:</strong> {data.signal.description} Tested on {data.target.label}, {data.history.from}–{data.history.through}. {data.integrity.note} Baseline uses every eligible trading date; no transaction costs are modeled.
+          </div>
+        </>
+      )}
+    </article>
   );
 }
