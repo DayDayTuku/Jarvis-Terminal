@@ -5,7 +5,8 @@ import { IDX_UNIVERSE } from "@/lib/idx-universe";
 
 type Article = {
   id: string;
-  topic: "IDX" | "MACRO" | "COMMODITIES";
+  topic?: "IDX" | "MACRO" | "COMMODITIES";
+  catalyst?: string;
   title: string;
   url: string;
   source: string;
@@ -57,7 +58,7 @@ export default function CatalystRadar() {
     const controller = new AbortController();
     setLoading(true);
     setError("");
-    fetch("/api/news", { signal: controller.signal })
+    fetch("/api/catalysts", { signal: controller.signal })
       .then(async (response) => {
         const payload = await response.json();
         if (!response.ok && !payload?.articles?.length) throw new Error("Catalyst feed unavailable.");
@@ -75,14 +76,14 @@ export default function CatalystRadar() {
   }), [tickers]);
 
   const catalysts = useMemo(() => {
-    const idxArticles = data?.articles.filter((article) => article.topic === "IDX" && catalystType(article.title) !== "OTHER") ?? [];
+    const idxArticles = data?.articles.filter((article) => catalystType(article.title) !== "OTHER") ?? [];
     return idxArticles.map((article) => {
       const lower = article.title.toLowerCase();
       const matches = tracked.filter((stock) => {
         const tokens = stock.name.toLowerCase().split(/\s+/).filter((token) => token.length >= 5);
         return new RegExp(`\\b${stock.shortTicker.toLowerCase()}\\b`).test(lower) || tokens.some((token) => lower.includes(token));
       }).map((stock) => stock.shortTicker);
-      return { ...article, catalyst: catalystType(article.title), matches };
+      return { ...article, catalyst: article.catalyst ?? catalystType(article.title), matches };
     }).sort((a, b) => Number(Boolean(b.matches.length)) - Number(Boolean(a.matches.length)) || String(b.publishedAt ?? "").localeCompare(String(a.publishedAt ?? ""))).slice(0, 30);
   }, [data, tracked]);
 
