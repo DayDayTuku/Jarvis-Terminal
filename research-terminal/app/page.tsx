@@ -57,8 +57,18 @@ const navigation: Array<{ label: Section; icon: string }> = [
   { label: 'GPR INDEX', icon: '◎' }, { label: 'CORRELATIONS', icon: '⠿' }, { label: 'SEASONALITY', icon: '▦' }, { label: 'MARKET PARTICIPANT', icon: '≋' },
 ];
 
+function sectionSlug(section: Section) {
+  return section.toLowerCase().replace(/\s+/g, "-");
+}
+function sectionFromHash(): Section {
+  if (typeof window === "undefined") return "OVERVIEW";
+  const slug = window.location.hash.replace(/^#/, "").toLowerCase();
+  return navigation.find((item) => sectionSlug(item.label) === slug)?.label ?? "OVERVIEW";
+}
+
 export default function Home() {
   const [active, setActive] = useState<Section>('OVERVIEW');
+  const [now, setNow] = useState<Date | null>(null);
   const [range, setRange] = useState<'6M' | '1Y' | '3Y'>('1Y');
   const [heatPeriod, setHeatPeriod] = useState<'1D' | '1W'>('1D');
   const [selectedSector, setSelectedSector] = useState('ENERGY');
@@ -82,6 +92,34 @@ export default function Home() {
   }, []);
 
   useEffect(() => { setSeasonality(null); fetch(`/api/seasonality?ticker=${seasonTicker}`).then((response)=>response.ok?response.json():Promise.reject()).then((data)=>setSeasonality(data as SeasonalityData)).catch(()=>setSeasonality(null)); }, [seasonTicker]);
+
+
+  useEffect(() => {
+    const updateClock = () => setNow(new Date());
+    const syncSection = () => setActive(sectionFromHash());
+    updateClock();
+    syncSection();
+    const clock = window.setInterval(updateClock, 30000);
+    window.addEventListener("popstate", syncSection);
+    window.addEventListener("hashchange", syncSection);
+    return () => {
+      window.clearInterval(clock);
+      window.removeEventListener("popstate", syncSection);
+      window.removeEventListener("hashchange", syncSection);
+    };
+  }, []);
+
+  const changeSection = (section: Section) => {
+    const nextHash = `#${sectionSlug(section)}`;
+    if (window.location.hash !== nextHash) {
+      window.history.pushState({ ...window.history.state, jarvisSection: section }, "", nextHash);
+    }
+    setActive(section);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+  const wibDay = now?.toLocaleDateString("en-US", { weekday: "short", timeZone: "Asia/Jakarta" }).toUpperCase() ?? "—";
+  const wibDate = now?.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Jakarta" }).toUpperCase() ?? "LOADING";
+  const wibTime = now?.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "Asia/Jakarta" }) ?? "—";
 
   const [notification, setNotification] = useState<string | null>(null);
   const [modalTicker, setModalTicker] = useState<string | null>(null);
@@ -242,7 +280,7 @@ export default function Home() {
       <aside className="side-nav">
         <div className="side-brand" aria-label="Jarvis"><img src="/jarvis-logo.png" alt="" /></div>
         <nav aria-label="Research sections">
-          {navigation.map((item) => <button key={item.label} aria-label={item.label} data-label={['NEWS','QUANT LAB','PORTFOLIO'].includes(item.label) ? `${item.label} · BETA` : item.label} title={['NEWS','QUANT LAB','PORTFOLIO'].includes(item.label) ? `${item.label} · BETA` : item.label} onClick={() => setActive(item.label)} className={active === item.label ? 'active' : ''}><span aria-hidden="true">{item.icon}</span></button>)}
+          {navigation.map((item) => <button key={item.label} aria-label={item.label} data-label={['NEWS','QUANT LAB','PORTFOLIO'].includes(item.label) ? `${item.label} · BETA` : item.label} title={['NEWS','QUANT LAB','PORTFOLIO'].includes(item.label) ? `${item.label} · BETA` : item.label} onClick={() => changeSection(item.label)} aria-current={active === item.label ? 'page' : undefined} className={active === item.label ? 'active' : ''}><span aria-hidden="true">{item.icon}</span></button>)}
         </nav>
         <div className="side-tools"><button aria-label="Notes" data-label="NOTES" title="Notes" onClick={() => setNotesOpen(true)}><span aria-hidden="true">✎</span></button><button aria-label="Settings" data-label="SETTINGS" title="Settings" onClick={() => setSettingsOpen(true)}><span aria-hidden="true">⚙</span></button></div>
         <button className="sidebar-health" aria-label={`${liveCount} of 4 data feeds live`} data-label={`${liveCount}/4 FEEDS LIVE`} title={`${liveCount}/4 feeds live`} onClick={() => setSettingsOpen(true)}><i className={liveCount >= 3 ? 'good' : liveCount ? 'partial' : ''} /></button>
@@ -254,7 +292,7 @@ export default function Home() {
             placeholder="Search IDX tickers, companies (e.g. ABMM, BBCA)..."
             onSelect={handleStockSelect}
           />
-          <div className="global-date"><span>THU</span><strong>03 SEP 2026</strong><b>WIB</b></div>
+          <div className="global-date" aria-label={`Current time ${wibDate} ${wibTime} WIB`}><span>{wibDay}</span><strong>{wibDate}</strong><b>{wibTime} WIB</b></div>
           <div className="feed-summary"><span className={liveCount ? 'live-dot' : 'stale-dot'} /><strong>{liveCount}/4 FEEDS LIVE</strong><small>DAILY CLOSE</small></div>
         </header>
 
