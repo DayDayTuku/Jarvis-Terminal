@@ -132,7 +132,7 @@ export default function CatalystRadar() {
             <div><h4>{article.title}</h4><p>{article.matches.length ? article.matches.join(" · ") : "IDX MARKET"} · {article.source.toUpperCase()} · {relative(article.publishedAt)} AGO</p></div>
             <b>↗</b>
           </a>)}
-          <div className="suite-method">Evidence radar from GDELT and the official IDX-domain query. Classification uses transparent title keywords. This is not a complete forward corporate-action calendar; verify dates and terms at the primary source.</div>
+          <div className="suite-method">Evidence radar from a broad GDELT Indonesian corporate query; official IDX sources are linked below. Classification uses transparent title keywords. This is not a complete forward corporate-action calendar; verify dates and terms at the primary source.</div>
         </article> : <div className="replay-state">NO CORPORATE CATALYST STORIES MATCHED IN THE CURRENT WINDOW</div>}
 
       <div className="official-catalyst-links">
