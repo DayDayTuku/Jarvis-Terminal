@@ -148,7 +148,7 @@ type ReplayData = {
   results: Array<{ horizon: number; signal: ReplayStats; baseline: ReplayStats; edgeMedian: number | null }>;
   events: Array<{ date: string; return5: number | null; return20: number | null; return60: number | null; maxDrawdown60: number | null }>;
   worstDrawdown60: number | null;
-  integrity: { completedSamples: number; minimumRecommended: number; rating: string; note: string };
+  integrity: { completedSamples: number; minimumVisible: number; minimumRecommended: number; rating: string; note: string };
   freshness: string;
 };
 
@@ -156,8 +156,9 @@ const replaySignals = [
   ["jkse_pullback", "JKSE 1M PULLBACK"],
   ["jkse_trend_reclaim", "JKSE RECLAIMS 200D"],
   ["dxy_surge", "DXY 1M SURGE"],
+  ["dxy_selloff", "DXY 1M SELLOFF"],
   ["oil_rally", "WTI 1M RALLY"],
-  ["coal_rally", "COAL PROXY RALLY"],
+  ["oil_selloff", "WTI 1M SELLOFF"],
 ] as const;
 const replayTargets = [
   ["JKSE", "JAKARTA COMPOSITE"],
@@ -200,7 +201,7 @@ function SignalReplay() {
   const edge = horizon20?.edgeMedian ?? null;
   const verdict = edge === null
     ? "INSUFFICIENT EVIDENCE"
-    : data!.integrity.completedSamples < 12
+    : data!.integrity.completedSamples < data!.integrity.minimumVisible
       ? "FRAGILE SAMPLE"
       : edge > 0.015
         ? "POSITIVE HISTORICAL EDGE"
@@ -213,7 +214,7 @@ function SignalReplay() {
     <article className="panel replay-panel">
       <div className="replay-head">
         <div>
-          <span>SIGNAL REPLAY · BETA</span>
+          <span>SIGNAL REPLAY · BETA · 6 LIVE CONDITIONS</span>
           <h3>What happened after conditions like this?</h3>
           <p>Conditional forward returns—not a buy/sell strategy.</p>
         </div>
@@ -233,9 +234,10 @@ function SignalReplay() {
         </div>
       </div>
 
-      {loading && <div className="replay-state">REPLAYING UP TO 10 YEARS OF ADJUSTED PRICE HISTORY…</div>}
+      {loading && <div className="replay-state">REPLAYING UP TO 20 YEARS OF ADJUSTED PRICE HISTORY…</div>}
       {failed && <div className="replay-state error">HISTORICAL FEED UNAVAILABLE · TRY ANOTHER SIGNAL OR RELOAD</div>}
-      {!loading && data && (
+      {!loading && data?.integrity.rating === "HIDDEN" && <div className="replay-state">SCENARIO HIDDEN · FEWER THAN {data.integrity.minimumVisible} COMPLETE EPISODES</div>}
+      {!loading && data && data.integrity.rating !== "HIDDEN" && (
         <>
           <div className="replay-verdict">
             <div>
