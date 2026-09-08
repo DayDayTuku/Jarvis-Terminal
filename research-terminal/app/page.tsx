@@ -6,6 +6,8 @@ import StockDetailModal from '../components/StockDetailModal';
 import NewsIntelligence from '../components/NewsIntelligence';
 import QuantLab from '../components/QuantLab';
 import PortfolioStressLab from '../components/PortfolioStressLab';
+import FeedbackModal from '../components/FeedbackModal';
+import FeedbackInbox from '../components/FeedbackInbox';
 
 type Scheme = 'default' | 'deuteranopia' | 'protanopia' | 'tritanopia';
 type Section = 'OVERVIEW' | 'MACRO' | 'MARKETS' | 'NEWS' | 'QUANT LAB' | 'PORTFOLIO' | 'GPR INDEX' | 'CORRELATIONS' | 'SEASONALITY' | 'MARKET PARTICIPANT';
@@ -74,7 +76,7 @@ export default function Home() {
   const [selectedSector, setSelectedSector] = useState('ENERGY');
   const [seasonTicker, setSeasonTicker] = useState('BUMI'); const [seasonality, setSeasonality] = useState<SeasonalityData|null>(null);
   const [cot, setCot] = useState<CotData|null>(null); const [cotAsset, setCotAsset] = useState('USD');
-  const [notesOpen, setNotesOpen] = useState(false); const [settingsOpen, setSettingsOpen] = useState(false);
+  const [notesOpen, setNotesOpen] = useState(false); const [settingsOpen, setSettingsOpen] = useState(false); const [feedbackOpen, setFeedbackOpen] = useState(false);
   const [scheme, setScheme] = useState<Scheme>('default'); const [note, setNote] = useState('');
   const [savedNote, setSavedNote] = useState('Watch the next Core PCE print. A second upside surprise would strengthen the higher-for-longer rates case.');
   const [fred, setFred] = useState<FredData | null>(null); const [markets, setMarkets] = useState<MarketData | null>(null); const [gdelt, setGdelt] = useState<GdeltData | null>(null); const [calendar, setCalendar] = useState<CalendarData | null>(null);
@@ -283,7 +285,7 @@ export default function Home() {
           {navigation.map((item) => <button key={item.label} aria-label={item.label} data-label={['NEWS','QUANT LAB','PORTFOLIO'].includes(item.label) ? `${item.label} · BETA` : item.label} title={['NEWS','QUANT LAB','PORTFOLIO'].includes(item.label) ? `${item.label} · BETA` : item.label} onClick={() => changeSection(item.label)} aria-current={active === item.label ? 'page' : undefined} className={active === item.label ? 'active' : ''}><span aria-hidden="true">{item.icon}</span></button>)}
         </nav>
         <div className="side-tools"><button aria-label="Notes" data-label="NOTES" title="Notes" onClick={() => setNotesOpen(true)}><span aria-hidden="true">✎</span></button><button aria-label="Settings" data-label="SETTINGS" title="Settings" onClick={() => setSettingsOpen(true)}><span aria-hidden="true">⚙</span></button></div>
-        <button className="sidebar-health" aria-label={`${liveCount} of 4 data feeds live`} data-label={`${liveCount}/4 FEEDS LIVE`} title={`${liveCount}/4 feeds live`} onClick={() => setSettingsOpen(true)}><i className={liveCount >= 3 ? 'good' : liveCount ? 'partial' : ''} /></button>
+        <button className="sidebar-feedback" aria-label="Send feedback" data-label="FEEDBACK" title="Send feedback" onClick={() => setFeedbackOpen(true)}><span aria-hidden="true">?</span></button>
       </aside>
 
       <div className="app-column">
@@ -293,7 +295,7 @@ export default function Home() {
             onSelect={handleStockSelect}
           />
           <div className="global-date" aria-label={`Current time ${wibDate} ${wibTime} WIB`}><span>{wibDay}</span><strong>{wibDate}</strong><b>{wibTime} WIB</b></div>
-          <div className="feed-summary"><span className={liveCount ? 'live-dot' : 'stale-dot'} /><strong>{liveCount}/4 FEEDS LIVE</strong><small>DAILY CLOSE</small></div>
+          <button className="feedback-trigger" type="button" onClick={() => setFeedbackOpen(true)}><span aria-hidden="true">✦</span><strong>SEND FEEDBACK</strong><small>HELP IMPROVE JARVIS</small></button>
         </header>
 
         <section className="signal-strip" aria-label="Key readings">
@@ -346,8 +348,9 @@ export default function Home() {
       </div>
 
       {notesOpen && <div className="overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) setNotesOpen(false); }}><section className="drawer" role="dialog" aria-modal="true" aria-label="Research notes"><div className="drawer-head"><div><span>RESEARCH LOG</span><h2>UPDATE CURRENT THESIS</h2></div><button onClick={() => setNotesOpen(false)}>ESC</button></div><label htmlFor="note">NEW NOTE</label><textarea id="note" autoFocus value={note} maxLength={600} onChange={(e) => setNote(e.target.value)} placeholder="What changed in the data, and what would disprove your read?" /><div className="prompt-line"><span>Keep the claim testable.</span><span>{note.length} / 600</span></div><div className="drawer-actions"><button onClick={() => setNotesOpen(false)}>CANCEL</button><button className="primary-button" onClick={saveNote}>SAVE NOTE</button></div><div className="recent-note"><span>LATEST ENTRY</span><p>{savedNote}</p><small>03 SEP 2026 · 08:15 WIB</small></div></section></div>}
-      {settingsOpen && <div className="overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) setSettingsOpen(false); }}><section className="drawer" role="dialog" aria-modal="true" aria-label="Terminal settings"><div className="drawer-head"><div><span>TERMINAL</span><h2>SETTINGS</h2></div><button onClick={() => setSettingsOpen(false)}>ESC</button></div><div className="setting-block"><h3>COLOR ACCESSIBILITY</h3><p>Choose a signal palette that keeps gains and losses distinct.</p><div className="scheme-list">{(['default','deuteranopia','protanopia','tritanopia'] as Scheme[]).map((item) => <button key={item} className={scheme===item?'selected':''} onClick={() => setScheme(item)}><i /><span>{item.toUpperCase()}</span><b>{scheme===item?'ON':''}</b></button>)}</div></div><div className="setting-block"><h3>DATA CONNECTIONS</h3><p>Technical feed detail is kept here so the daily view stays focused on decisions.</p><div className="settings-health connection-list"><p><i className={fred ? 'live' : ''} /><strong>FRED</strong><span>{fred ? `Updated ${fred.freshness}` : 'FRED_API_KEY not configured or upstream unavailable'}</span></p><p><i className={markets ? 'live' : ''} /><strong>IDX + SEASONALITY</strong><span>{markets ? `${markets.status} · Yahoo upstream` : 'Live request failed · illustrative values retained'}</span></p><p><i className={gdelt ? 'live' : ''} /><strong>GDELT DOC</strong><span>{gdelt ? 'Keyword-frequency series live · Goldstein pending' : 'Live request failed'}</span></p><p><i className={cot ? 'live' : ''} /><strong>CFTC COT</strong><span>{cot ? `${cot.status} · weekly public reports` : 'Public dataset request failed'}</span></p><p><i className={calendar ? 'live' : ''} /><strong>TRADINGECONOMICS</strong><span>{calendar ? 'Calendar connected' : 'TRADING_ECONOMICS_API_KEY required'}</span></p></div></div><button className="primary-button full" onClick={() => setSettingsOpen(false)}>APPLY SETTINGS</button></section></div>}
+      {settingsOpen && <div className="overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) setSettingsOpen(false); }}><section className="drawer" role="dialog" aria-modal="true" aria-label="Terminal settings"><div className="drawer-head"><div><span>TERMINAL</span><h2>SETTINGS</h2></div><button onClick={() => setSettingsOpen(false)}>ESC</button></div><div className="setting-block"><h3>COLOR ACCESSIBILITY</h3><p>Choose a signal palette that keeps gains and losses distinct.</p><div className="scheme-list">{(['default','deuteranopia','protanopia','tritanopia'] as Scheme[]).map((item) => <button key={item} className={scheme===item?'selected':''} onClick={() => setScheme(item)}><i /><span>{item.toUpperCase()}</span><b>{scheme===item?'ON':''}</b></button>)}</div></div><div className="setting-block"><h3>DATA CONNECTIONS</h3><p>Technical feed detail is kept here so the daily view stays focused on decisions.</p><div className="settings-health connection-list"><p><i className={fred ? 'live' : ''} /><strong>FRED</strong><span>{fred ? `Updated ${fred.freshness}` : 'FRED_API_KEY not configured or upstream unavailable'}</span></p><p><i className={markets ? 'live' : ''} /><strong>IDX + SEASONALITY</strong><span>{markets ? `${markets.status} · Yahoo upstream` : 'Live request failed · illustrative values retained'}</span></p><p><i className={gdelt ? 'live' : ''} /><strong>GDELT DOC</strong><span>{gdelt ? 'Keyword-frequency series live · Goldstein pending' : 'Live request failed'}</span></p><p><i className={cot ? 'live' : ''} /><strong>CFTC COT</strong><span>{cot ? `${cot.status} · weekly public reports` : 'Public dataset request failed'}</span></p><p><i className={calendar ? 'live' : ''} /><strong>TRADINGECONOMICS</strong><span>{calendar ? 'Calendar connected' : 'TRADING_ECONOMICS_API_KEY required'}</span></p></div></div><FeedbackInbox active={settingsOpen} /><button className="primary-button full" onClick={() => setSettingsOpen(false)}>APPLY SETTINGS</button></section></div>}
 
+      <FeedbackModal open={feedbackOpen} section={active} ticker={modalTicker} onClose={() => setFeedbackOpen(false)} />
       {notification && (
         <div
           style={{
