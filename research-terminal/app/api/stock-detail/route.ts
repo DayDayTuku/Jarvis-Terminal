@@ -178,6 +178,63 @@ function deriveValuations(detail: Record<string, any>) {
   return detail;
 }
 
+
+const TRADINGVIEW_COLUMNS = [
+  "name", "close", "change", "volume", "market_cap_basic",
+  "price_earnings_ttm", "price_book_fq", "earnings_per_share_diluted_ttm",
+  "return_on_equity_fq", "total_revenue", "net_income",
+] as const;
+
+async function getTradingViewSnapshot(ticker: string) {
+  const symbol = ticker.replace(/\.JK$/i, "").toUpperCase();
+  try {
+    const response = await fetch("https://scanner.tradingview.com/indonesia/scan", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({
+        symbols: { tickers: [`IDX:${symbol}`], query: { types: [] } },
+        columns: TRADINGVIEW_COLUMNS,
+      }),
+      signal: AbortSignal.timeout(8000),
+      next: { revalidate: 300 },
+    });
+    if (!response.ok) return null;
+    const payload: any = await response.json();
+    const row = payload?.data?.[0];
+    if (!row || !Array.isArray(row.d)) return null;
+    const values = Object.fromEntries(TRADINGVIEW_COLUMNS.map((column, index) => [column, finiteNumber(row.d[index])]));
+    if (!values.close) return null;
+    return {
+      regularMarketPrice: values.close,
+      regularMarketChangePercent: values.change,
+      volume: values.volume,
+      marketCap: values.market_cap_basic,
+      trailingPE: values.price_earnings_ttm,
+      priceToBook: values.price_book_fq,
+      eps: values.earnings_per_share_diluted_ttm,
+      returnOnEquity: values.return_on_equity_fq === null ? null : values.return_on_equity_fq / 100,
+      revenue: values.total_revenue,
+      netIncome: values.net_income,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function mergeTradingView(detail: Record<string, any>, snapshot: Record<string, any> | null) {
+  if (!snapshot) return detail;
+  const supplied: string[] = [];
+  for (const [key, value] of Object.entries(snapshot)) {
+    if (finiteNumber(detail[key]) === null && finiteNumber(value) !== null) {
+      detail[key] = value;
+      supplied.push(key);
+    }
+  }
+  detail.sourceChain = [...new Set([...(detail.sourceChain ?? []), "TradingView scanner"])];
+  detail.providerFields = { ...(detail.providerFields ?? {}), tradingView: supplied };
+  return detail;
+}
+
 async function getEodhdDetail(ticker: string, basic: Record<string, any> | null) {
   const token = process.env.EODHD_API_TOKEN;
   if (!token) return null;
@@ -368,8 +425,13 @@ export async function GET(req: NextRequest) {
   }
   // The chart endpoint is materially more reliable for newer IDX listings.
   // Capture a basic quote before quoteSummary can open the fundamentals circuit.
-  const [basic, annualHistory] = await Promise.all([getBasicQuote(ticker), getAnnualFinancialHistory(ticker)]);
-  const eodhd = await getEodhdDetail(ticker, basic);
+  const [basic, annualHistory, tradingView] = await Promise.all([
+    getBasicQuote(ticker),
+    getAnnualFinancialHistory(ticker),
+    getTradingViewSnapshot(ticker),
+  ]);
+  const marketSnapshot = tradingView ?? basic;
+  const eodhd = await getEodhdDetail(ticker, marketSnapshot);
   if (eodhd) {
     if (!eodhd.financialHistory?.length && annualHistory.length) {
       eodhd.financialHistory = annualHistory;
@@ -381,7 +443,7 @@ export async function GET(req: NextRequest) {
     return cacheDetail(ticker, { ...eodhd, unavailable });
   }
 
-  if (Date.now() < yahooCooldownUntil && !basic) {
+  if (Date.now() < yahooCooldownUntil && !basic && !tradingView) {
     return cacheDetail(ticker, fallbackDetail(ticker), FALLBACK_TTL_MS);
   }
 
@@ -533,6 +595,9 @@ export async function GET(req: NextRequest) {
             detail.priceToBook = null;
           }
 
+          mergeTradingView(detail, tradingView);
+          detail.sourceChain = [...new Set(["Yahoo quoteSummary", ...(detail.sourceChain ?? [])])];
+          detail.sourceAsOf = new Date().toISOString();
           deriveValuations(detail);
 
           const unavailable = Object.entries(detail)
@@ -547,21 +612,38 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  if (basic || annualHistory.length) {
-    return cacheDetail(ticker, {
+  if (tradingView || basic || annualHistory.length) {
+    const hasFundamentals = Boolean(tradingView && (
+      finiteNumber(tradingView.marketCap) ||
+      finiteNumber(tradingView.trailingPE) ||
+      finiteNumber(tradingView.priceToBook) ||
+      finiteNumber(tradingView.revenue)
+    ));
+    const partial = deriveValuations({
       ticker,
       name: IDX_UNIVERSE.find((stock) => stock.ticker === ticker)?.name ?? ticker,
       sector: IDX_UNIVERSE.find((stock) => stock.ticker === ticker)?.sector ?? null,
-      dataSource: "basic",
-      fundamentalsUnavailable: true,
-      fundamentalsMessage: "Full fundamentals are unavailable for this issuer. Showing verified market-price data instead.",
+      currency: basic?.currency ?? "IDR",
+      dataSource: tradingView ? "hybrid-free" : "basic",
+      sourceChain: [
+        tradingView ? "TradingView scanner" : null,
+        basic ? "Yahoo chart" : null,
+        annualHistory.length ? "Yahoo fundamentals timeseries" : null,
+      ].filter(Boolean),
+      sourceAsOf: new Date().toISOString(),
+      fundamentalsUnavailable: !hasFundamentals && !annualHistory.length,
+      fundamentalsMessage: hasFundamentals
+        ? "Core valuation data is live; detailed statements use the best available reporting history."
+        : "Detailed fundamentals are temporarily unavailable. Verified market data and available reporting history are retained.",
       ...(basic ?? {}),
+      ...(tradingView ?? {}),
       financialHistory: annualHistory,
-      unavailable: [
-        "marketCap", "trailingPE", "forwardPE", "priceToBook", "eps", "dividendYield",
-        "revenue", "profitMargin", "returnOnEquity", "recommendationKey",
-      ],
     });
+    const unavailable = [
+      "marketCap", "trailingPE", "forwardPE", "priceToBook", "eps", "dividendYield",
+      "revenue", "profitMargin", "returnOnEquity", "recommendationKey",
+    ].filter((key) => finiteNumber(partial[key]) === null && partial[key] == null);
+    return cacheDetail(ticker, { ...partial, unavailable });
   }
 
   return cacheDetail(ticker, fallbackDetail(ticker), FALLBACK_TTL_MS);
