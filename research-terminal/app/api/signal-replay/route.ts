@@ -206,6 +206,9 @@ export async function GET(request: NextRequest) {
       const path = targetHistory.slice(index + 1, index + 61).map((point) => point.value / start - 1);
       return path.length ? [Math.min(...path)] : [];
     });
+    const historyFrom = source[0].date > targetHistory[0].date ? source[0].date : targetHistory[0].date;
+    const historyThrough = source.at(-1)!.date < targetHistory.at(-1)!.date ? source.at(-1)!.date : targetHistory.at(-1)!.date;
+    const historyYears = Math.max(0.1, Math.round(((Date.parse(historyThrough) - Date.parse(historyFrom)) / 31_557_600_000) * 10) / 10);
     const currentActive = signal.test(sourceValues, sourceValues.length - 1);
     const latestSignalDate = eventIndexes.length ? targetHistory[eventIndexes.at(-1)!].date : null;
     const completedSamples = results.find((result) => result.horizon === 60)?.signal.observations ?? 0;
@@ -216,7 +219,7 @@ export async function GET(request: NextRequest) {
       target: { key: targetKey, ...target },
       currentActive,
       latestSignalDate,
-      history: { from: targetHistory[0].date, through: targetHistory.at(-1)!.date, years: 10 },
+      history: { from: historyFrom, through: historyThrough, years: historyYears },
       results,
       events,
       worstDrawdown60: allDrawdowns.length ? Math.min(...allDrawdowns) : null,
