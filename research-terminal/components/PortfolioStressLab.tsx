@@ -86,9 +86,9 @@ export default function PortfolioStressLab() {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ positions: validRows.map((row) => ({ ticker: row.ticker, value: Number(row.value) })) }),
       });
-      const payload = await response.json();
+      const payload = await response.json() as StressData & { error?: string };
       if (!response.ok) throw new Error(payload?.error ?? "Portfolio analysis failed.");
-      setData(payload as StressData);
+      setData(payload);
       setSelectedScenario("market_shock");
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Portfolio analysis failed.");
