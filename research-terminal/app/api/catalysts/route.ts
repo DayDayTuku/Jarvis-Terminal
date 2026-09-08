@@ -45,12 +45,24 @@ async function fetchQuery(query: string) {
 
 export async function GET() {
   const corporateTerms = '(earnings OR "net profit" OR laba OR pendapatan OR dividend OR dividen OR "rights issue" OR buyback OR acquisition OR akuisisi OR merger OR RUPS OR "stock split" OR contract OR ekspansi)';
-  const settled = await Promise.allSettled([
-    fetchQuery(`(Indonesia OR Jakarta OR IDX OR BEI) ${corporateTerms}`),
-    fetchQuery(`domainis:idx.co.id ${corporateTerms}`),
-  ]);
+  let rawArticles: GdeltArticle[] = [];
+  try {
+    rawArticles = await fetchQuery(`(Indonesia OR Jakarta OR IDX OR BEI) ${corporateTerms}`);
+  } catch (error) {
+    return NextResponse.json({
+      status: "unavailable",
+      source: "GDELT DOC 2.0",
+      window: "7d",
+      articles: [],
+      failures: 1,
+      error: error instanceof Error ? error.message : "Catalyst provider unavailable",
+      methodology: "The server retrieves a broad Indonesian corporate-news feed without receiving or transmitting the user's watchlist.",
+      generatedAt: new Date().toISOString(),
+    }, { status: 503, headers: { "cache-control": "no-store" } });
+  }
+
   const seen = new Set<string>();
-  const articles = settled.flatMap((result) => result.status === "fulfilled" ? result.value : []).flatMap((article) => {
+  const articles = rawArticles.flatMap((article) => {
     if (!article.url || !article.title || !/^https?:\/\//.test(article.url)) return [];
     const id = article.url.toLowerCase();
     if (seen.has(id)) return [];
@@ -74,10 +86,10 @@ export async function GET() {
     return rank[a.impact] - rank[b.impact] || String(b.publishedAt ?? "").localeCompare(String(a.publishedAt ?? ""));
   }).slice(0, 60);
 
-  const failures = settled.filter((result) => result.status === "rejected").length;
+  const failures = 0;
   return NextResponse.json({
     status: articles.length ? (failures ? "partial" : "live") : "quiet",
-    source: "GDELT DOC 2.0 + official IDX domain query",
+    source: "GDELT DOC 2.0 corporate query",
     window: "7d",
     articles,
     failures,
