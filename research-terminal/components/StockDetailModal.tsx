@@ -4,16 +4,25 @@ import { IDX_UNIVERSE, type IDXStock } from "@/lib/idx-universe";
 
 type Detail = Record<string, any>;
 
-function fmtNum(v: number | null, decimals = 2, suffix = "") {
-  if (v === null || v === undefined) return "—";
-  return v.toFixed(decimals) + suffix;
+function numeric(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
 }
-function fmtPct(v: number | null) {
-  if (v === null || v === undefined) return "—";
-  return (v * 100).toFixed(2) + "%";
+function fmtNum(value: unknown, decimals = 2, suffix = "") {
+  const v = numeric(value);
+  return v === null ? "—" : v.toFixed(decimals) + suffix;
 }
-function fmtBig(v: number | null) {
-  if (v === null || v === undefined) return "—";
+function fmtPct(value: unknown) {
+  const v = numeric(value);
+  return v === null ? "—" : (v * 100).toFixed(2) + "%";
+}
+function fmtBig(value: unknown) {
+  const v = numeric(value);
+  if (v === null) return "—";
   const abs = Math.abs(v);
   if (abs >= 1e12) return (v / 1e12).toFixed(2) + "T";
   if (abs >= 1e9) return (v / 1e9).toFixed(2) + "B";
