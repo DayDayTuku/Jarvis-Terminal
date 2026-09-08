@@ -5,8 +5,9 @@ import { IDX_UNIVERSE } from "@/lib/idx-universe";
 const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
 
 const TRANSIENT_STATUS = new Set([500, 502, 503, 504]);
-const DETAIL_TTL_MS = 5 * 60 * 1000;
-const FALLBACK_TTL_MS = 30 * 1000;
+const DETAIL_TTL_MS = 6 * 60 * 60 * 1000;
+const FALLBACK_TTL_MS = 60 * 1000;
+const STALE_TTL_SECONDS = 7 * 24 * 60 * 60;
 const YAHOO_COOLDOWN_MS = 2 * 60 * 1000;
 const detailCache = new Map<string, { expiresAt: number; data: Record<string, any> }>();
 let yahooCooldownUntil = 0;
@@ -116,6 +117,158 @@ async function getBasicQuote(ticker: string) {
 }
 
 
+
+function finiteNumber(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+}
+
+function yearlyRows(block: any): any[] {
+  const yearly = block?.yearly;
+  if (!yearly || typeof yearly !== "object") return [];
+  return Object.values(yearly)
+    .filter((row: any) => row && typeof row === "object")
+    .sort((a: any, b: any) => String(b.date ?? "").localeCompare(String(a.date ?? "")));
+}
+
+function deriveValuations(detail: Record<string, any>) {
+  const derivedFields: string[] = Array.isArray(detail.derivedFields) ? detail.derivedFields : [];
+  const price = finiteNumber(detail.regularMarketPrice);
+  const shares = finiteNumber(detail.sharesOutstanding);
+  const history = Array.isArray(detail.financialHistory) ? detail.financialHistory : [];
+  const latest = history[0] ?? null;
+  const netIncome = finiteNumber(latest?.netIncome);
+  const totalEquity = finiteNumber(latest?.totalEquity ?? latest?.totalStockholderEquity);
+
+  if (!finiteNumber(detail.marketCap) && price && shares && shares > 0) {
+    detail.marketCap = price * shares;
+    derivedFields.push("marketCap");
+  }
+  if (!finiteNumber(detail.eps) && netIncome !== null && shares && shares > 0) {
+    detail.eps = netIncome / shares;
+    derivedFields.push("eps");
+  }
+  if (!finiteNumber(detail.bookValue) && totalEquity !== null && shares && shares > 0) {
+    detail.bookValue = totalEquity / shares;
+    derivedFields.push("bookValue");
+  }
+
+  const eps = finiteNumber(detail.eps);
+  const bookValue = finiteNumber(detail.bookValue);
+  if (!finiteNumber(detail.trailingPE) && price && eps && eps > 0) {
+    const value = price / eps;
+    if (value > 0 && value <= 300) {
+      detail.trailingPE = value;
+      derivedFields.push("trailingPE");
+    }
+  }
+  if (!finiteNumber(detail.priceToBook) && price && bookValue && bookValue > 0) {
+    const value = price / bookValue;
+    if (value > 0 && value <= 100) {
+      detail.priceToBook = value;
+      derivedFields.push("priceToBook");
+    }
+  }
+
+  detail.derivedFields = [...new Set(derivedFields)];
+  return detail;
+}
+
+async function getEodhdDetail(ticker: string, basic: Record<string, any> | null) {
+  const token = process.env.EODHD_API_TOKEN;
+  if (!token) return null;
+
+  try {
+    const response = await fetch(
+      `https://eodhd.com/api/v1.1/fundamentals/${encodeURIComponent(ticker)}?api_token=${encodeURIComponent(token)}&fmt=json`,
+      {
+        headers: { Accept: "application/json" },
+        signal: AbortSignal.timeout(12000),
+        next: { revalidate: 21600 },
+      }
+    );
+    if (!response.ok) return null;
+    const raw: any = await response.json();
+    if (!raw?.General || raw?.error || raw?.code === 404) return null;
+
+    const incomeRows = yearlyRows(raw?.Financials?.Income_Statement);
+    const balanceRows = yearlyRows(raw?.Financials?.Balance_Sheet);
+    const cashRows = yearlyRows(raw?.Financials?.Cash_Flow);
+    const financialHistory = incomeRows.slice(0, 4).map((income: any, index: number) => {
+      const date = income?.date ?? null;
+      const balance = balanceRows.find((row: any) => row?.date === date) ?? balanceRows[index] ?? {};
+      const cash = cashRows.find((row: any) => row?.date === date) ?? cashRows[index] ?? {};
+      return {
+        fiscalYear: date,
+        totalRevenue: finiteNumber(income?.totalRevenue),
+        grossProfit: finiteNumber(income?.grossProfit),
+        operatingIncome: finiteNumber(income?.operatingIncome),
+        netIncome: finiteNumber(income?.netIncome),
+        totalAssets: finiteNumber(balance?.totalAssets),
+        totalLiabilities: finiteNumber(balance?.totalLiab ?? balance?.totalLiabilities),
+        totalEquity: finiteNumber(balance?.totalStockholderEquity ?? balance?.totalEquity),
+        receivables: finiteNumber(balance?.netReceivables),
+        inventory: finiteNumber(balance?.inventory),
+        operatingCashflow: finiteNumber(cash?.totalCashFromOperatingActivities),
+        capex: finiteNumber(cash?.capitalExpenditures),
+      };
+    });
+
+    const highlights = raw?.Highlights ?? {};
+    const valuation = raw?.Valuation ?? {};
+    const technicals = raw?.Technicals ?? {};
+    const shares = raw?.SharesStats ?? {};
+    const universeStock = IDX_UNIVERSE.find((stock) => stock.ticker === ticker);
+    const latest = financialHistory[0] ?? null;
+
+    return deriveValuations({
+      ticker,
+      name: raw.General.Name ?? universeStock?.name ?? ticker,
+      sector: raw.General.Sector ?? universeStock?.sector ?? null,
+      industry: raw.General.Industry ?? null,
+      employees: finiteNumber(raw.General.FullTimeEmployees),
+      currency: raw.General.CurrencyCode ?? basic?.currency ?? "IDR",
+      regularMarketPrice: finiteNumber(basic?.regularMarketPrice),
+      regularMarketChangePercent: finiteNumber(basic?.regularMarketChangePercent),
+      previousClose: finiteNumber(basic?.previousClose),
+      volume: finiteNumber(basic?.volume),
+      fiftyTwoWeekLow: finiteNumber(technicals["52WeekLow"] ?? basic?.fiftyTwoWeekLow),
+      fiftyTwoWeekHigh: finiteNumber(technicals["52WeekHigh"] ?? basic?.fiftyTwoWeekHigh),
+      marketCap: finiteNumber(highlights.MarketCapitalization),
+      sharesOutstanding: finiteNumber(shares.SharesOutstanding),
+      trailingPE: finiteNumber(highlights.PERatio),
+      forwardPE: finiteNumber(valuation.ForwardPE),
+      priceToBook: finiteNumber(valuation.PriceBookMRQ),
+      pegRatio: finiteNumber(highlights.PEGRatio),
+      enterpriseValue: finiteNumber(valuation.EnterpriseValue),
+      profitMargin: finiteNumber(highlights.ProfitMargin),
+      operatingMargin: finiteNumber(highlights.OperatingMarginTTM),
+      returnOnAssets: finiteNumber(highlights.ReturnOnAssetsTTM),
+      returnOnEquity: finiteNumber(highlights.ReturnOnEquityTTM),
+      revenue: finiteNumber(highlights.RevenueTTM ?? latest?.totalRevenue),
+      revenueGrowth: finiteNumber(highlights.QuarterlyRevenueGrowthYOY),
+      grossProfit: finiteNumber(highlights.GrossProfitTTM ?? latest?.grossProfit),
+      ebitda: finiteNumber(highlights.EBITDA),
+      eps: finiteNumber(highlights.DilutedEpsTTM),
+      bookValue: finiteNumber(highlights.BookValue),
+      dividendYield: finiteNumber(highlights.DividendYield),
+      beta: finiteNumber(technicals.Beta),
+      targetMeanPrice: finiteNumber(highlights.WallStreetTargetPrice),
+      latestFinancials: latest ? { ...latest, totalStockholderEquity: latest.totalEquity } : null,
+      financialHistory,
+      dataSource: "eodhd",
+      sourceChain: ["EODHD", basic ? "Yahoo chart" : null].filter(Boolean),
+      sourceAsOf: new Date().toISOString(),
+    });
+  } catch {
+    return null;
+  }
+}
+
 async function getAnnualFinancialHistory(ticker: string) {
   const metricFields: Record<string, string> = {
     annualTotalRevenue: "totalRevenue",
@@ -194,7 +347,8 @@ function cacheDetail(ticker: string, data: Record<string, any>, ttl = DETAIL_TTL
   detailCache.set(ticker, { data, expiresAt: Date.now() + ttl });
   return NextResponse.json(data, {
     headers: {
-      "Cache-Control": `private, max-age=0, s-maxage=${Math.floor(ttl / 1000)}, stale-while-revalidate=300`,
+      "Cache-Control": `public, max-age=0, s-maxage=${Math.floor(ttl / 1000)}, stale-while-revalidate=${STALE_TTL_SECONDS}`,
+      "Vercel-CDN-Cache-Control": `s-maxage=${Math.floor(ttl / 1000)}, stale-while-revalidate=${STALE_TTL_SECONDS}`,
     },
   });
 }
@@ -215,6 +369,17 @@ export async function GET(req: NextRequest) {
   // The chart endpoint is materially more reliable for newer IDX listings.
   // Capture a basic quote before quoteSummary can open the fundamentals circuit.
   const [basic, annualHistory] = await Promise.all([getBasicQuote(ticker), getAnnualFinancialHistory(ticker)]);
+  const eodhd = await getEodhdDetail(ticker, basic);
+  if (eodhd) {
+    if (!eodhd.financialHistory?.length && annualHistory.length) {
+      eodhd.financialHistory = annualHistory;
+      deriveValuations(eodhd);
+    }
+    const unavailable = Object.entries(eodhd)
+      .filter(([key, value]) => value === null && !["ticker", "name", "latestFinancials"].includes(key))
+      .map(([key]) => key);
+    return cacheDetail(ticker, { ...eodhd, unavailable });
+  }
 
   if (Date.now() < yahooCooldownUntil && !basic) {
     return cacheDetail(ticker, fallbackDetail(ticker), FALLBACK_TTL_MS);
@@ -367,6 +532,8 @@ export async function GET(req: NextRequest) {
           if (typeof detail.priceToBook !== "number" || detail.priceToBook <= 0 || detail.priceToBook > 100) {
             detail.priceToBook = null;
           }
+
+          deriveValuations(detail);
 
           const unavailable = Object.entries(detail)
             .filter(([k, v]) => v === null && !["ticker", "name", "latestFinancials"].includes(k))
