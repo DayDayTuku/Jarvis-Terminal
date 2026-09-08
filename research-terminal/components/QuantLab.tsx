@@ -233,7 +233,7 @@ function SignalReplay() {
         </div>
       </div>
 
-      {loading && <div className="replay-state">REPLAYING 10 YEARS OF ADJUSTED PRICE HISTORY…</div>}
+      {loading && <div className="replay-state">REPLAYING UP TO 10 YEARS OF ADJUSTED PRICE HISTORY…</div>}
       {failed && <div className="replay-state error">HISTORICAL FEED UNAVAILABLE · TRY ANOTHER SIGNAL OR RELOAD</div>}
       {!loading && data && (
         <>
@@ -286,7 +286,7 @@ function SignalReplay() {
           </div>
 
           <div className="replay-method">
-            <strong>{data.signal.label}:</strong> {data.signal.description} Tested on {data.target.label}, {data.history.from}–{data.history.through}. {data.integrity.note} Baseline uses every eligible trading date; no transaction costs are modeled.
+            <strong>{data.signal.label}:</strong> {data.signal.description} Tested on {data.target.label} across {data.history.years.toFixed(1)} years ({data.history.from}–{data.history.through}). {data.integrity.note} Baseline uses every eligible trading date; no transaction costs are modeled.
           </div>
         </>
       )}
