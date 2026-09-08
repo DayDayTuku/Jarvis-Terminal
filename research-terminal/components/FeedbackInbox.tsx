@@ -25,7 +25,7 @@ export default function FeedbackInbox({ active }: { active: boolean }) {
       return;
     }
     if (!response.ok) return;
-    const data = await response.json();
+    const data = (await response.json()) as { feedback?: FeedbackItem[] };
     setItems(Array.isArray(data.feedback) ? data.feedback : []);
   };
 
