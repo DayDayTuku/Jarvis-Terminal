@@ -427,8 +427,7 @@ function Calendar({data}:{data:CalendarData|null}){
   })??releases.map((event,index)=>({...event,date:index===0?'NEXT RELEASE':'UPCOMING'}));
   const indonesiaCount=rows.filter((row)=>row.country==='ID').length;
   return <article className="panel calendar-panel">
-    <Panel">
-Head index="02" title="ECONOMIC CALENDAR"><span className="demo-badge">{data?'LIVE':'DEMO'}</span></PanelHead>
+    <PanelHead index="02" title="ECONOMIC CALENDAR"><span className="demo-badge">{data?'LIVE':'DEMO'}</span></PanelHead>
     <div className="date-rule"><strong>NEXT 7 DAYS · WIB</strong><span>{indonesiaCount} INDONESIA · {rows.length} TOTAL</span></div>
     {rows.slice(0,10).map((r,index)=><div className="release-row" key={`${r.date}-${r.event}-${index}`}>
       <time><b>{r.date}</b><span>{r.time} WIB</span></time>
