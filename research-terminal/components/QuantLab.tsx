@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import WeeklyShortlist from "./WeeklyShortlist";
 
 type MarketData = {
   freshness: string;
@@ -175,6 +176,8 @@ export default function QuantLab({
           </div>
         )}
       </article>
+
+      <WeeklyShortlist setups={data?.setups ?? []} />
 
       <article className="panel">
         <button onClick={() => setShowMethod((value) => !value)} style={{ width: "100%", display: "flex", justifyContent: "space-between", padding: "13px 15px", border: 0, background: "transparent", color: "#9ba8b7", fontSize: 8, cursor: "pointer" }}><span>HOW THE SCORE WORKS</span><span>{showMethod ? "HIDE ↑" : "SEE CALCULATION ↓"}</span></button>
