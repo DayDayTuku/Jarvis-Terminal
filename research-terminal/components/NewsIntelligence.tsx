@@ -86,12 +86,11 @@ export default function NewsIntelligence() {
 
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "11px 13px", border: "1px solid #25415a", borderRadius: 3, background: "#08131e", flexWrap: "wrap" }}>
         <div>
-          <strong style={{ display: "block", color: "#48a6ff", fontSize: 9, letterSpacing: ".08em" }}>OFFICIAL IDX DISCLOSURES</strong>
-          <span style={{ display: "block", marginTop: 4, color: "#778596", fontSize: 8 }}>GDELT coverage is supplemented with direct official-source access.</span>
+          <strong style={{ display: "block", color: "#48a6ff", fontSize: 9, letterSpacing: ".08em" }}>INDONESIA MARKET NEWS</strong>
+          <span style={{ display: "block", marginTop: 4, color: "#778596", fontSize: 8 }}>Fresh IDX, macro, and commodity coverage from multiple Indonesian publishers.</span>
         </div>
-        <div style={{ display: "flex", gap: 7 }}>
-          <a href="https://www.idx.co.id/id/berita/pengumuman/" target="_blank" rel="noopener noreferrer" style={{ padding: "7px 9px", border: "1px solid #356892", color: "#a8d3ff", textDecoration: "none", fontSize: 8 }}>ANNOUNCEMENTS ↗</a>
-          <a href="https://www.idx.co.id/id/berita/siaran-pers/" target="_blank" rel="noopener noreferrer" style={{ padding: "7px 9px", border: "1px solid #356892", color: "#a8d3ff", textDecoration: "none", fontSize: 8 }}>PRESS RELEASES ↗</a>
+        <div style={{ display: "flex", gap: 7, alignItems: "center", color: "#657284", fontSize: 7 }}>
+          <span>FRESHNESS FIRST</span><span>·</span><span>72H WINDOW</span>
         </div>
       </div>
 
@@ -110,7 +109,7 @@ export default function NewsIntelligence() {
         </div>
 
         {loading ? (
-          <div style={{ minHeight: 300, display: "grid", placeContent: "center", color: "#778596", fontSize: 10 }}>SCANNING GLOBAL COVERAGE…</div>
+          <div style={{ minHeight: 300, display: "grid", placeContent: "center", color: "#778596", fontSize: 10 }}>FETCHING INDONESIAN MARKET COVERAGE…</div>
         ) : error ? (
           <div style={{ minHeight: 300, display: "grid", placeContent: "center", textAlign: "center", color: "#ff6678", fontSize: 10 }}>{error}</div>
         ) : articles.length ? (
@@ -130,11 +129,11 @@ export default function NewsIntelligence() {
             ))}
           </div>
         ) : (
-          <div style={{ minHeight: 300, display: "grid", placeContent: "center", color: "#778596", fontSize: 10 }}>NO MATCHING STORIES IN THE LAST 48 HOURS</div>
+          <div style={{ minHeight: 300, display: "grid", placeContent: "center", color: "#778596", fontSize: 10 }}>NO MATCHING STORIES IN THE LAST 72 HOURS</div>
         )}
 
         <footer style={{ display: "flex", justifyContent: "space-between", gap: 12, padding: "9px 12px", color: "#536171", fontSize: 7, lineHeight: 1.5 }}>
-          <span>{data?.source ?? "GDELT DOC 2.0"} · 48H WINDOW</span>
+          <span>{data?.source ?? "MULTI-PUBLISHER RSS"} · 72H WINDOW</span>
           <span style={{ textAlign: "right" }}>LABELS USE TITLE KEYWORDS · OPEN SOURCE TO VERIFY</span>
         </footer>
       </article>
