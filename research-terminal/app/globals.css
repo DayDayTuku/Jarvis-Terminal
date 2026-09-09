@@ -780,3 +780,31 @@ body { min-height: 100%; background: #000; -webkit-text-size-adjust: 100%; overs
   .feedback-actions { display: grid; grid-template-columns: 1fr 1.4fr; }
   .feedback-meta { align-items: flex-start; }
 }
+
+
+/* Setup Finder usability */
+.setup-steps { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); border-bottom:1px solid var(--line); background:#080c12; }
+.setup-steps > div { display:flex; gap:10px; padding:13px 14px; border-right:1px solid var(--line); }
+.setup-steps > div:last-child { border-right:0; }
+.setup-steps b { display:grid; place-items:center; flex:0 0 22px; height:22px; border:1px solid #27415d; border-radius:50%; color:#48a6ff; font-size:8px; }
+.setup-steps span { min-width:0; }
+.setup-steps strong { display:block; color:#dce5ef; font-size:8px; }
+.setup-steps small { display:block; margin-top:4px; color:#6f7d8d; font:400 9px/1.4 var(--font-geist-sans); }
+.setup-toolbar { display:flex; align-items:end; gap:10px; padding:11px 12px; border-bottom:1px solid var(--line); background:#06090e; }
+.setup-toolbar label { display:grid; gap:5px; }
+.setup-toolbar label:first-child { flex:1; }
+.setup-toolbar label span { color:#657284; font-size:7px; }
+.setup-toolbar input,.setup-toolbar select { min-height:34px; padding:0 10px; border:1px solid #202c39; border-radius:2px; background:#0a1018; color:#dbe4ed; font:500 9px var(--font-geist-mono); outline:none; }
+.setup-toolbar input:focus,.setup-toolbar select:focus { border-color:#48a6ff; box-shadow:0 0 0 2px #48a6ff18; }
+.setup-toolbar small { padding-bottom:9px; color:#657284; font-size:7px; white-space:nowrap; }
+@media (max-width:720px) {
+  .setup-steps { grid-template-columns:1fr; }
+  .setup-steps > div { padding:10px 12px; border-right:0; border-bottom:1px solid var(--line); }
+  .setup-steps > div:last-child { border-bottom:0; }
+  .setup-toolbar { align-items:stretch; flex-wrap:wrap; }
+  .setup-toolbar label:first-child { flex-basis:100%; }
+  .setup-toolbar label:nth-child(2) { flex:1; }
+  .setup-toolbar small { align-self:end; padding-bottom:9px; }
+  .setup-plan-grid,.setup-metrics { grid-template-columns:repeat(2,minmax(0,1fr)) !important; }
+  .setup-reason-grid { grid-template-columns:1fr !important; }
+}
