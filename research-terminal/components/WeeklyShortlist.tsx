@@ -18,7 +18,7 @@ function selectStrict(setups:Setup[]) {
 export default function WeeklyShortlist({setups}:{setups:Setup[]}) {
   const [state,setState]=useState<{run:Run|null;candidates:Candidate[];reviews:Review[];canLock:boolean;currentWeek?:string}|null>(null);
   const [busy,setBusy]=useState(false);
-  const load=()=>fetch("/api/weekly-shortlist",{cache:"no-store"}).then(r=>r.ok?r.json():Promise.reject()).then(setState).catch(()=>setState(null));
+  const load=()=>fetch("/api/weekly-shortlist",{cache:"no-store"}).then(r=>r.ok?r.json():Promise.reject()).then((value)=>setState(value as {run:Run|null;candidates:Candidate[];reviews:Review[];canLock:boolean;currentWeek?:string})).catch(()=>setState(null));
   useEffect(()=>{void load()},[]);
   const proposed=useMemo(()=>selectStrict(setups),[setups]);
   useEffect(()=>{
