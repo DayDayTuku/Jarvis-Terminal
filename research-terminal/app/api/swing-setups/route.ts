@@ -121,10 +121,12 @@ export async function GET() {
     });
     if (!response.ok) throw new Error(`Scanner upstream returned ${response.status}`);
     const payload: any = await response.json();
+    const sectors = new Map(IDX_UNIVERSE.map((stock) => [stock.ticker.replace(".JK", ""), stock.sector]));
     const setups = (Array.isArray(payload?.data) ? payload.data : [])
       .map((item: { d?: unknown[] }) => Object.fromEntries(COLUMNS.map((key, index) => [key, item.d?.[index] ?? null])) as RawRow)
       .map(classify)
       .filter(Boolean)
+      .map((item: any) => ({ ...item, sector: sectors.get(item.ticker) ?? "Other" }))
       .sort((a: any, b: any) => b.score - a.score);
 
     return NextResponse.json({
