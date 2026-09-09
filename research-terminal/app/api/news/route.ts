@@ -48,6 +48,18 @@ function safeDate(value?: string) {
   const parsed = new Date(value);
   return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
 }
+function isRelevant(topic: Topic, title: string) {
+  const lower = title.toLowerCase();
+  const noise = ["sepak bola", "asian games", "kejuaraan", "medali emas", "olimpiade", "resep", "kuliner", "goreng"];
+  if (noise.some((word) => lower.includes(word))) return false;
+  const terms: Record<Topic, string[]> = {
+    IDX: ["ihsg", "bei", "bursa efek", "saham", "emiten", "rights issue", "dividen", "ipo", "asing", "indeks"],
+    MACRO: ["bank indonesia", "rupiah", "inflasi", "suku bunga", "apbn", "cadangan devisa", "neraca dagang", "fed", "the fed", "dolar"],
+    COMMODITIES: ["batubara", "batu bara", "nikel", "cpo", "sawit", "tembaga", "minyak", "oil", "coal", "harga emas", "emas dunia", "emas antam", "komoditas", "lng", "gas alam"],
+  };
+  return terms[topic].some((word) => lower.includes(word));
+}
+
 function cleanGoogleTitle(title: string, source: string) {
   const suffix = source ? new RegExp(`\\s+-\\s+${source.replace(/[.*+?^${}()|[\\]\\]/g, "\\$&")}\\s*$`, "i") : null;
   return suffix ? title.replace(suffix, "").trim() : title.trim();
@@ -68,7 +80,7 @@ async function fetchGoogleNews(topic: Topic, query: string): Promise<Article[]> 
     const rawTitle = tag(block, "title");
     const title = cleanGoogleTitle(rawTitle, source);
     const url = tag(block, "link");
-    if (!title || !/^https?:\/\//.test(url)) return [];
+    if (!title || !/^https?:\/\//.test(url) || !isRelevant(topic, title)) return [];
     return [{
       id: `google-${topic}-${index}-${tag(block, "guid") || url}`,
       topic, title, url, source, country: source.toLowerCase().includes("indonesia") ? "Indonesia" : null,
@@ -87,7 +99,7 @@ async function fetchGdelt(topic: Topic, query: string): Promise<Article[]> {
   if (!response.ok) throw new Error(`GDELT ${topic} returned ${response.status}`);
   const payload: any = await response.json();
   return (payload?.articles ?? []).flatMap((item: any, index: number) => {
-    if (!item?.title || !/^https?:\/\//.test(item?.url ?? "")) return [];
+    if (!item?.title || !/^https?:\/\//.test(item?.url ?? "") || !isRelevant(topic, String(item.title))) return [];
     return [{ id: `gdelt-${topic}-${index}-${item.url}`, topic, title: String(item.title).trim(), url: item.url,
       source: item.domain ?? new URL(item.url).hostname.replace(/^www\./, ""), country: item.sourcecountry ?? null,
       publishedAt: safeDate(item.seendate), impact: labelImpact(item.title), tone: labelTone(item.title) }];
