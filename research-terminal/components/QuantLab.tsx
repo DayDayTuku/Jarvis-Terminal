@@ -55,6 +55,8 @@ export default function QuantLab({
   const [filter, setFilter] = useState<SetupKey>("all");
   const [selected, setSelected] = useState<Setup | null>(null);
   const [showMethod, setShowMethod] = useState(false);
+  const [query, setQuery] = useState("");
+  const [sort, setSort] = useState<"score" | "volume" | "change">("score");
 
   const load = () => {
     setLoading(true);
@@ -67,9 +69,17 @@ export default function QuantLab({
   useEffect(load, []);
 
   const visible = useMemo(() => {
-    const rows = data?.setups ?? [];
-    return (filter === "all" ? rows : rows.filter((row) => row.setup === filter)).slice(0, 30);
-  }, [data, filter]);
+    const normalizedQuery = query.trim().toUpperCase();
+    const rows = (data?.setups ?? [])
+      .filter((row) => filter === "all" || row.setup === filter)
+      .filter((row) => !normalizedQuery || row.ticker.includes(normalizedQuery) || row.name.toUpperCase().includes(normalizedQuery))
+      .sort((a, b) => sort === "volume"
+        ? (b.relativeVolume ?? 0) - (a.relativeVolume ?? 0)
+        : sort === "change"
+          ? (b.change ?? -Infinity) - (a.change ?? -Infinity)
+          : b.score - a.score);
+    return rows.slice(0, 30);
+  }, [data, filter, query, sort]);
   useEffect(() => {
     if (!selected || !visible.some((item) => item.ticker === selected.ticker)) setSelected(visible[0] ?? null);
   }, [filter, data]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -86,7 +96,7 @@ export default function QuantLab({
 
   return (
     <section style={{ display: "grid", gap: 12 }}>
-      <article className="panel" style={{ overflow: "hidden" }}>
+      <article className="panel setup-finder" style={{ overflow: "hidden" }}>
         <div style={{ display: "flex", justifyContent: "space-between", gap: 16, padding: "18px 18px 16px", borderBottom: "1px solid var(--line)", flexWrap: "wrap" }}>
           <div style={{ maxWidth: 680 }}>
             <span style={{ color: "#48a6ff", fontSize: 8, letterSpacing: ".12em" }}>SETUP FINDER · BETA</span>
@@ -102,12 +112,24 @@ export default function QuantLab({
           <div style={{ padding: 13, borderLeft: "1px solid var(--line)" }}><span style={{ color: "#657284", fontSize: 7 }}>DATA COVERAGE</span><strong style={{ display: "block", marginTop: 5, fontSize: 10 }}>{data ? `${data.scanned}/${data.universe} stocks · closing data` : "Checking universe…"}</strong></div>
         </div>
 
+        <div className="setup-steps">
+          <div><b>1</b><span><strong>Choose a setup</strong><small>Start with Healthy Pullback if you prefer lower chase risk.</small></span></div>
+          <div><b>2</b><span><strong>Review the plan</strong><small>Check entry, invalidation, target, and liquidity.</small></span></div>
+          <div><b>3</b><span><strong>Verify the chart</strong><small>Only act after the latest close and news are confirmed.</small></span></div>
+        </div>
+
         <div style={{ display: "flex", gap: 7, padding: 12, overflowX: "auto", borderBottom: "1px solid var(--line)" }}>
           {(["all", "breakout", "pullback", "momentum", "reversal"] as SetupKey[]).map((key) => {
             const active = filter === key;
             const count = key === "all" ? data?.setups.length ?? 0 : counts[key] ?? 0;
             return <button key={key} onClick={() => setFilter(key)} style={{ flex: "0 0 auto", minHeight: 34, padding: "0 12px", border: `1px solid ${active ? "#48a6ff" : "#202b38"}`, background: active ? "#0a1b2d" : "#090d13", color: active ? "#eef6ff" : "#8390a0", fontSize: 8, cursor: "pointer" }}>{key === "all" ? "BEST SETUPS" : setupMeta[key].label} · {count}</button>;
           })}
+        </div>
+
+        <div className="setup-toolbar">
+          <label><span>FIND A STOCK</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Ticker or company…" aria-label="Filter setup results" /></label>
+          <label><span>SORT BY</span><select value={sort} onChange={(event) => setSort(event.target.value as "score" | "volume" | "change")}><option value="score">Best score</option><option value="volume">Relative volume</option><option value="change">Daily move</option></select></label>
+          <small>{loading ? "Scanning…" : `${visible.length} shown · updated ${data ? new Date(data.asOf).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Jakarta" }) + " WIB" : "—"}`}</small>
         </div>
 
         {loading && <div style={{ minHeight: 330, display: "grid", placeContent: "center", color: "#778596", fontSize: 9 }}>SCANNING CLOSING PRICE, TREND, MOMENTUM, AND VOLUME…</div>}
@@ -120,7 +142,7 @@ export default function QuantLab({
                 const active = selected?.ticker === item.ticker;
                 return (
                   <button key={item.ticker} onClick={() => setSelected(item)} style={{ width: "100%", display: "grid", gridTemplateColumns: "50px minmax(0,1fr) 70px", gap: 10, alignItems: "center", padding: "13px 14px", border: 0, borderBottom: "1px solid #151d27", borderLeft: `2px solid ${active ? meta.color : "transparent"}`, background: active ? "#0c131d" : "transparent", color: "inherit", textAlign: "left", cursor: "pointer" }}>
-                    <strong style={{ color: meta.color, fontSize: 15 }}>{item.score}</strong>
+                    <strong style={{ color: meta.color, fontSize: 15 }}>{item.score}<small style={{ display: "block", marginTop: 3, color: "#657284", fontSize: 6 }}>{item.score >= 80 ? "STRONG" : item.score >= 65 ? "GOOD" : "EARLY"}</small></strong>
                     <span style={{ minWidth: 0 }}><b style={{ display: "block", fontSize: 11 }}>{item.ticker}</b><small style={{ display: "block", marginTop: 3, color: "#778596", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{meta.label} · {meta.subtitle}</small></span>
                     <span style={{ textAlign: "right" }}><b style={{ display: "block", fontSize: 10 }}>{price(item.close)}</b><small style={{ color: (item.change ?? 0) >= 0 ? "#43d4a3" : "#ff6678" }}>{pct(item.change)}</small></span>
                   </button>
@@ -136,17 +158,17 @@ export default function QuantLab({
 
               <div style={{ marginTop: 18, padding: 14, border: "1px solid #203248", background: "#08121d" }}>
                 <span style={{ color: "#6f7f91", fontSize: 7 }}>POSSIBLE PLAN · NOT AN ORDER</span>
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 10, marginTop: 11 }}>
+                <div className="setup-plan-grid" style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 10, marginTop: 11 }}>
                   {[["ENTRY AREA", `${price(selected.entryLow)}–${price(selected.entryHigh)}`], ["INVALID BELOW", price(selected.invalidation)], ["FIRST TARGET", price(selected.target)], ["RISK / REWARD", `1 : ${selected.riskReward.toFixed(1)}`]].map(([label, value]) => <div key={label}><span style={{ color: "#657284", fontSize: 7 }}>{label}</span><strong style={{ display: "block", marginTop: 5, fontSize: 11 }}>{value}</strong></div>)}
                 </div>
               </div>
 
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 12 }}>
+              <div className="setup-reason-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 12 }}>
                 <div style={{ padding: 13, border: "1px solid var(--line)" }}><span style={{ color: "#657284", fontSize: 7 }}>WHY IT APPEARED</span>{selected.reasons.map((reason) => <p key={reason} style={{ margin: "8px 0 0", color: "#c2ccd7", font: "400 10px/1.45 var(--font-geist-sans)" }}>✓ {reason}</p>)}</div>
                 <div style={{ padding: 13, border: "1px solid #3a2920", background: "#130e0a" }}><span style={{ color: "#ffb45e", fontSize: 7 }}>WHAT INVALIDATES THE IDEA</span><p style={{ margin: "8px 0 0", color: "#c7b6a1", font: "400 10px/1.5 var(--font-geist-sans)" }}>{selected.caution}</p></div>
               </div>
 
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 1, marginTop: 12, background: "var(--line)" }}>
+              <div className="setup-metrics" style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 1, marginTop: 12, background: "var(--line)" }}>
                 {[["CLOSE", price(selected.close)], ["RSI", selected.rsi?.toFixed(0) ?? "—"], ["REL. VOLUME", selected.relativeVolume === null ? "—" : `${selected.relativeVolume.toFixed(1)}×`], ["MARKET CAP", compact(selected.marketCap)]].map(([label, value]) => <div key={label} style={{ padding: 11, background: "#090d13" }}><span style={{ color: "#657284", fontSize: 7 }}>{label}</span><strong style={{ display: "block", marginTop: 5, fontSize: 10 }}>{value}</strong></div>)}
               </div>
             </div>}
