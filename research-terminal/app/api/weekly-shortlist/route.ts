@@ -49,7 +49,7 @@ async function sendWeeklyDigest(weekOf: string, marketRegime: string, candidates
       headers:{ Authorization:`Bearer ${apiKey}`, "Content-Type":"application/json" },
       body:JSON.stringify({
         from:process.env.JARVIS_EMAIL_FROM || "Jarvis Beta <onboarding@resend.dev>",
-        to:recipients,
+        to:process.env.JARVIS_EMAIL_FROM ? recipients : recipients.slice(0, 1),
         subject:`JARVIS Beta Weekly Basket · ${weekOf}`,
         html,
       }),
