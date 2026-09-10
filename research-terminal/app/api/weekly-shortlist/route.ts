@@ -31,7 +31,7 @@ type EmailCandidate = {
 };
 async function sendWeeklyDigest(weekOf: string, marketRegime: string, candidates: EmailCandidate[]) {
   const apiKey = process.env.RESEND_API_KEY;
-  const recipient = process.env.JARVIS_EMAIL_TO || "iggerzefanya@gmail.com";
+  const recipients = (process.env.JARVIS_EMAIL_TO || "iggerzefanya@gmail.com,ghazaerland@gmail.com").split(",").map((email) => email.trim()).filter(Boolean);
   if (!apiKey) return { sent:false, reason:"not_configured" };
   const rows = candidates.length ? candidates.map((item) => `
     <tr>
@@ -49,7 +49,7 @@ async function sendWeeklyDigest(weekOf: string, marketRegime: string, candidates
       headers:{ Authorization:`Bearer ${apiKey}`, "Content-Type":"application/json" },
       body:JSON.stringify({
         from:process.env.JARVIS_EMAIL_FROM || "Jarvis Beta <onboarding@resend.dev>",
-        to:[recipient],
+        to:recipients,
         subject:`JARVIS Beta Weekly Basket · ${weekOf}`,
         html,
       }),
