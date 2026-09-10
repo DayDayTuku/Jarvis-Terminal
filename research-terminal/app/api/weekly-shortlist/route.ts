@@ -55,7 +55,7 @@ async function sendWeeklyDigest(weekOf: string, marketRegime: string, candidates
       }),
     });
     if (!response.ok) return { sent:false, reason:"provider_error", status:response.status };
-    const data = await response.json();
+    const data = await response.json() as { id?: string };
     return { sent:true, id:data?.id ?? null };
   } catch {
     return { sent:false, reason:"network_error" };
