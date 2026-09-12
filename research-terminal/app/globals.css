@@ -867,3 +867,70 @@ html[data-theme=light] .season-tile,
 html[data-theme=light] .season-tile :is(span,strong,small) { color: #17202a !important; }
 html[data-theme=light] .season-tile { border-color: #ffffff !important; }
 html[data-theme=light] .season-legend i { background: linear-gradient(90deg,#d84b5e,#f2f4f7,#19966a) !important; }
+
+
+/* Complete Quant Lab light surfaces */
+html[data-theme=light] .setup-finder .setup-reason-grid > div {
+  background: #f7f8fa !important;
+  color: #17202a !important;
+  border-color: var(--line) !important;
+}
+html[data-theme=light] .setup-finder .setup-reason-grid > div:last-child {
+  background: #fff7ed !important;
+  border-color: #e8c9a7 !important;
+}
+html[data-theme=light] .setup-finder .setup-reason-grid :is(span,p) { color: #526173 !important; }
+html[data-theme=light] .setup-finder .setup-reason-grid > div:last-child span { color: #a65a12 !important; }
+html[data-theme=light] .setup-finder .setup-metrics { background: var(--line) !important; }
+html[data-theme=light] .setup-finder .setup-metrics > div { background: #f4f6f8 !important; color: #17202a !important; }
+html[data-theme=light] .setup-finder .setup-metrics span { color: #657284 !important; }
+html[data-theme=light] .setup-finder .setup-metrics strong { color: #17202a !important; }
+html[data-theme=light] .setup-finder .quant-grid > div:first-child { border-color: var(--line) !important; }
+html[data-theme=light] .setup-finder .quant-grid > div:first-child > button { background: #ffffff !important; color: #17202a !important; }
+html[data-theme=light] .setup-finder .quant-grid > div:first-child > button:hover { background: #edf5fc !important; }
+html[data-theme=light] .setup-finder select { background: #ffffff !important; color: #17202a !important; border-color: var(--line-strong) !important; }
+html[data-theme=light] .weekly-shortlist { background: var(--panel) !important; color: var(--text) !important; }
+html[data-theme=light] :is(.weekly-head,.weekly-empty,.weekly-row,.weekly-shortlist footer) { border-color: var(--line) !important; }
+html[data-theme=light] .weekly-row { background: #ffffff !important; }
+html[data-theme=light] .weekly-row:hover { background: #f4f8fb !important; }
+html[data-theme=light] :is(.weekly-rank,.weekly-row small,.weekly-row span,.weekly-lock small,.weekly-shortlist footer) { color: var(--muted) !important; }
+html[data-theme=light] .weekly-decision button { background: #ffffff !important; color: var(--muted) !important; border-color: var(--line-strong) !important; }
+html[data-theme=light] .weekly-decision .approve.active { background: #e7f6ef !important; color: #087653 !important; border-color: #4aa987 !important; }
+html[data-theme=light] .weekly-decision .reject.active { background: #fdebed !important; color: #a52b3a !important; border-color: #d96a78 !important; }
+
+
+/* Complete Stock Detail Modal light surfaces */
+html[data-theme=light] .stock-modal-content {
+  background-color: #ffffff !important;
+  color: #17202a !important;
+  border-color: #cbd5df !important;
+  box-shadow: 0 24px 64px #1f293733, 0 0 0 1px #ffffff !important;
+}
+html[data-theme=light] .stock-modal-content > div:first-child,
+html[data-theme=light] .stock-modal-content > div:last-child > div {
+  background-color: #ffffff !important;
+  border-color: var(--line) !important;
+}
+html[data-theme=light] .stock-modal-content [style*="background:"] { background: #f7f8fa !important; }
+html[data-theme=light] .stock-modal-content :is(div,section,header) { border-color: var(--line) !important; }
+html[data-theme=light] .stock-modal-content :is(input,select,textarea) {
+  background: #ffffff !important;
+  color: #17202a !important;
+  border-color: var(--line-strong) !important;
+}
+html[data-theme=light] .stock-modal-content [style*="color: rgb(255, 255, 255)"],
+html[data-theme=light] .stock-modal-content [style*="color: #ffffff"],
+html[data-theme=light] .stock-modal-content [style*="color: rgb(232, 237, 243)"],
+html[data-theme=light] .stock-modal-content [style*="color: #e8edf3"] { color: #17202a !important; }
+html[data-theme=light] .stock-modal-content [style*="background-color: rgb(10, 15, 22)"],
+html[data-theme=light] .stock-modal-content [style*="background-color: rgb(7, 11, 16)"],
+html[data-theme=light] .stock-modal-content [style*="background-color: rgb(6, 9, 14)"],
+html[data-theme=light] .stock-modal-content [style*="background-color: #0a0f16"],
+html[data-theme=light] .stock-modal-content [style*="background-color: #070b10"],
+html[data-theme=light] .stock-modal-content [style*="background-color: #06090e"] { background-color: #f7f8fa !important; }
+html[data-theme=light] .stock-modal-content button:not(:disabled) { border-color: var(--line-strong) !important; }
+html[data-theme=light] .stock-modal-content .quality-hero,
+html[data-theme=light] .stock-modal-content .quality-checks,
+html[data-theme=light] .stock-modal-content .quality-check { background: #ffffff !important; }
+html[data-theme=light] .stock-modal-content .quality-check:nth-child(4n+1),
+html[data-theme=light] .stock-modal-content .quality-check:nth-child(4n+4) { background: #f7f8fa !important; }
