@@ -814,3 +814,33 @@ body { min-height: 100%; background: #000; -webkit-text-size-adjust: 100%; overs
 .weekly-shortlist{overflow:hidden}.weekly-head{display:flex;justify-content:space-between;gap:16px;padding:16px;border-bottom:1px solid var(--line)}.weekly-head span{color:#48a6ff;font-size:8px;letter-spacing:.1em}.weekly-head h3{margin:6px 0 3px;font-size:16px}.weekly-head p{margin:0;color:#778596;font:400 10px var(--font-geist-sans)}.weekly-lock{display:grid;align-content:center;justify-items:end;color:#43d4a3;font-size:8px}.weekly-lock small{margin-top:5px;color:#778596}.weekly-empty{min-height:150px;display:grid;place-content:center;justify-items:center;gap:7px;padding:24px;text-align:center}.weekly-empty strong{font-size:12px}.weekly-empty p{max-width:560px;margin:0;color:#8390a0;font:400 10px/1.5 var(--font-geist-sans)}.weekly-empty span{color:#48a6ff;font-size:8px}.weekly-row{display:grid;grid-template-columns:34px minmax(120px,1.2fr) repeat(4,minmax(70px,.8fr)) minmax(150px,1.2fr);gap:10px;align-items:center;padding:12px 14px;border-bottom:1px solid #151d27}.weekly-rank{color:#536171;font-size:9px}.weekly-row>div{min-width:0}.weekly-row strong{display:block;font-size:11px}.weekly-row small,.weekly-row span{display:block;color:#657284;font-size:7px}.weekly-row b{display:block;margin-top:4px;font-size:9px}.weekly-decision{display:flex;gap:5px;justify-content:flex-end}.weekly-decision button{min-height:30px;padding:0 8px;border:1px solid #253140;background:#080c12;color:#778596;font-size:7px;cursor:pointer}.weekly-decision .approve.active{border-color:#43d4a3;color:#43d4a3;background:#071711}.weekly-decision .reject.active{border-color:#ff6678;color:#ff6678;background:#17080b}.weekly-shortlist footer{display:flex;justify-content:space-between;gap:12px;padding:9px 12px;color:#536171;font-size:7px}
 @media(max-width:900px){.weekly-row{grid-template-columns:30px 1fr repeat(2,80px)}.weekly-row>div:nth-child(5),.weekly-row>div:nth-child(6){display:none}.weekly-decision{grid-column:2/-1;justify-content:flex-start}}
 @media(max-width:560px){.weekly-head{display:grid}.weekly-lock{justify-items:start}.weekly-row{grid-template-columns:28px 1fr 82px}.weekly-row>div:nth-child(4){display:none}.weekly-shortlist footer{display:grid}}
+
+
+/* Complete light theme surfaces */
+html[data-theme=light] :is(.date-rule,.watch-meta,.thesis-check,.relationship-note,.suite-head,.portfolio-summary,.suite-method,.setup-steps,.setup-toolbar,.replay-head,.replay-method,.cot-legend){background:var(--panel-raised)!important;color:var(--text)!important;border-color:var(--line)!important}
+html[data-theme=light] :is(.range-switcher button.active,.ticker-switcher button.active,.ticker-switcher button:hover){background:#e7edf2!important;color:var(--text)!important}
+html[data-theme=light] :is(.regime-sector-overlay span,.canvas-current,.side-nav nav button::after,.side-tools button::after,.sidebar-health::after){background:#fffefa!important;color:var(--muted)!important;border-color:var(--line-strong)!important;box-shadow:0 8px 20px #26313b1a!important}
+html[data-theme=light] .setup-finder button{background:var(--panel-raised)!important;color:var(--text)!important}
+html[data-theme=light] .setup-finder :is(p,small){color:var(--muted)!important}
+html[data-theme=light] .setup-finder .quant-grid>div:first-child>button{border-bottom-color:var(--line)!important}
+html[data-theme=light] .setup-finder .quant-grid>div:last-child>div{background:var(--panel-raised)!important;border-color:var(--line)!important}
+html[data-theme=light] :is(.replay-head h3,.replay-verdict strong,.suite-head h3,.portfolio-summary strong,.scenario-switcher strong,.concentration-row strong,.quality-check strong){color:var(--text)!important}
+html[data-theme=light] :is(.replay-head p,.suite-head p,.scenario-hero p,.season-summary p,.quality-check p){color:var(--muted)!important}
+html[data-theme=light] :is(.replay-controls select,.portfolio-input-row input,.ticker-adder input,.portfolio-actions button,.scenario-switcher button,.feedback-kinds button,.feedback-modal textarea,.feedback-item,.feedback-item select){background:#fff!important;color:var(--text)!important;border-color:var(--line-strong)!important}
+html[data-theme=light] :is(.portfolio-summary,.quality-hero,.quality-checks){background:var(--panel)!important;border-color:var(--line)!important}
+html[data-theme=light] :is(.portfolio-input-row,.scenario-positions>div,.risk-map-row,.concentration-row,.quality-check,.quality-history-row,.replay-row,.replay-events>div){border-color:var(--line)!important}
+html[data-theme=light] :is(.matrix-row>*,.relationship-note){background:#eef1f3!important;color:var(--text)!important;border-color:var(--panel)!important}
+html[data-theme=light] .matrix-row>b:first-child,html[data-theme=light] .matrix-labels>*{background:transparent!important;color:var(--muted)!important}
+html[data-theme=light] .corr-pos{background:color-mix(in srgb,var(--positive) 22%,#fff)!important;color:#075b43!important}
+html[data-theme=light] .corr-neg{background:color-mix(in srgb,var(--negative) 19%,#fff)!important;color:#7e1928!important}
+html[data-theme=light] .heat-tile{border-color:#ffffffb8!important;color:var(--text)!important}
+html[data-theme=light] .heat-tile :is(span,small){color:var(--text)!important}
+html[data-theme=light] .heat-tile.up1{background:color-mix(in srgb,var(--positive) 15%,#fff)!important}
+html[data-theme=light] .heat-tile.up2{background:color-mix(in srgb,var(--positive) 25%,#fff)!important}
+html[data-theme=light] .heat-tile.up3{background:color-mix(in srgb,var(--positive) 38%,#fff)!important}
+html[data-theme=light] .heat-tile.down1{background:color-mix(in srgb,var(--negative) 14%,#fff)!important}
+html[data-theme=light] .heat-tile.down2{background:color-mix(in srgb,var(--negative) 24%,#fff)!important}
+html[data-theme=light] .heat-tile.down3{background:color-mix(in srgb,var(--negative) 36%,#fff)!important}
+html[data-theme=light] .season-tile{color:var(--text)!important;border-color:#ffffffb8!important}
+html[data-theme=light] .season-tile :is(span,small){color:var(--text)!important}
+html[data-theme=light] :is(.feedback-modal,.drawer,.recent-note,.scheme-list button,.access-block>div){background:var(--panel)!important;color:var(--text)!important;border-color:var(--line)!important}
