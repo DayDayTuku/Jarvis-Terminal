@@ -14,7 +14,7 @@ function change(a?:Action){return !a?"NEW":a.action==="BUY"?(a.previous_score===
 const tone:Record<string,string>={NEW:"#43d4a3",ADD:"#43d4a3",KEEP:"#48a6ff",TRIM:"#ff9840",EXIT:"#ff6678",REPLACE:"#a78bfa",NO_ENTRY:"#778596",EXPIRED:"#778596"};
 export default function WeeklyShortlist({setups}:{setups:Setup[]}){
  const[state,setState]=useState<State|null>(null),[busy,setBusy]=useState(false),[observed,setObserved]=useState<string[]>([]);
- const load=()=>fetch("/api/weekly-shortlist",{cache:"no-store"}).then(r=>r.ok?r.json():Promise.reject()).then(v=>setState(v)).catch(()=>setState(null));
+ const load=()=>fetch("/api/weekly-shortlist",{cache:"no-store"}).then(r=>r.ok?r.json():Promise.reject()).then((v:State)=>setState(v)).catch(()=>setState(null));
  useEffect(()=>{void load();try{setObserved(JSON.parse(localStorage.getItem("jarvis_weekly_observed")||"[]"))}catch{}},[]);
  const regime=useMemo(()=>regimeFor(setups),[setups]),proposed=useMemo(()=>pick(setups,regime),[setups,regime]);
  useEffect(()=>{if(!state?.canLock||busy||state.currentWeek===state.run?.week_of||!setups.length)return;setBusy(true);fetch("/api/weekly-shortlist",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({candidates:proposed,marketRegime:"V5 "+regime})}).then(load).finally(()=>setBusy(false))},[state?.canLock,state?.currentWeek,state?.run?.week_of,setups.length,regime]);
