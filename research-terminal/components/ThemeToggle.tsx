@@ -1,0 +1,4 @@
+"use client";
+import {useEffect,useState} from "react";
+type Theme="dark"|"light";
+export default function ThemeToggle(){const[theme,setTheme]=useState<Theme>("dark");useEffect(()=>{const saved=localStorage.getItem("jarvis_theme");const initial=saved==="light"?"light":"dark";setTheme(initial);document.documentElement.dataset.theme=initial;document.documentElement.style.colorScheme=initial},[]);const toggle=()=>{const next=theme==="dark"?"light":"dark";setTheme(next);document.documentElement.dataset.theme=next;document.documentElement.style.colorScheme=next;localStorage.setItem("jarvis_theme",next)};return <button className="theme-toggle" type="button" onClick={toggle} aria-label={theme==="dark"?"Switch to light mode":"Switch to dark mode"} title={theme==="dark"?"Light mode":"Dark mode"}><span aria-hidden="true">{theme==="dark"?"☀":"☾"}</span></button>}
