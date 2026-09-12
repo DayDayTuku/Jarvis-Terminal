@@ -1,4 +1,5 @@
-"use client";
+17
+  const load=()=>fetch("/api/weekly-shortlist",{cache:"no-store"}).then(r=>r.ok?(r.json() as Promise<State>):Promise.reject<State>()).then(v=>setState(v)).catch(()=>setState(null));
 import {useEffect,useMemo,useState} from "react";
 type Setup={ticker:string;setup:string;score:number;entryLow:number;entryHigh:number;invalidation:number;target:number;riskReward:number;sector?:string};
 type Candidate={id:string;rank:number;ticker:string;setup:string;score:number;planned_entry_low:number;planned_entry_high:number;invalidation:number;target_one:number};
