@@ -934,3 +934,18 @@ html[data-theme=light] .stock-modal-content .quality-checks,
 html[data-theme=light] .stock-modal-content .quality-check { background: #ffffff !important; }
 html[data-theme=light] .stock-modal-content .quality-check:nth-child(4n+1),
 html[data-theme=light] .stock-modal-content .quality-check:nth-child(4n+4) { background: #f7f8fa !important; }
+
+
+/* Access rebrand light-mode contrast */
+html[data-theme=light] .access-form-pane > small { color: #526173 !important; }
+html[data-theme=light] .access-form-pane > small button {
+  color: #111820 !important;
+  font-weight: 700;
+  text-decoration-color: #111820 !important;
+  text-underline-offset: 3px;
+}
+html[data-theme=light] .access-form-pane > small button:hover,
+html[data-theme=light] .access-form-pane > small button:focus-visible {
+  color: #0b6fbf !important;
+  text-decoration-color: #0b6fbf !important;
+}
