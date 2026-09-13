@@ -333,7 +333,7 @@ export default function Home() {
             <aside className="decision-actions" aria-labelledby="actions-title">
               <header className="brief-section-head"><h3 id="actions-title">NEXT RESEARCH MOVE</h3><span>CHOOSE A SURFACE</span></header>
               <div className="decision-current-thesis"><span>CURRENT THESIS</span><h4>{thesisHeadline}</h4><p>{savedNote}</p></div>
-              <button className="decision-link" onClick={() => changeSection('QUANT LAB')}><span><strong>OPEN WEEKLY BASKET</strong><small>Review V5 selections and portfolio actions</small></span><span aria-hidden="true">→</span></button>
+              <button className="decision-link" onClick={() => changeSection('QUANT LAB')}><span><strong>OPEN WEEKLY PICKS</strong><small>Review V5 selections and portfolio actions</small></span><span aria-hidden="true">→</span></button>
               <button className="decision-link" onClick={() => changeSection('MARKETS')}><span><strong>CHECK MARKET STRUCTURE</strong><small>Breadth, sectors, and watchlist detail</small></span><span aria-hidden="true">→</span></button>
               <button className="decision-link" onClick={() => changeSection('PORTFOLIO')}><span><strong>STRESS THE PORTFOLIO</strong><small>Check concentration before adding risk</small></span><span aria-hidden="true">→</span></button>
             </aside>
