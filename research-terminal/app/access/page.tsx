@@ -67,8 +67,8 @@ function AccessForm() {
 
           <div key={mode} className="access-form-heading">
             <span>{mode === 'login' ? 'WELCOME BACK' : 'GET STARTED'}</span>
-            <h2>{mode === 'login' ? 'Continue your research.' : 'Create your research workspace.'}</h2>
-            <p>{mode === 'login' ? 'Enter your details to open Jarvis Research.' : 'Create an account with your email. No payment details required.'}</p>
+            <h2>{mode === 'login' ? 'Continue your research.' : 'Create your account.'}</h2>
+            <p>{mode === 'login' ? 'Enter your details to open Jarvis Research.' : 'Use your email to create a Jarvis account.'}</p>
           </div>
 
           <form onSubmit={submit}>
