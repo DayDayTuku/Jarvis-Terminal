@@ -949,3 +949,12 @@ html[data-theme=light] .access-form-pane > small button:focus-visible {
   color: #0b6fbf !important;
   text-decoration-color: #0b6fbf !important;
 }
+
+
+/* Keep Login and Create Account perfectly aligned on desktop. */
+@media (min-width: 721px) {
+  .access-form-heading {
+    height: 146px;
+    min-height: 146px;
+  }
+}
