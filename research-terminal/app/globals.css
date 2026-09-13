@@ -954,7 +954,7 @@ html[data-theme=light] .access-form-pane > small button:focus-visible {
 /* Keep Login and Create Account perfectly aligned on desktop. */
 @media (min-width: 721px) {
   .access-form-heading {
-    height: 146px;
-    min-height: 146px;
+    height: 112px;
+    min-height: 112px;
   }
 }
