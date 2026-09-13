@@ -958,3 +958,54 @@ html[data-theme=light] .access-form-pane > small button:focus-visible {
     min-height: 112px;
   }
 }
+
+/* Jarvis Overview — calm briefing surface */
+.decision-home { padding: clamp(24px, 3.2vw, 46px); background: var(--bg); }
+.decision-intro { max-width: 920px; padding: 8px 0 30px; }
+.decision-kicker { display: block; color: var(--blue); font-size: 9px; letter-spacing: .16em; margin-bottom: 12px; }
+.decision-intro h3 { margin: 0; max-width: 760px; color: var(--text); font-family: var(--font-geist-sans), system-ui, sans-serif; font-size: clamp(28px, 4vw, 54px); line-height: 1.02; letter-spacing: -.055em; }
+.decision-intro > p { max-width: 670px; margin: 15px 0 0; color: var(--muted); font-family: var(--font-geist-sans), system-ui, sans-serif; font-size: 14px; line-height: 1.65; }
+.decision-posture { display: grid; grid-template-columns: minmax(170px,.55fr) minmax(250px,1.35fr) repeat(2,minmax(130px,.5fr)); align-items: center; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.decision-posture > div { min-height: 86px; padding: 18px 22px; border-right: 1px solid var(--line); display: flex; flex-direction: column; justify-content: center; gap: 7px; }
+.decision-posture > div:first-child { padding-left: 0; }
+.decision-posture > div:last-child { border-right: 0; }
+.decision-posture span, .brief-section-head span, .brief-index, .decision-current-thesis > span { color: var(--muted); font-size: 8px; letter-spacing: .12em; }
+.decision-posture strong { color: var(--text); font-size: 13px; letter-spacing: .04em; }
+.decision-posture .posture-name { color: var(--orange); font-size: 17px; }
+.decision-body { display: grid; grid-template-columns: minmax(0,1.35fr) minmax(310px,.65fr); gap: 0; }
+.decision-brief { padding: 32px 38px 20px 0; border-right: 1px solid var(--line); }
+.decision-actions { padding: 32px 0 20px 38px; }
+.brief-section-head { display: flex; align-items: baseline; justify-content: space-between; gap: 18px; margin-bottom: 10px; }
+.brief-section-head h3 { margin: 0; color: var(--text); font-size: 11px; letter-spacing: .12em; }
+.brief-row { display: grid; grid-template-columns: 34px minmax(0,1fr); gap: 14px; padding: 20px 0; border-bottom: 1px solid var(--line); }
+.brief-row:last-child { border-bottom: 0; }
+.brief-row strong { display: block; color: var(--text); font-family: var(--font-geist-sans), system-ui, sans-serif; font-size: 16px; line-height: 1.35; }
+.brief-row p { margin: 6px 0 0; color: var(--muted); font-family: var(--font-geist-sans), system-ui, sans-serif; font-size: 12px; line-height: 1.6; }
+.decision-current-thesis { padding: 19px 0 24px; border-bottom: 1px solid var(--line); }
+.decision-current-thesis h4 { max-width: 520px; margin: 9px 0 8px; color: var(--text); font-family: var(--font-geist-sans), system-ui, sans-serif; font-size: 18px; line-height: 1.35; }
+.decision-current-thesis p { margin: 0; color: var(--muted); font-family: var(--font-geist-sans), system-ui, sans-serif; font-size: 12px; line-height: 1.55; }
+.decision-link { width: 100%; display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 12px; padding: 17px 0; border: 0; border-bottom: 1px solid var(--line); background: transparent; text-align: left; cursor: pointer; }
+.decision-link strong { display: block; color: var(--text); font-size: 10px; letter-spacing: .08em; }
+.decision-link small { display: block; margin-top: 5px; color: var(--muted); font-size: 9px; letter-spacing: .02em; }
+.decision-link > span { color: var(--blue); font-size: 17px; transition: transform .18s ease; }
+.decision-link:hover > span, .decision-link:focus-visible > span { transform: translateX(4px); }
+.decision-link:hover strong, .decision-link:focus-visible strong { color: var(--blue); }
+@media (max-width: 900px) {
+  .decision-posture { grid-template-columns: repeat(2,minmax(0,1fr)); }
+  .decision-posture > div:nth-child(2) { border-right: 0; }
+  .decision-posture > div:first-child { padding-left: 18px; }
+  .decision-posture > div:nth-child(-n+2) { border-bottom: 1px solid var(--line); }
+  .decision-body { grid-template-columns: 1fr; }
+  .decision-brief { padding: 28px 0 10px; border-right: 0; }
+  .decision-actions { padding: 24px 0 8px; border-top: 1px solid var(--line); }
+}
+@media (max-width: 560px) {
+  .decision-home { padding: 22px 16px 30px; }
+  .decision-intro { padding-bottom: 22px; }
+  .decision-intro h3 { font-size: 31px; }
+  .decision-posture { grid-template-columns: 1fr 1fr; }
+  .decision-posture > div { min-height: 78px; padding: 14px 12px; }
+  .decision-posture > div:first-child { padding-left: 12px; }
+  .decision-posture .posture-name { font-size: 14px; }
+  .brief-section-head { align-items: flex-start; flex-direction: column; gap: 5px; }
+}
