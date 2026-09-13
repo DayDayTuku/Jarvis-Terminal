@@ -308,11 +308,36 @@ export default function Home() {
 
         <div className="view-heading"><div><span>RESEARCH / {active}</span><h2>{active === 'OVERVIEW' ? 'Daily Research Overview' : active === 'GPR INDEX' ? 'Geopolitical Risk Index' : titleCase(active)}</h2></div><p>{sectionDescription(active)}</p></div>
 
-        {active === 'OVERVIEW' && <section className="dashboard-grid overview-grid">
-          <Watchlist watchlist={watchlist} live={Boolean(markets)} onSelectStock={(t) => openStockDetail(t)} />
-          <Calendar data={calendar} />
-          <article className="panel thesis-panel"><PanelHead index="03" title="CURRENT THESIS"><span className="compact-health" title={`${liveCount}/4 feeds live`}><i className={liveCount >= 3 ? 'good' : liveCount ? 'partial' : ''} />{thesisConfidence}</span></PanelHead><div className="thesis-content compact"><span className="thesis-date">{thesisFreshness} · {thesisConfidence} CONFIDENCE</span><h3>{thesisHeadline}</h3><p>{thesisEvidence.join(" ")}</p><p style={{borderTop:'1px solid var(--line)',paddingTop:'9px',marginTop:'9px'}}><strong style={{color:'#778596',fontSize:'8px',letterSpacing:'.08em'}}>ANALYST NOTE · </strong>{savedNote}</p><button className="quiet-button" onClick={() => setNotesOpen(true)} style={{justifySelf:'start'}}>UPDATE NOTE</button><div className="thesis-tags">{thesisTags.length ? thesisTags.map((tag) => <span key={tag}>{tag}</span>) : <span>LOW DATA</span>}</div></div></article>
-          <article className="panel implication-panel"><PanelHead index="04" title="DAILY IMPLICATIONS"><span className="compact-health" title={`${liveCount}/4 feeds live`}><i className={liveCount >= 3 ? 'good' : liveCount ? 'partial' : ''} />{liveCount}/4</span></PanelHead><div className="implication-list"><p><span>01</span><strong>Stay selective in cyclicals</strong><small>Weakening growth and sticky inflation lower the margin for error.</small></p><p><span>02</span><strong>Keep energy on the screen</strong><small>Oil strength supports cash flow, but ADRO and BUMI remain coal-led exposures.</small></p><p><span>03</span><strong>Size around event risk</strong><small>Elevated GPR argues for tighter stops and less crowded positions.</small></p></div></article>
+        {active === 'OVERVIEW' && <section className="decision-home">
+          <header className="decision-intro">
+            <span className="decision-kicker">JARVIS / DECISION BRIEF</span>
+            <h3>Start with what changed.</h3>
+            <p>A quiet research briefing before you move into charts, screeners, and individual stocks.</p>
+          </header>
+
+          <section className="decision-posture" aria-label="Current market posture">
+            <div><span>MARKET REGIME</span><strong className="posture-name">{regimeLabel(currentRegime)}</strong></div>
+            <div><span>RESEARCH BIAS</span><strong>{thesisHeadline}</strong></div>
+            <div><span>IDX BREADTH</span><strong>{validSectorMoves.length ? `${positiveSectors}/${validSectorMoves.length} POSITIVE` : 'PENDING'}</strong></div>
+            <div><span>DATA CONFIDENCE</span><strong>{thesisConfidence} · {liveCount}/4 FEEDS</strong></div>
+          </section>
+
+          <div className="decision-body">
+            <section className="decision-brief" aria-labelledby="brief-title">
+              <header className="brief-section-head"><h3 id="brief-title">WHAT DESERVES ATTENTION</h3><span>LATEST AVAILABLE DATA</span></header>
+              <article className="brief-row"><span className="brief-index">01</span><div><strong>Macro regime sets the risk budget.</strong><p>{thesisEvidence[0] ?? 'Macro confirmation is still incomplete; avoid forcing a strong regime call.'}</p></div></article>
+              <article className="brief-row"><span className="brief-index">02</span><div><strong>{breadthAverage === null ? 'IDX participation is waiting for a valid read.' : breadthAverage >= 0 ? 'IDX participation is improving, but selection still matters.' : 'IDX participation remains weak; patience has value.'}</strong><p>{breadthAverage === null ? 'Market breadth data is unavailable.' : `${positiveSectors} of ${validSectorMoves.length} sectors are positive, averaging ${signed(breadthAverage)}% today.`}</p></div></article>
+              <article className="brief-row"><span className="brief-index">03</span><div><strong>External pressure stays visible.</strong><p>{markets ? `DXY ${signed(dxy.change)}% and oil ${signed(oil.change)}% versus the prior observation.` : 'Cross-market data is pending; this signal is withheld rather than estimated.'}</p></div></article>
+            </section>
+
+            <aside className="decision-actions" aria-labelledby="actions-title">
+              <header className="brief-section-head"><h3 id="actions-title">NEXT RESEARCH MOVE</h3><span>CHOOSE A SURFACE</span></header>
+              <div className="decision-current-thesis"><span>CURRENT THESIS</span><h4>{thesisHeadline}</h4><p>{savedNote}</p></div>
+              <button className="decision-link" onClick={() => changeSection('QUANT LAB')}><span><strong>OPEN WEEKLY BASKET</strong><small>Review V5 selections and portfolio actions</small></span><span aria-hidden="true">→</span></button>
+              <button className="decision-link" onClick={() => changeSection('MARKETS')}><span><strong>CHECK MARKET STRUCTURE</strong><small>Breadth, sectors, and watchlist detail</small></span><span aria-hidden="true">→</span></button>
+              <button className="decision-link" onClick={() => changeSection('PORTFOLIO')}><span><strong>STRESS THE PORTFOLIO</strong><small>Check concentration before adding risk</small></span><span aria-hidden="true">→</span></button>
+            </aside>
+          </div>
         </section>}
 
         {active === 'MACRO' && <section className="dashboard-grid macro-grid">
