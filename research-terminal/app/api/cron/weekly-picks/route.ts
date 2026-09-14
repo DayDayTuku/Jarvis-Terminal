@@ -41,7 +41,7 @@ async function getBars(ticker:string, since:string):Promise<Bar[]> {
     const url = "https://query2.finance.yahoo.com/v8/finance/chart/" + encodeURIComponent(ticker) + ".JK?period1=" + period1 + "&period2=" + (Math.floor(Date.now()/1000)+86400) + "&interval=1d";
     const response = await fetch(url,{cache:"no-store"});
     if(!response.ok) return [];
-    const json = await response.json();
+    const json:any = await response.json();
     const quote = json?.chart?.result?.[0]?.indicators?.quote?.[0];
     if(!quote) return [];
     return (quote.open ?? []).map((open:number|null,index:number) => ({ open:Number(open), high:Number(quote.high?.[index]), low:Number(quote.low?.[index]), close:Number(quote.close?.[index]) })).filter((bar:Bar) => Object.values(bar).every(Number.isFinite));
@@ -83,7 +83,7 @@ async function sendDigest(weekOf:string, regime:string, candidates:Candidate[], 
   const html="<!doctype html><html><body style='margin:0;background:#f4f5f7;font-family:Arial;color:#111827'><div style='max-width:760px;margin:auto;padding:28px 16px'><header style='background:#111827;color:white;padding:24px'><small>JARVIS RESEARCH</small><h1>Weekly Picks</h1><p>Week of "+escapeHtml(weekOf)+" · V5 "+escapeHtml(regime)+"</p></header><main style='background:white;padding:22px'><h2>Last week's positions</h2><table style='width:100%;border-collapse:collapse' cellpadding='9'><tr style='background:#1f3c52;color:white'><th>Ticker</th><th>Action</th><th>Weight</th><th>Reason</th></tr>"+actionRows+"</table><h2>This week's picks</h2><table style='width:100%;border-collapse:collapse' cellpadding='9'><tr style='background:#1f3c52;color:white'><th>Ticker</th><th>Setup</th><th>Score</th><th>Entry</th></tr>"+pickRows+"</table><p style='color:#6b7280;font-size:12px'>Rules-based research, not investment advice. Every pick is reviewed next week as HOLD, REDUCE, EXIT, NO_ENTRY, or EXPIRED.</p></main></div></body></html>";
   const response=await fetch("https://api.resend.com/emails",{method:"POST",headers:{Authorization:"Bearer "+apiKey,"Content-Type":"application/json"},body:JSON.stringify({from:process.env.JARVIS_EMAIL_FROM||"Jarvis Research <onboarding@resend.dev>",to:recipients,subject:"JARVIS V5 · Weekly Picks · "+weekOf,html})});
   if(!response.ok) return {sent:false,reason:"provider_error",status:response.status};
-  const data=await response.json();
+  const data:any=await response.json();
   return {sent:true,id:data.id||null};
 }
 
@@ -100,7 +100,7 @@ export async function GET(request:NextRequest) {
   if(existing) return NextResponse.json({ok:true,alreadyLocked:true,runId:existing.id});
   const scannerResponse=await fetch(new URL(request.url).origin+"/api/swing-setups",{cache:"no-store"});
   if(!scannerResponse.ok) return NextResponse.json({error:"Screener unavailable."},{status:503});
-  const scanner=await scannerResponse.json();
+  const scanner:any=await scannerResponse.json();
   const setups=Array.isArray(scanner?.setups)?scanner.setups as Setup[]:[];
   const regime=regimeFor(setups);
   const selected=pick(setups,regime);
