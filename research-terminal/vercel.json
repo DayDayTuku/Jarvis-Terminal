@@ -1,0 +1,8 @@
+{
+  "crons": [
+    {
+      "path": "/api/cron/weekly-picks",
+      "schedule": "30 9 * * 5"
+    }
+  ]
+}
