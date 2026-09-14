@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { generateWeeklyPicksDocx } from "../../../../lib/weekly-picks-docx";
 
 export const maxDuration = 60;
 
@@ -74,14 +75,15 @@ async function buildLifecycle(runId:string, priorRun:any, prior:any[], current:C
   for(const item of current) if(!oldTickers.has(item.ticker)) actions.push({ run_id:runId, prior_run_id:priorRun?.id, ticker:item.ticker, action:"BUY", previous_score:null, current_score:Number(item.score), target_weight:Number(item.position_weight)||12.5, theoretical_fill:null, entry_filled:false, target_reached:false, invalidated:false, reason:priorRun?"New V5 qualifier; use the stated entry range.":"Initial V5 Weekly Pick; do not chase." });
   return actions;
 }
-async function sendDigest(weekOf:string, regime:string, candidates:Candidate[], actions:Action[]) {
+async function sendDigest(weekOf:string, regime:string, candidates:Candidate[], actions:Action[], recipientOverride?:string[]) {
   const apiKey=process.env.RESEND_API_KEY;
   if(!apiKey) return {sent:false,reason:"not_configured"};
-  const recipients=(process.env.JARVIS_EMAIL_TO || "iggerzefanya@gmail.com").split(",").map((email)=>email.trim()).filter(Boolean);
+  const recipients=recipientOverride || (process.env.JARVIS_EMAIL_TO || "iggerzefanya@gmail.com").split(",").map((email)=>email.trim()).filter(Boolean);
   const actionRows=actions.length?actions.map((item)=>"<tr><td>"+escapeHtml(item.ticker)+"</td><td><b>"+item.action+"</b></td><td>"+item.target_weight.toFixed(1)+"%</td><td>"+escapeHtml(item.reason)+"</td></tr>").join(""):"<tr><td colspan='4'>No prior-position action this week.</td></tr>";
   const pickRows=candidates.length?candidates.map((item)=>"<tr><td><b>"+escapeHtml(item.ticker)+"</b></td><td>"+escapeHtml(item.setup)+"</td><td>"+Number(item.score).toFixed(1)+"</td><td>"+Number(item.planned_entry_low).toLocaleString("id-ID")+"–"+Number(item.planned_entry_high).toLocaleString("id-ID")+"</td></tr>").join(""):"<tr><td colspan='4'>No qualified setup. Capital remains in cash.</td></tr>";
   const html="<!doctype html><html><body style='margin:0;background:#f4f5f7;font-family:Arial;color:#111827'><div style='max-width:760px;margin:auto;padding:28px 16px'><header style='background:#111827;color:white;padding:24px'><small>JARVIS RESEARCH</small><h1>Weekly Picks</h1><p>Week of "+escapeHtml(weekOf)+" · V5 "+escapeHtml(regime)+"</p></header><main style='background:white;padding:22px'><h2>Last week's positions</h2><table style='width:100%;border-collapse:collapse' cellpadding='9'><tr style='background:#1f3c52;color:white'><th>Ticker</th><th>Action</th><th>Weight</th><th>Reason</th></tr>"+actionRows+"</table><h2>This week's picks</h2><table style='width:100%;border-collapse:collapse' cellpadding='9'><tr style='background:#1f3c52;color:white'><th>Ticker</th><th>Setup</th><th>Score</th><th>Entry</th></tr>"+pickRows+"</table><p style='color:#6b7280;font-size:12px'>Rules-based research, not investment advice. Every pick is reviewed next week as HOLD, REDUCE, EXIT, NO_ENTRY, or EXPIRED.</p></main></div></body></html>";
-  const response=await fetch("https://api.resend.com/emails",{method:"POST",headers:{Authorization:"Bearer "+apiKey,"Content-Type":"application/json"},body:JSON.stringify({from:process.env.JARVIS_EMAIL_FROM||"Jarvis Research <onboarding@resend.dev>",to:recipients,subject:"JARVIS V5 · Weekly Picks · "+weekOf,html})});
+  const report=generateWeeklyPicksDocx({weekOf,regime,picks:candidates,actions});
+  const response=await fetch("https://api.resend.com/emails",{method:"POST",headers:{Authorization:"Bearer "+apiKey,"Content-Type":"application/json"},body:JSON.stringify({from:process.env.JARVIS_EMAIL_FROM||"Jarvis Research <onboarding@resend.dev>",to:recipients,subject:"JARVIS V5 · Weekly Picks · "+weekOf,html,attachments:[{filename:"Jarvis_Weekly_Picks_"+weekOf+".docx",content:report.toString("base64")} ]})});
   if(!response.ok) return {sent:false,reason:"provider_error",status:response.status};
   const data:any=await response.json();
   return {sent:true,id:data.id||null};
@@ -89,15 +91,17 @@ async function sendDigest(weekOf:string, regime:string, candidates:Candidate[], 
 
 export async function GET(request:NextRequest) {
   if(!process.env.CRON_SECRET || request.headers.get("authorization") !== "Bearer "+process.env.CRON_SECRET) return NextResponse.json({error:"Unauthorized"},{status:401});
-  const dryRun=new URL(request.url).searchParams.get("dryRun") === "1";
-  if(!dryRun && wibWeekday() !== "Fri") return NextResponse.json({ok:true,skipped:"not_friday"});
+  const searchParams=new URL(request.url).searchParams;
+  const dryRun=searchParams.get("dryRun") === "1";
+  const attachmentTest=searchParams.get("attachmentTest") === "1";
+  if(!dryRun && !attachmentTest && wibWeekday() !== "Fri") return NextResponse.json({ok:true,skipped:"not_friday"});
   const url=process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key=process.env.SUPABASE_SERVICE_ROLE_KEY;
   if(!url || !key) return NextResponse.json({error:"Server database credentials are missing."},{status:503});
   const supabase=createClient(url,key,{auth:{persistSession:false,autoRefreshToken:false}});
   const weekOf=currentFriday();
   const {data:existing}=await supabase.from("jarvis_weekly_runs").select("id").eq("week_of",weekOf).maybeSingle();
-  if(existing) return NextResponse.json({ok:true,alreadyLocked:true,runId:existing.id});
+  if(existing && !attachmentTest) return NextResponse.json({ok:true,alreadyLocked:true,runId:existing.id});
   const scannerResponse=await fetch(new URL(request.url).origin+"/api/swing-setups",{cache:"no-store"});
   if(!scannerResponse.ok) return NextResponse.json({error:"Screener unavailable."},{status:503});
   const scanner:any=await scannerResponse.json();
@@ -105,6 +109,11 @@ export async function GET(request:NextRequest) {
   const regime=regimeFor(setups);
   const selected=pick(setups,regime);
   if(dryRun) return NextResponse.json({ok:true,dryRun:true,weekOf,regime,picks:selected.map((item)=>item.ticker)});
+  if(attachmentTest) {
+    const testCandidates:Candidate[]=selected.map((item)=>({ticker:item.ticker,setup:item.setup,score:Number(item.score),signal_close:Number(item.close),planned_entry_low:Number(item.entryLow),planned_entry_high:Number(item.entryHigh),invalidation:Number(item.invalidation),target_one:Number(item.target),position_weight:12.5}));
+    const email=await sendDigest(weekOf,regime,testCandidates,[],["igger@jarvisfinance.my.id"]);
+    return NextResponse.json({ok:true,attachmentTest:true,weekOf,regime,picks:testCandidates.length,email});
+  }
   const {data:priorRun}=await supabase.from("jarvis_weekly_runs").select("*").lt("week_of",weekOf).order("week_of",{ascending:false}).limit(1).maybeSingle();
   const {data:priorCandidates}=priorRun?await supabase.from("jarvis_weekly_candidates").select("*").eq("run_id",priorRun.id).order("rank"):{data:[]};
   const {data:run,error:runError}=await supabase.from("jarvis_weekly_runs").insert({week_of:weekOf,snapshot_kind:"forward",methodology_version:"v5",status:"locked",market_regime:"V5 "+regime,note:selected.length?"Automated Friday Weekly Picks with lifecycle actions.":"No qualified setup this week."}).select().single();
