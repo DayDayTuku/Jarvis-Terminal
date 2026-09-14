@@ -102,7 +102,7 @@ export async function GET(request:NextRequest) {
   const weekOf=currentFriday();
   const {data:existing}=await supabase.from("jarvis_weekly_runs").select("id").eq("week_of",weekOf).maybeSingle();
   if(existing && !attachmentTest) return NextResponse.json({ok:true,alreadyLocked:true,runId:existing.id});
-  const scannerResponse=await fetch(new URL(request.url).origin+"/api/swing-setups",{cache:"no-store"});
+  const scannerResponse=await fetch(new URL(request.url).origin+"/api/swing-setups",{cache:"no-store",headers:{Authorization:"Bearer "+process.env.CRON_SECRET}});
   if(!scannerResponse.ok) return NextResponse.json({error:"Screener unavailable."},{status:503});
   const scanner:any=await scannerResponse.json();
   const setups=Array.isArray(scanner?.setups)?scanner.setups as Setup[]:[];
