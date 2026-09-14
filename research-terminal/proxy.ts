@@ -21,8 +21,13 @@ export async function proxy(request: NextRequest) {
   );
 
   const { data: { user } } = await supabase.auth.getUser();
+  const supplied = request.headers.get('authorization');
+  const trustedServiceRequest = path === '/api/swing-setups' && [
+    'Bearer ' + process.env.JARVIS_READONLY_API_KEY,
+    'Bearer ' + process.env.CRON_SECRET,
+  ].includes(supplied || '');
 
-  if (path === '/access' || path.startsWith('/api/cron/') || path.startsWith('/api/v1/') || path.startsWith('/_next/') || path === '/favicon.svg' || path === '/jarvis-logo.png' || path === '/og.png') {
+  if (path === '/access' || path.startsWith('/api/cron/') || path.startsWith('/api/v1/') || trustedServiceRequest || path.startsWith('/_next/') || path === '/favicon.svg' || path === '/jarvis-logo.png' || path === '/og.png') {
     return response;
   }
 
