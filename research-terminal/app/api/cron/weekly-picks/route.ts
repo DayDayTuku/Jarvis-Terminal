@@ -110,9 +110,9 @@ export async function GET(request:NextRequest) {
   const selected=pick(setups,regime);
   if(dryRun) return NextResponse.json({ok:true,dryRun:true,weekOf,regime,picks:selected.map((item)=>item.ticker)});
   if(attachmentTest) {
-    const testCandidates:Candidate[]=selected.map((item)=>({ticker:item.ticker,setup:item.setup,score:Number(item.score),signal_close:Number(item.close),planned_entry_low:Number(item.entryLow),planned_entry_high:Number(item.entryHigh),invalidation:Number(item.invalidation),target_one:Number(item.target),position_weight:12.5}));
-    const email=await sendDigest(weekOf,regime,testCandidates,[],["igger@jarvisfinance.my.id"]);
-    return NextResponse.json({ok:true,attachmentTest:true,weekOf,regime,picks:testCandidates.length,email});
+    const {data:testRun}=await supabase.from("jarvis_weekly_runs").select("*").order("week_of",{ascending:false}).limit(1).maybeSingle(); const [{data:testCandidates},{data:testActions}]=testRun?await Promise.all([supabase.from("jarvis_weekly_candidates").select("*").eq("run_id",testRun.id).order("rank"),supabase.from("jarvis_weekly_actions").select("*").eq("run_id",testRun.id).order("created_at")]):[{data:[]},{data:[]}];
+    if(!testRun)return NextResponse.json({error:"No locked Weekly Portfolio snapshot is available."},{status:404}); const email=await sendDigest(testRun.week_of,String(testRun.market_regime||"").replace(/^V5\s+/,""),testCandidates||[],testActions||[],["igger@jarvisfinance.my.id"]);
+    return NextResponse.json({ok:true,attachmentTest:true,weekOf:testRun.week_of,regime:testRun.market_regime,picks:(testCandidates||[]).length,email});
   }
   const {data:priorRun}=await supabase.from("jarvis_weekly_runs").select("*").lt("week_of",weekOf).order("week_of",{ascending:false}).limit(1).maybeSingle();
   const {data:priorCandidates}=priorRun?await supabase.from("jarvis_weekly_candidates").select("*").eq("run_id",priorRun.id).order("rank"):{data:[]};
