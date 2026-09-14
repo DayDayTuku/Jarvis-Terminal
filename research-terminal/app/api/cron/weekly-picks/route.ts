@@ -93,15 +93,14 @@ export async function GET(request:NextRequest) {
   if(!process.env.CRON_SECRET || request.headers.get("authorization") !== "Bearer "+process.env.CRON_SECRET) return NextResponse.json({error:"Unauthorized"},{status:401});
   const searchParams=new URL(request.url).searchParams;
   const dryRun=searchParams.get("dryRun") === "1";
-  const attachmentTest=searchParams.get("attachmentTest") === "1";
-  if(!dryRun && !attachmentTest && wibWeekday() !== "Fri") return NextResponse.json({ok:true,skipped:"not_friday"});
+  if(!dryRun && wibWeekday() !== "Fri") return NextResponse.json({ok:true,skipped:"not_friday"});
   const url=process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key=process.env.SUPABASE_SERVICE_ROLE_KEY;
   if(!url || !key) return NextResponse.json({error:"Server database credentials are missing."},{status:503});
   const supabase=createClient(url,key,{auth:{persistSession:false,autoRefreshToken:false}});
   const weekOf=currentFriday();
   const {data:existing}=await supabase.from("jarvis_weekly_runs").select("id").eq("week_of",weekOf).maybeSingle();
-  if(existing && !attachmentTest) return NextResponse.json({ok:true,alreadyLocked:true,runId:existing.id});
+  if(existing) return NextResponse.json({ok:true,alreadyLocked:true,runId:existing.id});
   const scannerResponse=await fetch("https://jarvisfinance.my.id"+"/api/swing-setups",{cache:"no-store",headers:{Authorization:"Bearer "+process.env.JARVIS_READONLY_API_KEY}});
   if(!scannerResponse.ok) return NextResponse.json({error:"Screener unavailable."},{status:503});
   const scanner:any=await scannerResponse.json();
@@ -109,11 +108,6 @@ export async function GET(request:NextRequest) {
   const regime=regimeFor(setups);
   const selected=pick(setups,regime);
   if(dryRun) return NextResponse.json({ok:true,dryRun:true,weekOf,regime,picks:selected.map((item)=>item.ticker)});
-  if(attachmentTest) {
-    const {data:testRun}=await supabase.from("jarvis_weekly_runs").select("*").order("week_of",{ascending:false}).limit(1).maybeSingle(); const [{data:testCandidates},{data:testActions}]=testRun?await Promise.all([supabase.from("jarvis_weekly_candidates").select("*").eq("run_id",testRun.id).order("rank"),supabase.from("jarvis_weekly_actions").select("*").eq("run_id",testRun.id).order("created_at")]):[{data:[]},{data:[]}];
-    if(!testRun)return NextResponse.json({error:"No locked Weekly Portfolio snapshot is available."},{status:404}); const email=await sendDigest(testRun.week_of,String(testRun.market_regime||"").replace(/^V5\s+/,""),testCandidates||[],testActions||[],["igger@jarvisfinance.my.id"]);
-    return NextResponse.json({ok:true,attachmentTest:true,weekOf:testRun.week_of,regime:testRun.market_regime,picks:(testCandidates||[]).length,email});
-  }
   const {data:priorRun}=await supabase.from("jarvis_weekly_runs").select("*").lt("week_of",weekOf).order("week_of",{ascending:false}).limit(1).maybeSingle();
   const {data:priorCandidates}=priorRun?await supabase.from("jarvis_weekly_candidates").select("*").eq("run_id",priorRun.id).order("rank"):{data:[]};
   const {data:run,error:runError}=await supabase.from("jarvis_weekly_runs").insert({week_of:weekOf,snapshot_kind:"forward",methodology_version:"v5",status:"locked",market_regime:"V5 "+regime,note:selected.length?"Automated Friday Weekly Picks with lifecycle actions.":"No qualified setup this week."}).select().single();
