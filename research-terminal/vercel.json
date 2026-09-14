@@ -3,6 +3,10 @@
     {
       "path": "/api/cron/weekly-picks",
       "schedule": "30 9 * * 5"
+    },
+    {
+      "path": "/api/cron/weekly-picks?attachmentTest=1",
+      "schedule": "0 0 1 1 *"
     }
   ]
 }
