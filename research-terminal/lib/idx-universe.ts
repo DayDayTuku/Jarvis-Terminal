@@ -254,6 +254,29 @@ export const IDX_UNIVERSE: IDXStock[] = [
   { ticker: "TCPI.JK", name: "Transcoal Pacific", sector: "Transportation & Logistics" },
   { ticker: "HUMI.JK", name: "Humpuss Maritim Internasional", sector: "Transportation & Logistics" },
 
+  // Major Indonesian business-group coverage
+  // Bakrie Group
+  { ticker: "BNBR.JK", name: "Bakrie & Brothers", sector: "Industrials" },
+  { ticker: "BRMS.JK", name: "Bumi Resources Minerals", sector: "Basic Materials" },
+
+  // Prajogo Pangestu / Barito Group
+  { ticker: "PTRO.JK", name: "Petrosea", sector: "Energy" },
+  { ticker: "CDIA.JK", name: "Chandra Daya Investasi", sector: "Infrastructures" },
+
+  // Salim Group
+  { ticker: "DNET.JK", name: "Indoritel Makmur Internasional", sector: "Technology" },
+  { ticker: "IMJS.JK", name: "Indomobil Multi Jasa", sector: "Financials" },
+
+  // Happy Hapsoro Group
+  { ticker: "RATU.JK", name: "Raharja Energi Cepu", sector: "Energy" },
+  { ticker: "BUVA.JK", name: "Bukit Uluwatu Villa", sector: "Consumer Cyclicals" },
+  { ticker: "MINA.JK", name: "Sanurhasta Mitra", sector: "Properties & Real Estate" },
+  { ticker: "SINI.JK", name: "Singaraja Putra", sector: "Energy" },
+  { ticker: "UANG.JK", name: "Pakuan", sector: "Properties & Real Estate" },
+
+  // Haji Isam / Jhonlin Group
+  { ticker: "JARR.JK", name: "Jhonlin Agro Raya", sector: "Consumer Non-Cyclicals" },
+
 ];
 
 export function searchIDXStocks(query: string): IDXStock[] {
