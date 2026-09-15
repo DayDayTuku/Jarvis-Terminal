@@ -56,8 +56,10 @@ async function buildLifecycle(runId:string, priorRun:any, priorCandidates:any[],
       const entryFilled=touchIndex>=0;
       const fill=entryFilled ? Math.min(Number(prior.planned_entry_high),Math.max(Number(prior.planned_entry_low),bars[touchIndex].open)) : null;
       const activeBars=entryFilled ? bars.slice(touchIndex) : [];
-      const invalidated=activeBars.some((bar)=>bar.low<=Number(prior.invalidation));
-      const targetReached=activeBars.some((bar)=>bar.high>=Number(prior.target_one));
+      const invalidationIndex=activeBars.findIndex((bar)=>bar.low<=Number(prior.invalidation));
+      const targetIndex=activeBars.findIndex((bar)=>bar.high>=Number(prior.target_one));
+      const invalidated=invalidationIndex>=0&&(targetIndex<0||invalidationIndex<=targetIndex);
+      const targetReached=targetIndex>=0&&(invalidationIndex<0||targetIndex<invalidationIndex);
       const current=currentByTicker.get(prior.ticker);
       let action:LifecycleAction["action"]="HOLD";
       let targetWeight=Number(prior.position_weight)||12.5;
@@ -108,7 +110,7 @@ export async function POST(request:NextRequest){
   const{data:run,error:runError}=await supabase.from("jarvis_weekly_runs").insert({week_of:weekOf,snapshot_kind:"forward",methodology_version:"v5",status:"locked",market_regime:marketRegime,note:rows.length?"V5 Weekly Picks with lifecycle actions.":"No qualified setup this week."}).select().single();
   if(runError||!run)return NextResponse.json({error:"Unable to lock weekly run."},{status:500});
   let candidates:EmailCandidate[]=[];
-  if(rows.length){candidates=rows.map((item:any,index:number)=>({run_id:run.id,rank:index+1,ticker:String(item.ticker).slice(0,12),setup:String(item.setup).slice(0,30),score:Number(item.score),signal_close:Number(item.close),planned_entry_low:Number(item.entryLow),planned_entry_high:Number(item.entryHigh),invalidation:Number(item.invalidation),hard_stop:Number(item.close)*.94,target_one:Number(item.target),risk_reward:Number(item.riskReward),position_size_idr:Math.min(1250000,75000/Math.max(.01,(Number(item.close)-Number(item.invalidation))/Number(item.close))),position_weight:12.5,reasons:Array.isArray(item.reasons)?item.reasons.slice(0,4):[],caution:String(item.caution??"").slice(0,500)})); const{error}=await supabase.from("jarvis_weekly_candidates").insert(candidates); if(error)return NextResponse.json({error:"Run locked, but candidates could not be saved."},{status:500});}
+  if(rows.length){candidates=rows.map((item:any,index:number)=>({run_id:run.id,rank:index+1,ticker:String(item.ticker).slice(0,12),setup:String(item.setup).slice(0,30),score:Number(item.score),signal_close:Number(item.close),planned_entry_low:Number(item.entryLow),planned_entry_high:Number(item.entryHigh),invalidation:Number(item.invalidation),hard_stop:Number(item.close)*.94,target_one:Number(item.target),risk_reward:Number(item.riskReward),position_size_idr:Math.min(1250000,75000/Math.max(.01,(Number(item.close)-Number(item.invalidation))/Number(item.close))),position_weight:Number.isFinite(Number(item.positionWeight))?Math.max(0,Math.min(100,Number(item.positionWeight))):12.5,reasons:Array.isArray(item.reasons)?item.reasons.slice(0,4):[],caution:String(item.caution??"").slice(0,500)})); const{error}=await supabase.from("jarvis_weekly_candidates").insert(candidates); if(error)return NextResponse.json({error:"Run locked, but candidates could not be saved."},{status:500});}
   const actions=await buildLifecycle(run.id,priorRun,priorCandidates??[],candidates);
   if(actions.length){const{error}=await supabase.from("jarvis_weekly_actions").insert(actions); if(error)return NextResponse.json({error:"Run locked, but portfolio actions could not be saved."},{status:500});}
   const email=await sendWeeklyDigest(weekOf,marketRegime,candidates,actions);
