@@ -31,11 +31,13 @@ function pick(setups:Setup[], regime:string) {
   const minimum = regime === "RISK ON" ? 75 : regime === "EMERGING" ? 80 : 85;
   const maximum = regime === "RISK ON" ? 5 : regime === "EMERGING" ? 3 : 1;
   const sectors = new Map<string,number>();
-  return [...setups].sort((a,b) => b.score - a.score)
+  return [...setups].sort((a,b) => b.score - a.score || b.riskReward - a.riskReward)
     .filter((item) => item.score >= minimum && item.riskReward >= 1.7)
     .filter((item) => { const sector=item.sector || "Other"; const count=sectors.get(sector) || 0; if(count >= 2) return false; sectors.set(sector,count+1); return true; })
     .slice(0,maximum);
 }
+function kind(item:{setup:string;score:number}) { return item.score>=85 && /(PULLBACK|ACCUMULATION|TREND)/.test(item.setup.toUpperCase()) ? "CORE" : "TACTICAL"; }
+function weight(item:{setup:string;score:number},regime:string) { const base=kind(item)==="CORE"?(item.score>=90?15:12.5):(item.score>=90?10:7.5); const multiplier=regime==="RISK ON"?1:regime==="EMERGING"?.8:.6; return Math.max(5,Math.round(base*multiplier/2.5)*2.5); }
 async function getBars(ticker:string, since:string):Promise<Bar[]> {
   try {
     const period1 = Math.floor(new Date(since + "T00:00:00+07:00").getTime()/1000);
@@ -57,8 +59,10 @@ async function buildLifecycle(runId:string, priorRun:any, prior:any[], current:C
     const filled = touch >= 0;
     const fill = filled ? Math.min(Number(old.planned_entry_high),Math.max(Number(old.planned_entry_low),bars[touch].open)) : null;
     const active = filled ? bars.slice(touch) : [];
-    const invalidated = active.some((bar) => bar.low <= Number(old.invalidation));
-    const targetReached = active.some((bar) => bar.high >= Number(old.target_one));
+    const invalidationIndex = active.findIndex((bar) => bar.low <= Number(old.invalidation));
+    const targetIndex = active.findIndex((bar) => bar.high >= Number(old.target_one));
+    const invalidated = invalidationIndex >= 0 && (targetIndex < 0 || invalidationIndex <= targetIndex);
+    const targetReached = targetIndex >= 0 && (invalidationIndex < 0 || targetIndex < invalidationIndex);
     const next = currentByTicker.get(old.ticker);
     let action:Action["action"] = "HOLD";
     let targetWeight = Number(old.position_weight) || 12.5;
@@ -112,7 +116,7 @@ export async function GET(request:NextRequest) {
   const {data:priorCandidates}=priorRun?await supabase.from("jarvis_weekly_candidates").select("*").eq("run_id",priorRun.id).order("rank"):{data:[]};
   const {data:run,error:runError}=await supabase.from("jarvis_weekly_runs").insert({week_of:weekOf,snapshot_kind:"forward",methodology_version:"v5",status:"locked",market_regime:"V5 "+regime,note:selected.length?"Automated Friday Weekly Picks with lifecycle actions.":"No qualified setup this week."}).select().single();
   if(runError||!run) return NextResponse.json({error:"Unable to create weekly run."},{status:500});
-  const candidates=selected.map((item,index)=>({run_id:run.id,rank:index+1,ticker:item.ticker.slice(0,12),setup:item.setup.slice(0,30),score:Number(item.score),signal_close:Number(item.close),planned_entry_low:Number(item.entryLow),planned_entry_high:Number(item.entryHigh),invalidation:Number(item.invalidation),hard_stop:Number(item.close)*.94,target_one:Number(item.target),risk_reward:Number(item.riskReward),position_size_idr:Math.min(1250000,75000/Math.max(.01,(Number(item.close)-Number(item.invalidation))/Number(item.close))),position_weight:12.5,reasons:Array.isArray(item.reasons)?item.reasons.slice(0,4):[],caution:String(item.caution||"").slice(0,500)}));
+  const candidates=selected.map((item,index)=>({run_id:run.id,rank:index+1,ticker:item.ticker.slice(0,12),setup:item.setup.slice(0,30),score:Number(item.score),signal_close:Number(item.close),planned_entry_low:Number(item.entryLow),planned_entry_high:Number(item.entryHigh),invalidation:Number(item.invalidation),hard_stop:Number(item.close)*.94,target_one:Number(item.target),risk_reward:Number(item.riskReward),position_size_idr:Math.min(1250000,75000/Math.max(.01,(Number(item.close)-Number(item.invalidation))/Number(item.close))),position_weight:weight(item,regime),reasons:Array.isArray(item.reasons)?item.reasons.slice(0,4):[],caution:String(item.caution||"").slice(0,500)}));
   if(candidates.length) { const {error}=await supabase.from("jarvis_weekly_candidates").insert(candidates); if(error) return NextResponse.json({error:"Run created, but picks could not be saved."},{status:500}); }
   const actions=await buildLifecycle(run.id,priorRun,priorCandidates||[],candidates);
   if(actions.length) { const {error}=await supabase.from("jarvis_weekly_actions").insert(actions); if(error) return NextResponse.json({error:"Run created, but actions could not be saved."},{status:500}); }
