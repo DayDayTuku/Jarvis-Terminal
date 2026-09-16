@@ -3,7 +3,7 @@
 import { useEffect } from 'react';
 import { createClient } from '../utils/supabase/client';
 
-const TIMEOUT = 10 * 60 * 1000; // 10 menit
+const TIMEOUT = 60 * 60 * 1000; // 1 jam tanpa aktivitas
 
 export default function SessionTimeout() {
   useEffect(() => {
