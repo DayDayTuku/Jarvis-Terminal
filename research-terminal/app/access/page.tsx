@@ -168,16 +168,18 @@ function AccessForm() {
         }
         .access-intro-logo-wrap {
           position: relative;
-          width: 108px;
-          height: 108px;
+          width: 120px;
+          height: 120px;
           margin-bottom: 24px;
-          overflow: hidden;
-          border: 1px solid #31485f;
-          border-radius: 28px;
-          background: #f6f4ef;
-          box-shadow: 0 20px 80px #000b, 0 0 45px #48a6ff22;
+          overflow: visible;
+          filter: drop-shadow(0 0 26px #48a6ff42);
         }
-        .access-intro-logo-wrap img { width: 100%; height: 100%; object-fit: cover; }
+        .access-intro-logo-wrap img {
+          width: 100%;
+          height: 100%;
+          object-fit: contain;
+          filter: grayscale(1) brightness(0) invert(1);
+        }
         .access-intro-scan {
           position: absolute;
           inset: -20% 0 auto;
