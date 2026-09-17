@@ -1,6 +1,6 @@
 'use client';
 
-import { FormEvent, Suspense, useState } from 'react';
+import { FormEvent, Suspense, useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { createClient } from '../../utils/supabase/client';
 
@@ -15,6 +15,12 @@ function AccessForm() {
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [mode, setMode] = useState<'login' | 'signup'>('login');
+  const [introVisible, setIntroVisible] = useState(true);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setIntroVisible(false), 2100);
+    return () => window.clearTimeout(timer);
+  }, []);
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
@@ -30,7 +36,7 @@ function AccessForm() {
       return;
     }
     if (mode === 'signup') {
-      setError('Cek email lo untuk konfirmasi akun, lalu login.');
+      setError('Please check your email to confirm your account, then log in.');
       setLoading(false);
       setMode('login');
       return;
@@ -46,6 +52,22 @@ function AccessForm() {
 
   return (
     <main className="access-page">
+      {introVisible && (
+        <div className="access-intro" aria-label="Jarvis Research is loading">
+          <div className="access-intro-grid" />
+          <div className="access-intro-orbit orbit-one" />
+          <div className="access-intro-orbit orbit-two" />
+          <div className="access-intro-brand">
+            <div className="access-intro-logo-wrap">
+              <img src="/jarvis-logo.png" alt="" />
+              <span className="access-intro-scan" />
+            </div>
+            <strong>JARVIS</strong>
+            <span>RESEARCH · VALUATION · INTELLIGENCE</span>
+            <small><i /> INITIALIZING RESEARCH SYSTEM</small>
+          </div>
+        </div>
+      )}
       <section className="access-card">
         <div className="access-welcome">
           <img className="access-logo" src="/jarvis-logo.png" alt="Jarvis Research" />
@@ -80,7 +102,9 @@ function AccessForm() {
               <button type="button" onClick={() => setShowPassword((value) => !value)} aria-label={showPassword ? 'Hide password' : 'Show password'}>{showPassword ? 'HIDE' : 'SHOW'}</button>
             </div>
             <button className="access-submit" type="submit" disabled={loading}>
-              {loading ? 'OPENING JARVIS…' : mode === 'login' ? 'OPEN JARVIS →' : 'CREATE ACCOUNT →'}
+              {loading ? (
+                <span className="access-loading"><i aria-hidden="true" /><span>{mode === 'login' ? 'AUTHENTICATING' : 'CREATING ACCOUNT'}</span></span>
+              ) : mode === 'login' ? 'OPEN JARVIS →' : 'CREATE ACCOUNT →'}
             </button>
             {error && <strong role="alert">{error}</strong>}
           </form>
@@ -95,6 +119,155 @@ function AccessForm() {
       </section>
 
       <style jsx>{`
+        .access-intro {
+          position: fixed;
+          inset: 0;
+          z-index: 9999;
+          display: grid;
+          place-items: center;
+          overflow: hidden;
+          background:
+            radial-gradient(circle at 50% 45%, #102d4555, transparent 28%),
+            radial-gradient(circle at 50% 45%, #0c201c45, transparent 48%),
+            #020407;
+          animation: accessIntroCurtain 2.05s cubic-bezier(.76, 0, .24, 1) forwards;
+        }
+        .access-intro-grid {
+          position: absolute;
+          inset: -20%;
+          opacity: .22;
+          background-image:
+            linear-gradient(#48a6ff12 1px, transparent 1px),
+            linear-gradient(90deg, #48a6ff12 1px, transparent 1px);
+          background-size: 42px 42px;
+          transform: perspective(700px) rotateX(64deg) translateY(22%);
+          mask-image: linear-gradient(to bottom, transparent 12%, black 55%, transparent 88%);
+          animation: accessGridDrift 2s ease-out both;
+        }
+        .access-intro-orbit {
+          position: absolute;
+          width: min(48vw, 520px);
+          aspect-ratio: 1;
+          border: 1px solid #48a6ff2d;
+          border-radius: 50%;
+          animation: accessOrbitPulse 1.55s cubic-bezier(.22, 1, .36, 1) both;
+        }
+        .access-intro-orbit.orbit-two {
+          width: min(62vw, 680px);
+          border-color: #43d4a31c;
+          animation-delay: 100ms;
+        }
+        .access-intro-brand {
+          position: relative;
+          z-index: 1;
+          display: grid;
+          justify-items: center;
+          color: #f3f7fb;
+          text-align: center;
+          animation: accessBrandIn 900ms cubic-bezier(.22, 1, .36, 1) both;
+        }
+        .access-intro-logo-wrap {
+          position: relative;
+          width: 108px;
+          height: 108px;
+          margin-bottom: 24px;
+          overflow: hidden;
+          border: 1px solid #31485f;
+          border-radius: 28px;
+          background: #f6f4ef;
+          box-shadow: 0 20px 80px #000b, 0 0 45px #48a6ff22;
+        }
+        .access-intro-logo-wrap img { width: 100%; height: 100%; object-fit: cover; }
+        .access-intro-scan {
+          position: absolute;
+          inset: -20% 0 auto;
+          height: 32%;
+          background: linear-gradient(to bottom, transparent, #48a6ff55, transparent);
+          animation: accessLogoScan 1.25s ease-in-out 250ms both;
+        }
+        .access-intro-brand strong {
+          font: 680 clamp(36px, 5vw, 58px)/1 var(--font-geist-sans);
+          letter-spacing: .16em;
+          text-indent: .16em;
+        }
+        .access-intro-brand > span {
+          margin-top: 13px;
+          color: #8293a7;
+          font-size: 8px;
+          letter-spacing: .22em;
+        }
+        .access-intro-brand small {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          margin-top: 32px;
+          color: #48a6ff;
+          font-size: 7px;
+          letter-spacing: .16em;
+        }
+        .access-intro-brand small i {
+          width: 5px;
+          height: 5px;
+          border-radius: 50%;
+          background: #43d4a3;
+          box-shadow: 0 0 10px #43d4a3;
+          animation: accessStatusPulse 700ms ease-in-out infinite alternate;
+        }
+        .access-card {
+          animation: accessCardReveal 720ms cubic-bezier(.22, 1, .36, 1) 1.35s both;
+        }
+        .access-loading {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          gap: 11px;
+          letter-spacing: .08em;
+        }
+        .access-loading > i {
+          position: relative;
+          width: 18px;
+          height: 18px;
+          border: 2px solid #74839755;
+          border-top-color: #071019;
+          border-radius: 50%;
+          animation: accessLoadingSpin 720ms linear infinite;
+        }
+        .access-loading > i::after {
+          content: '';
+          position: absolute;
+          inset: 4px;
+          border-radius: 50%;
+          background: #48a6ff;
+          animation: accessStatusPulse 480ms ease-in-out infinite alternate;
+        }
+        @keyframes accessIntroCurtain {
+          0%, 66% { opacity: 1; transform: translateY(0); }
+          100% { opacity: 1; transform: translateY(-101%); }
+        }
+        @keyframes accessBrandIn {
+          from { opacity: 0; transform: translateY(18px) scale(.9); filter: blur(8px); }
+          to { opacity: 1; transform: translateY(0) scale(1); filter: blur(0); }
+        }
+        @keyframes accessOrbitPulse {
+          from { opacity: 0; transform: scale(.55); }
+          45% { opacity: 1; }
+          to { opacity: 0; transform: scale(1.12); }
+        }
+        @keyframes accessLogoScan {
+          from { transform: translateY(-130%); opacity: 0; }
+          25% { opacity: 1; }
+          to { transform: translateY(430%); opacity: 0; }
+        }
+        @keyframes accessGridDrift {
+          from { opacity: 0; transform: perspective(700px) rotateX(64deg) translateY(29%); }
+          to { opacity: .22; transform: perspective(700px) rotateX(64deg) translateY(18%); }
+        }
+        @keyframes accessCardReveal {
+          from { opacity: 0; transform: translateY(34px) scale(.975); filter: blur(8px); }
+          to { opacity: 1; transform: translateY(0) scale(1); filter: blur(0); }
+        }
+        @keyframes accessLoadingSpin { to { transform: rotate(360deg); } }
+        @keyframes accessStatusPulse { to { opacity: .35; transform: scale(.72); } }
         .access-mode {
           position: relative;
           isolation: isolate;
@@ -134,6 +307,10 @@ function AccessForm() {
           to { opacity: 1; transform: translateY(0); }
         }
         @media (prefers-reduced-motion: reduce) {
+          .access-intro { display: none; }
+          .access-card,
+          .access-loading > i,
+          .access-loading > i::after,
           .access-mode::before,
           .access-mode button { transition: none; }
           .access-form-heading { animation: none; }
