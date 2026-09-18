@@ -79,6 +79,16 @@ async function buildLifecycle(runId:string, priorRun:any, prior:any[], current:C
   for(const item of current) if(!oldTickers.has(item.ticker)) actions.push({ run_id:runId, prior_run_id:priorRun?.id, ticker:item.ticker, action:"BUY", previous_score:null, current_score:Number(item.score), target_weight:Number(item.position_weight)||12.5, theoretical_fill:null, entry_filled:false, target_reached:false, invalidated:false, reason:priorRun?"New V5 qualifier; use the stated entry range.":"Initial V5 Weekly Pick; do not chase." });
   return actions;
 }
+async function weeklyRecipients(supabase:any) {
+  const configured=(process.env.JARVIS_EMAIL_TO || "iggerzefanya@gmail.com").split(",").map((email)=>email.trim().toLowerCase()).filter(Boolean);
+  try {
+    const {data,error}=await supabase.auth.admin.listUsers({page:1,perPage:1000});
+    if(error) return [...new Set(configured)];
+    const signedIn=(data?.users || []).filter((user:any)=>user.email && user.last_sign_in_at).map((user:any)=>String(user.email).trim().toLowerCase());
+    return [...new Set([...configured,...signedIn])];
+  } catch { return [...new Set(configured)]; }
+}
+
 async function sendDigest(weekOf:string, regime:string, candidates:Candidate[], actions:Action[], recipientOverride?:string[]) {
   const apiKey=process.env.RESEND_API_KEY;
   if(!apiKey) return {sent:false,reason:"not_configured"};
@@ -87,10 +97,13 @@ async function sendDigest(weekOf:string, regime:string, candidates:Candidate[], 
   const pickRows=candidates.length?candidates.map((item)=>"<tr><td><b>"+escapeHtml(item.ticker)+"</b></td><td>"+escapeHtml(item.setup)+"</td><td>"+Number(item.score).toFixed(1)+"</td><td>"+Number(item.planned_entry_low).toLocaleString("id-ID")+"–"+Number(item.planned_entry_high).toLocaleString("id-ID")+"</td></tr>").join(""):"<tr><td colspan='4'>No qualified setup. Capital remains in cash.</td></tr>";
   const html="<!doctype html><html><body style='margin:0;background:#f4f5f7;font-family:Arial;color:#111827'><div style='max-width:760px;margin:auto;padding:28px 16px'><header style='background:#111827;color:white;padding:24px'><small>JARVIS RESEARCH</small><h1>Weekly Picks</h1><p>Week of "+escapeHtml(weekOf)+" · V5 "+escapeHtml(regime)+"</p></header><main style='background:white;padding:22px'><h2>Last week's positions</h2><table style='width:100%;border-collapse:collapse' cellpadding='9'><tr style='background:#1f3c52;color:white'><th>Ticker</th><th>Action</th><th>Weight</th><th>Reason</th></tr>"+actionRows+"</table><h2>This week's picks</h2><table style='width:100%;border-collapse:collapse' cellpadding='9'><tr style='background:#1f3c52;color:white'><th>Ticker</th><th>Setup</th><th>Score</th><th>Entry</th></tr>"+pickRows+"</table><p style='color:#6b7280;font-size:12px'>Rules-based research, not investment advice. Every pick is reviewed next week as HOLD, REDUCE, EXIT, NO_ENTRY, or EXPIRED.</p></main></div></body></html>";
   const report=generateWeeklyPicksDocx({weekOf,regime,picks:candidates,actions});
-  const response=await fetch("https://api.resend.com/emails",{method:"POST",headers:{Authorization:"Bearer "+apiKey,"Content-Type":"application/json"},body:JSON.stringify({from:process.env.JARVIS_EMAIL_FROM||"Jarvis Research <onboarding@resend.dev>",to:recipients,subject:"JARVIS V5 · Weekly Picks · "+weekOf,html,attachments:[{filename:"Jarvis_Weekly_Picks_"+weekOf+".docx",content:report.toString("base64")} ]})});
+  const fromAddress=process.env.JARVIS_EMAIL_FROM||"Jarvis Research <onboarding@resend.dev>";
+  const senderAddress=fromAddress.match(/<([^>]+)>/)?.[1] || "onboarding@resend.dev";
+  const bccRecipients=recipients.filter((email)=>email.toLowerCase()!==senderAddress.toLowerCase());
+  const response=await fetch("https://api.resend.com/emails",{method:"POST",headers:{Authorization:"Bearer "+apiKey,"Content-Type":"application/json"},body:JSON.stringify({from:fromAddress,to:[senderAddress],bcc:bccRecipients,subject:"JARVIS V5 · Weekly Picks · "+weekOf,html,attachments:[{filename:"Jarvis_Weekly_Picks_"+weekOf+".docx",content:report.toString("base64")} ]})});
   if(!response.ok) return {sent:false,reason:"provider_error",status:response.status};
   const data:any=await response.json();
-  return {sent:true,id:data.id||null};
+  return {sent:true,id:data.id||null,recipients:recipients.length};
 }
 
 export async function GET(request:NextRequest) {
@@ -102,9 +115,24 @@ export async function GET(request:NextRequest) {
   const key=process.env.SUPABASE_SERVICE_ROLE_KEY;
   if(!url || !key) return NextResponse.json({error:"Server database credentials are missing."},{status:503});
   const supabase=createClient(url,key,{auth:{persistSession:false,autoRefreshToken:false}});
+  const recipients=await weeklyRecipients(supabase);
   const weekOf=currentFriday();
-  const {data:existing}=await supabase.from("jarvis_weekly_runs").select("id").eq("week_of",weekOf).maybeSingle();
-  if(existing) return NextResponse.json({ok:true,alreadyLocked:true,runId:existing.id});
+  const {data:existing}=await supabase.from("jarvis_weekly_runs").select("id,week_of,market_regime,note").eq("week_of",weekOf).maybeSingle();
+  if(existing) {
+    if(String(existing.note || "").includes("[email:sent]")) return NextResponse.json({ok:true,alreadyLocked:true,emailAlreadySent:true,runId:existing.id});
+    const [candidateResult,actionResult]=await Promise.all([
+      supabase.from("jarvis_weekly_candidates").select("*").eq("run_id",existing.id).order("rank"),
+      supabase.from("jarvis_weekly_actions").select("*").eq("run_id",existing.id),
+    ]);
+    const savedCandidates=(candidateResult.data || []) as Candidate[];
+    const savedActions=(actionResult.data || []) as Action[];
+    const savedRegime=String(existing.market_regime || "V5 NEUTRAL").replace(/^V5\s+/,"");
+    const email=await sendDigest(weekOf,savedRegime,savedCandidates,savedActions,recipients);
+    const cleanNote=String(existing.note || "").replace(/\s*\[email:(?:sent|failed:[^\]]+)\]\s*/g," ").trim();
+    const marker=email.sent?"[email:sent]":"[email:failed:"+String(email.reason || email.status || "unknown")+"]";
+    await supabase.from("jarvis_weekly_runs").update({note:(cleanNote+" "+marker).trim()}).eq("id",existing.id);
+    return NextResponse.json({ok:email.sent,alreadyLocked:true,retriedEmail:true,runId:existing.id,email},{status:email.sent?200:502});
+  }
   const scannerResponse=await fetch("https://jarvisfinance.my.id"+"/api/swing-setups",{cache:"no-store",headers:{Authorization:"Bearer "+process.env.JARVIS_READONLY_API_KEY}});
   if(!scannerResponse.ok) return NextResponse.json({error:"Screener unavailable."},{status:503});
   const scanner:any=await scannerResponse.json();
@@ -120,6 +148,9 @@ export async function GET(request:NextRequest) {
   if(candidates.length) { const {error}=await supabase.from("jarvis_weekly_candidates").insert(candidates); if(error) return NextResponse.json({error:"Run created, but picks could not be saved."},{status:500}); }
   const actions=await buildLifecycle(run.id,priorRun,priorCandidates||[],candidates);
   if(actions.length) { const {error}=await supabase.from("jarvis_weekly_actions").insert(actions); if(error) return NextResponse.json({error:"Run created, but actions could not be saved."},{status:500}); }
-  const email=await sendDigest(weekOf,regime,candidates,actions);
-  return NextResponse.json({ok:true,runId:run.id,regime,picks:candidates.length,actions:actions.length,email});
+  const email=await sendDigest(weekOf,regime,candidates,actions,recipients);
+  const baseNote=selected.length?"Automated Friday Weekly Picks with lifecycle actions.":"No qualified setup this week.";
+  const marker=email.sent?"[email:sent]":"[email:failed:"+String(email.reason || email.status || "unknown")+"]";
+  await supabase.from("jarvis_weekly_runs").update({note:baseNote+" "+marker}).eq("id",run.id);
+  return NextResponse.json({ok:email.sent,runId:run.id,regime,picks:candidates.length,actions:actions.length,email},{status:email.sent?200:502});
 }
