@@ -83,7 +83,7 @@ async function weeklyRecipients(supabase:any) {
   try {
     const {data,error}=await supabase.auth.admin.listUsers({page:1,perPage:1000});
     if(error) return [...new Set(configured)];
-    const signedIn=(data?.users || []).filter((user:any)=>user.email && user.last_sign_in_at).map((user:any)=>String(user.email).trim().toLowerCase());
+    const signedIn=(data?.users || []).filter((user:any)=>user.email).map((user:any)=>String(user.email).trim().toLowerCase());
     return [...new Set([...configured,...signedIn])];
   } catch { return [...new Set(configured)]; }
 }
