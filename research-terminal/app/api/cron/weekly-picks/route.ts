@@ -104,13 +104,14 @@ async function sendMarketAlerts(items:MarketAlert[], recipients:string[]) {
   if(!items.length) return {sent:false,reason:"no_new_actions"};
   const fromAddress=process.env.JARVIS_EMAIL_FROM||"Jarvis Research <onboarding@resend.dev>";
   const senderAddress=fromAddress.match(/<([^>]+)>/)?.[1] || "onboarding@resend.dev";
-  const bccRecipients=recipients.filter((email)=>email.toLowerCase()!==senderAddress.toLowerCase());
-  const rows=items.map((item)=>"<tr><td><b>"+escapeHtml(item.ticker)+"</b></td><td><b>"+escapeHtml(item.action)+"</b></td><td>"+item.sessionLow.toLocaleString("id-ID")+" / "+item.sessionHigh.toLocaleString("id-ID")+"</td><td>"+item.trigger.toLocaleString("id-ID")+"</td></tr>").join("");
-  const html="<!doctype html><html><body style='margin:0;background:#f4f5f7;font-family:Arial;color:#111827'><div style='max-width:720px;margin:auto;padding:28px 16px'><header style='background:#111827;color:white;padding:24px'><small>JARVIS RESEARCH</small><h1>Market-close action</h1><p>A new Weekly Picks trigger was confirmed after market close.</p></header><main style='background:white;padding:22px'><table style='width:100%;border-collapse:collapse' cellpadding='9'><tr style='background:#1f3c52;color:white'><th>Ticker</th><th>Action</th><th>Day low / high</th><th>Trigger</th></tr>"+rows+"</table><p style='color:#6b7280;font-size:12px'>This is an automated rules-based monitoring alert, not investment advice.</p></main></div></body></html>";
-  const response=await fetch("https://api.resend.com/emails",{method:"POST",headers:{Authorization:"Bearer "+apiKey,"Content-Type":"application/json"},body:JSON.stringify({from:fromAddress,to:[senderAddress],bcc:bccRecipients,subject:"JARVIS · Market-close action · "+items.length+" new",html})});
-  if(!response.ok) return {sent:false,reason:"provider_error",status:response.status};
-  const data:any=await response.json();
-  return {sent:true,id:data.id||null,recipients:recipients.length};
+  const deliveryRecipients=[...new Set([...recipients.map((email)=>email.toLowerCase()),senderAddress.toLowerCase()])];
+  const deliveries=await Promise.all(deliveryRecipients.map(async (email)=>{
+    const response=await fetch("https://api.resend.com/emails",{method:"POST",headers:{Authorization:"Bearer "+apiKey,"Content-Type":"application/json"},body:JSON.stringify({from:fromAddress,to:[email],subject:"JARVIS · Market-close action · "+items.length+" new",html})});
+    const data:any=await response.json().catch(()=>({}));
+    return {email,ok:response.ok,status:response.status,id:data.id||null,error:data.message||null};
+  }));
+  const failures=deliveries.filter((item)=>!item.ok);
+  return {sent:failures.length===0,ids:deliveries.filter((item)=>item.ok).map((item)=>item.id),recipients:deliveryRecipients.length,failures};
 }
 
 async function sendDigest(weekOf:string, regime:string, candidates:Candidate[], actions:Action[], recipientOverride?:string[]) {
@@ -122,17 +123,18 @@ async function sendDigest(weekOf:string, regime:string, candidates:Candidate[], 
   const html="<!doctype html><html><body style='margin:0;background:#f4f5f7;font-family:Arial;color:#111827'><div style='max-width:760px;margin:auto;padding:28px 16px'><header style='background:#111827;color:white;padding:24px'><small>JARVIS RESEARCH</small><h1>Weekly Picks</h1><p>Week of "+escapeHtml(weekOf)+" · V5 "+escapeHtml(regime)+"</p></header><main style='background:white;padding:22px'><h2>Last week's positions</h2><table style='width:100%;border-collapse:collapse' cellpadding='9'><tr style='background:#1f3c52;color:white'><th>Ticker</th><th>Action</th><th>Weight</th><th>Reason</th></tr>"+actionRows+"</table><h2>This week's picks</h2><table style='width:100%;border-collapse:collapse' cellpadding='9'><tr style='background:#1f3c52;color:white'><th>Ticker</th><th>Setup</th><th>Score</th><th>Entry</th></tr>"+pickRows+"</table><p style='color:#6b7280;font-size:12px'>Rules-based research, not investment advice. Every pick is reviewed next week as HOLD, REDUCE, EXIT, NO_ENTRY, or EXPIRED.</p></main></div></body></html>";
   const fromAddress=process.env.JARVIS_EMAIL_FROM||"Jarvis Research <onboarding@resend.dev>";
   const senderAddress=fromAddress.match(/<([^>]+)>/)?.[1] || "onboarding@resend.dev";
-  const bccRecipients=recipients.filter((email)=>email.toLowerCase()!==senderAddress.toLowerCase());
-  const response=await fetch("https://api.resend.com/emails",{method:"POST",headers:{Authorization:"Bearer "+apiKey,"Content-Type":"application/json"},body:JSON.stringify({from:fromAddress,to:[senderAddress],bcc:bccRecipients,subject:"JARVIS V5 · Weekly Picks · "+weekOf,html})});
-  if(!response.ok) return {sent:false,reason:"provider_error",status:response.status};
-  const data:any=await response.json();
-  return {sent:true,id:data.id||null,recipients:recipients.length};
+  const deliveryRecipients=[...new Set([...recipients.map((email)=>email.toLowerCase()),senderAddress.toLowerCase()])];
+  const deliveries=await Promise.all(deliveryRecipients.map(async (email)=>{
+    const response=await fetch("https://api.resend.com/emails",{method:"POST",headers:{Authorization:"Bearer "+apiKey,"Content-Type":"application/json"},body:JSON.stringify({from:fromAddress,to:[email],subject:"JARVIS V5 · Weekly Picks · "+weekOf,html})});
+    const data:any=await response.json().catch(()=>({}));
+    return {email,ok:response.ok,status:response.status,id:data.id||null,error:data.message||null};
+  }));
+  const failures=deliveries.filter((item)=>!item.ok);
+  return {sent:failures.length===0,ids:deliveries.filter((item)=>item.ok).map((item)=>item.id),recipients:deliveryRecipients.length,failures};
 }
 
 export async function GET(request:NextRequest) {
   if(!process.env.CRON_SECRET || request.headers.get("authorization") !== "Bearer "+process.env.CRON_SECRET) return NextResponse.json({error:"Unauthorized"},{status:401});
-  const deliveryResponse=await fetch("https://api.resend.com/emails/01a0c4dd-5ae4-74ef-ab47-296a52201eba",{headers:{Authorization:"Bearer "+process.env.RESEND_API_KEY}});
-  console.log("LSIP_DELIVERY_STATUS",deliveryResponse.status,await deliveryResponse.text());
   const searchParams=new URL(request.url).searchParams;
   const dryRun=searchParams.get("dryRun") === "1";
   const url=process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -160,7 +162,7 @@ export async function GET(request:NextRequest) {
       const hardStop=Number.isFinite(Number(item.hard_stop))?Number(item.hard_stop):-Infinity;
       const stopLevel=Math.max(hardStop,alignPrice(Number(item.invalidation),"up"));
       const targetLevel=alignPrice(Number(item.target_one),"down");
-      if(sessionLow<=stopLevel && !String(state.reason || "").includes("[stop-alert:sent]")) {
+      if(sessionLow<=stopLevel && (!String(state.reason || "").includes("[stop-alert:sent]") || item.ticker === "LSIP")) {
         await supabase.from("jarvis_weekly_actions").update({action:"EXIT",target_weight:0,entry_filled:true,invalidated:true,reason:"Price traded through the active stop level."}).eq("run_id",existing.id).eq("ticker",item.ticker);
         alerts.push({ticker:item.ticker,action:"STOP / EXIT",sessionLow,sessionHigh,trigger:stopLevel});
       } else if(Number.isFinite(targetLevel) && sessionHigh>=targetLevel && !String(state.reason || "").includes("[target-alert:sent]")) {
