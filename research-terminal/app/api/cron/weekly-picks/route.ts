@@ -64,7 +64,8 @@ async function buildLifecycle(runId:string, priorRun:any, prior:any[], current:C
     const filled = touch >= 0;
     const fill = filled ? alignPrice(Math.min(Number(old.planned_entry_high),Math.max(Number(old.planned_entry_low),bars[touch].open)),"nearest") : null;
     const active = filled ? bars.slice(touch) : [];
-    const stopLevel = Number.isFinite(Number(old.hard_stop)) ? Number(old.hard_stop) : Number(old.invalidation);
+    const hardStop = Number.isFinite(Number(old.hard_stop)) ? Number(old.hard_stop) : -Infinity;
+    const stopLevel = Math.max(hardStop, Number(old.invalidation));
     const invalidationIndex = active.findIndex((bar) => bar.low <= stopLevel);
     const targetIndex = active.findIndex((bar) => bar.high >= Number(old.target_one));
     const invalidated = invalidationIndex >= 0 && (targetIndex < 0 || invalidationIndex <= targetIndex);
