@@ -199,7 +199,7 @@ export async function GET(request:NextRequest) {
     try { email=await sendDigest(weekOf,savedRegime,savedCandidates,savedActions,recipients); }
     catch(error) { console.error("Weekly Picks retry failed", error); return NextResponse.json({error:"Weekly Picks email failed.",detail:error instanceof Error?error.message:"unknown"},{status:502}); }
     const cleanNote=String(existing.note || "").replace(/\s*\[email:(?:sent|failed:[^\]]+)\]\s*/g," ").trim();
-    const marker=email.sent?"[email:sent]":"[email:failed:"+String(email.reason || email.status || "unknown")+"]";
+    const marker=email.sent?"[email:sent]":"[email:failed:"+String(email.reason || email.failures?.[0]?.status || "unknown")+"]";
     await supabase.from("jarvis_weekly_runs").update({note:(cleanNote+" "+marker).trim()}).eq("id",existing.id);
     return NextResponse.json({ok:email.sent,alreadyLocked:true,retriedEmail:true,runId:existing.id,email},{status:email.sent?200:502});
   }
@@ -222,7 +222,7 @@ export async function GET(request:NextRequest) {
   try { email=await sendDigest(weekOf,regime,candidates,actions,recipients); }
   catch(error) { console.error("Weekly Picks email failed", error); return NextResponse.json({error:"Weekly Picks email failed.",detail:error instanceof Error?error.message:"unknown"},{status:502}); }
   const baseNote=selected.length?"Automated Friday Weekly Picks with lifecycle actions.":"No qualified setup this week.";
-  const marker=email.sent?"[email:sent]":"[email:failed:"+String(email.reason || email.status || "unknown")+"]";
+  const marker=email.sent?"[email:sent]":"[email:failed:"+String(email.reason || email.failures?.[0]?.status || "unknown")+"]";
   await supabase.from("jarvis_weekly_runs").update({note:baseNote+" "+marker}).eq("id",run.id);
   return NextResponse.json({ok:email.sent,runId:run.id,regime,picks:candidates.length,actions:actions.length,email},{status:email.sent?200:502});
 }
