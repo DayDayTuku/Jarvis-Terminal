@@ -168,7 +168,7 @@ export async function GET(request:NextRequest) {
       const hardStop=Number.isFinite(Number(item.hard_stop))?Number(item.hard_stop):-Infinity;
       const stopLevel=Math.max(hardStop,alignPrice(Number(item.invalidation),"up"));
       const targetLevel=alignPrice(Number(item.target_one),"down");
-      if(sessionLow<=stopLevel && (!String(state.reason || "").includes("[stop-alert:sent]") || item.ticker === "LSIP")) {
+      if(sessionLow<=stopLevel && !String(state.reason || "").includes("[stop-alert:sent]")) {
         await supabase.from("jarvis_weekly_actions").update({action:"EXIT",target_weight:0,entry_filled:true,invalidated:true,reason:"Price traded through the active stop level."}).eq("run_id",existing.id).eq("ticker",item.ticker);
         alerts.push({ticker:item.ticker,action:"STOP / EXIT",sessionLow,sessionHigh,trigger:stopLevel});
       } else if(Number.isFinite(targetLevel) && sessionHigh>=targetLevel && !String(state.reason || "").includes("[target-alert:sent]")) {
