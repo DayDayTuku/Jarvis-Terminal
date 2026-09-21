@@ -62,7 +62,7 @@ async function buildLifecycle(runId:string, priorRun:any, prior:any[], current:C
     const bars = await getBars(old.ticker,priorRun.week_of);
     const touch = bars.findIndex((bar) => bar.high >= Number(old.planned_entry_low) && bar.low <= Number(old.planned_entry_high));
     const filled = touch >= 0;
-    const fill = filled ? Math.min(Number(old.planned_entry_high),Math.max(Number(old.planned_entry_low),bars[touch].open)) : null;
+    const fill = filled ? alignPrice(Math.min(Number(old.planned_entry_high),Math.max(Number(old.planned_entry_low),bars[touch].open)),"nearest") : null;
     const active = filled ? bars.slice(touch) : [];
     const stopLevel = Number.isFinite(Number(old.hard_stop)) ? Number(old.hard_stop) : Number(old.invalidation);
     const invalidationIndex = active.findIndex((bar) => bar.low <= stopLevel);
@@ -151,7 +151,7 @@ export async function GET(request:NextRequest) {
   const {data:priorCandidates}=priorRun?await supabase.from("jarvis_weekly_candidates").select("*").eq("run_id",priorRun.id).order("rank"):{data:[]};
   const {data:run,error:runError}=await supabase.from("jarvis_weekly_runs").insert({week_of:weekOf,snapshot_kind:"forward",methodology_version:"v5",status:"locked",market_regime:"V5 "+regime,note:selected.length?"Automated Friday Weekly Picks with lifecycle actions.":"No qualified setup this week."}).select().single();
   if(runError||!run) return NextResponse.json({error:"Unable to create weekly run."},{status:500});
-  const candidates=selected.map((item,index)=>({run_id:run.id,rank:index+1,ticker:item.ticker.slice(0,12),setup:item.setup.slice(0,30),score:Number(item.score),signal_close:Number(item.close),planned_entry_low:alignPrice(Number(item.entryLow),"up"),planned_entry_high:alignPrice(Number(item.entryHigh),"down"),invalidation:alignPrice(Number(item.invalidation),"up"),hard_stop:alignPrice(Number(item.close)*.94,"up"),target_one:alignPrice(Number(item.target),"down"),risk_reward:Number(item.riskReward),position_size_idr:Math.min(1250000,75000/Math.max(.01,(Number(item.close)-Number(item.invalidation))/Number(item.close))),position_weight:weight(item,regime),reasons:Array.isArray(item.reasons)?item.reasons.slice(0,4):[],caution:String(item.caution||"").slice(0,500)}));
+  const candidates=selected.map((item,index)=>({run_id:run.id,rank:index+1,ticker:item.ticker.slice(0,12),setup:item.setup.slice(0,30),score:Number(item.score),signal_close:alignPrice(Number(item.close),"nearest"),planned_entry_low:alignPrice(Number(item.entryLow),"up"),planned_entry_high:alignPrice(Number(item.entryHigh),"down"),invalidation:alignPrice(Number(item.invalidation),"up"),hard_stop:alignPrice(Number(item.close)*.94,"up"),target_one:alignPrice(Number(item.target),"down"),risk_reward:Number(item.riskReward),position_size_idr:Math.min(1250000,75000/Math.max(.01,(Number(item.close)-Number(item.invalidation))/Number(item.close))),position_weight:weight(item,regime),reasons:Array.isArray(item.reasons)?item.reasons.slice(0,4):[],caution:String(item.caution||"").slice(0,500)}));
   if(candidates.length) { const {error}=await supabase.from("jarvis_weekly_candidates").insert(candidates); if(error) return NextResponse.json({error:"Run created, but picks could not be saved."},{status:500}); }
   const actions=await buildLifecycle(run.id,priorRun,priorCandidates||[],candidates);
   if(actions.length) { const {error}=await supabase.from("jarvis_weekly_actions").insert(actions); if(error) return NextResponse.json({error:"Run created, but actions could not be saved."},{status:500}); }
