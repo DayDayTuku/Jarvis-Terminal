@@ -143,7 +143,7 @@ export async function GET(request:NextRequest) {
   if(!dryRun && wibWeekday() !== "Fri" && existing) {
     const [{data:watch},{data:currentActions}]=await Promise.all([
       supabase.from("jarvis_weekly_candidates").select("*").eq("run_id",existing.id).order("rank"),
-      supabase.from("jarvis_weekly_actions").select("ticker,invalidated,target_reached").eq("run_id",existing.id),
+      supabase.from("jarvis_weekly_actions").select("ticker,invalidated,target_reached,reason").eq("run_id",existing.id),
     ]);
     const actionState=new Map((currentActions || []).map((item:any)=>[item.ticker,item]));
     const alerts:MarketAlert[]=[];
@@ -158,10 +158,10 @@ export async function GET(request:NextRequest) {
       const hardStop=Number.isFinite(Number(item.hard_stop))?Number(item.hard_stop):-Infinity;
       const stopLevel=Math.max(hardStop,alignPrice(Number(item.invalidation),"up"));
       const targetLevel=alignPrice(Number(item.target_one),"down");
-      if(sessionLow<=stopLevel && !state.invalidated) {
+      if(sessionLow<=stopLevel && !String(state.reason || "").includes("[stop-alert:sent]")) {
         await supabase.from("jarvis_weekly_actions").update({action:"EXIT",target_weight:0,entry_filled:true,invalidated:true,reason:"Price traded through the active stop level."}).eq("run_id",existing.id).eq("ticker",item.ticker);
         alerts.push({ticker:item.ticker,action:"STOP / EXIT",sessionLow,sessionHigh,trigger:stopLevel});
-      } else if(Number.isFinite(targetLevel) && sessionHigh>=targetLevel && !state.target_reached) {
+      } else if(Number.isFinite(targetLevel) && sessionHigh>=targetLevel && !String(state.reason || "").includes("[target-alert:sent]")) {
         await supabase.from("jarvis_weekly_actions").update({action:"REDUCE",target_weight:Number(item.position_weight || 0)/2,entry_filled:true,target_reached:true,reason:"First target reached; take profit and reduce exposure."}).eq("run_id",existing.id).eq("ticker",item.ticker);
         alerts.push({ticker:item.ticker,action:"TAKE PROFIT",sessionLow,sessionHigh,trigger:targetLevel});
       }
@@ -170,6 +170,13 @@ export async function GET(request:NextRequest) {
     if(alerts.length) {
       try { email=await sendMarketAlerts(alerts,recipients); }
       catch(error) { console.error("Market alert email failed",error); email={sent:false,reason:"send_failed"}; }
+      if(email.sent) {
+        for(const alert of alerts) {
+          const marker=alert.action === "STOP / EXIT" ? "[stop-alert:sent]" : "[target-alert:sent]";
+          const reason=alert.action === "STOP / EXIT" ? "Price traded through the active stop level. " : "First target reached; take profit and reduce exposure. ";
+          await supabase.from("jarvis_weekly_actions").update({reason:reason+marker}).eq("run_id",existing.id).eq("ticker",alert.ticker);
+        }
+      }
     }
     return NextResponse.json({ok:true,monitored:true,runId:existing.id,actions:alerts.length,email});
   }
