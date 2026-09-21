@@ -116,7 +116,6 @@ export async function GET(request:NextRequest) {
   if(!process.env.CRON_SECRET || request.headers.get("authorization") !== "Bearer "+process.env.CRON_SECRET) return NextResponse.json({error:"Unauthorized"},{status:401});
   const searchParams=new URL(request.url).searchParams;
   const dryRun=searchParams.get("dryRun") === "1";
-  if(!dryRun && wibWeekday() !== "Fri") return NextResponse.json({ok:true,skipped:"not_friday"});
   const url=process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key=process.env.SUPABASE_SERVICE_ROLE_KEY;
   if(!url || !key) return NextResponse.json({error:"Server database credentials are missing."},{status:503});
@@ -124,6 +123,22 @@ export async function GET(request:NextRequest) {
   const recipients=await weeklyRecipients(supabase);
   const weekOf=currentFriday();
   const {data:existing}=await supabase.from("jarvis_weekly_runs").select("id,week_of,market_regime,note").eq("week_of",weekOf).maybeSingle();
+  if(!dryRun && wibWeekday() !== "Fri" && existing) {
+    const {data:watch}=await supabase.from("jarvis_weekly_candidates").select("*").eq("run_id",existing.id).order("rank");
+    let exits=0;
+    for(const item of watch || []) {
+      const bars=await getBars(item.ticker,existing.week_of);
+      const touch=bars.findIndex((bar)=>bar.high>=Number(item.planned_entry_low)&&bar.low<=Number(item.planned_entry_high));
+      const active=touch>=0?bars.slice(touch):[];
+      const hardStop=Number.isFinite(Number(item.hard_stop))?Number(item.hard_stop):-Infinity;
+      const stopLevel=Math.max(hardStop,alignPrice(Number(item.invalidation),"up"));
+      if(active.some((bar)=>bar.low<=stopLevel)){
+        await supabase.from("jarvis_weekly_actions").update({action:"EXIT",target_weight:0,entry_filled:true,invalidated:true,reason:"Price traded through the active stop level."}).eq("run_id",existing.id).eq("ticker",item.ticker);
+        exits++;
+      }
+    }
+    return NextResponse.json({ok:true,monitored:true,runId:existing.id,exits});
+  }
   if(existing) {
     if(String(existing.note || "").includes("[email:sent]")) return NextResponse.json({ok:true,alreadyLocked:true,emailAlreadySent:true,runId:existing.id});
     const [candidateResult,actionResult]=await Promise.all([
