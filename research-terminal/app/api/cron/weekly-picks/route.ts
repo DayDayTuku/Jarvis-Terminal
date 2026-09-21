@@ -96,6 +96,23 @@ async function weeklyRecipients(supabase:any) {
   } catch { return [...new Set(configured)]; }
 }
 
+type MarketAlert = { ticker:string; action:"STOP / EXIT"|"TAKE PROFIT"; sessionLow:number; sessionHigh:number; trigger:number };
+
+async function sendMarketAlerts(items:MarketAlert[], recipients:string[]) {
+  const apiKey=process.env.RESEND_API_KEY;
+  if(!apiKey) return {sent:false,reason:"not_configured"};
+  if(!items.length) return {sent:false,reason:"no_new_actions"};
+  const fromAddress=process.env.JARVIS_EMAIL_FROM||"Jarvis Research <onboarding@resend.dev>";
+  const senderAddress=fromAddress.match(/<([^>]+)>/)?.[1] || "onboarding@resend.dev";
+  const bccRecipients=recipients.filter((email)=>email.toLowerCase()!==senderAddress.toLowerCase());
+  const rows=items.map((item)=>"<tr><td><b>"+escapeHtml(item.ticker)+"</b></td><td><b>"+escapeHtml(item.action)+"</b></td><td>"+item.sessionLow.toLocaleString("id-ID")+" / "+item.sessionHigh.toLocaleString("id-ID")+"</td><td>"+item.trigger.toLocaleString("id-ID")+"</td></tr>").join("");
+  const html="<!doctype html><html><body style='margin:0;background:#f4f5f7;font-family:Arial;color:#111827'><div style='max-width:720px;margin:auto;padding:28px 16px'><header style='background:#111827;color:white;padding:24px'><small>JARVIS RESEARCH</small><h1>Market-close action</h1><p>A new Weekly Picks trigger was confirmed after market close.</p></header><main style='background:white;padding:22px'><table style='width:100%;border-collapse:collapse' cellpadding='9'><tr style='background:#1f3c52;color:white'><th>Ticker</th><th>Action</th><th>Day low / high</th><th>Trigger</th></tr>"+rows+"</table><p style='color:#6b7280;font-size:12px'>This is an automated rules-based monitoring alert, not investment advice.</p></main></div></body></html>";
+  const response=await fetch("https://api.resend.com/emails",{method:"POST",headers:{Authorization:"Bearer "+apiKey,"Content-Type":"application/json"},body:JSON.stringify({from:fromAddress,to:[senderAddress],bcc:bccRecipients,subject:"JARVIS · Market-close action · "+items.length+" new",html})});
+  if(!response.ok) return {sent:false,reason:"provider_error",status:response.status};
+  const data:any=await response.json();
+  return {sent:true,id:data.id||null,recipients:recipients.length};
+}
+
 async function sendDigest(weekOf:string, regime:string, candidates:Candidate[], actions:Action[], recipientOverride?:string[]) {
   const apiKey=process.env.RESEND_API_KEY;
   if(!apiKey) return {sent:false,reason:"not_configured"};
@@ -124,20 +141,37 @@ export async function GET(request:NextRequest) {
   const weekOf=currentFriday();
   const {data:existing}=await supabase.from("jarvis_weekly_runs").select("id,week_of,market_regime,note").eq("week_of",weekOf).maybeSingle();
   if(!dryRun && wibWeekday() !== "Fri" && existing) {
-    const {data:watch}=await supabase.from("jarvis_weekly_candidates").select("*").eq("run_id",existing.id).order("rank");
-    let exits=0;
+    const [{data:watch},{data:currentActions}]=await Promise.all([
+      supabase.from("jarvis_weekly_candidates").select("*").eq("run_id",existing.id).order("rank"),
+      supabase.from("jarvis_weekly_actions").select("ticker,invalidated,target_reached").eq("run_id",existing.id),
+    ]);
+    const actionState=new Map((currentActions || []).map((item:any)=>[item.ticker,item]));
+    const alerts:MarketAlert[]=[];
     for(const item of watch || []) {
       const bars=await getBars(item.ticker,existing.week_of);
       const touch=bars.findIndex((bar)=>bar.high>=Number(item.planned_entry_low)&&bar.low<=Number(item.planned_entry_high));
       const active=touch>=0?bars.slice(touch):[];
+      if(!active.length) continue;
+      const state:any=actionState.get(item.ticker) || {};
+      const sessionLow=Math.min(...active.map((bar)=>bar.low));
+      const sessionHigh=Math.max(...active.map((bar)=>bar.high));
       const hardStop=Number.isFinite(Number(item.hard_stop))?Number(item.hard_stop):-Infinity;
       const stopLevel=Math.max(hardStop,alignPrice(Number(item.invalidation),"up"));
-      if(active.some((bar)=>bar.low<=stopLevel)){
+      const targetLevel=alignPrice(Number(item.target_one),"down");
+      if(sessionLow<=stopLevel && !state.invalidated) {
         await supabase.from("jarvis_weekly_actions").update({action:"EXIT",target_weight:0,entry_filled:true,invalidated:true,reason:"Price traded through the active stop level."}).eq("run_id",existing.id).eq("ticker",item.ticker);
-        exits++;
+        alerts.push({ticker:item.ticker,action:"STOP / EXIT",sessionLow,sessionHigh,trigger:stopLevel});
+      } else if(Number.isFinite(targetLevel) && sessionHigh>=targetLevel && !state.target_reached) {
+        await supabase.from("jarvis_weekly_actions").update({action:"REDUCE",target_weight:Number(item.position_weight || 0)/2,entry_filled:true,target_reached:true,reason:"First target reached; take profit and reduce exposure."}).eq("run_id",existing.id).eq("ticker",item.ticker);
+        alerts.push({ticker:item.ticker,action:"TAKE PROFIT",sessionLow,sessionHigh,trigger:targetLevel});
       }
     }
-    return NextResponse.json({ok:true,monitored:true,runId:existing.id,exits});
+    let email:any={sent:false,reason:"no_new_actions"};
+    if(alerts.length) {
+      try { email=await sendMarketAlerts(alerts,recipients); }
+      catch(error) { console.error("Market alert email failed",error); email={sent:false,reason:"send_failed"}; }
+    }
+    return NextResponse.json({ok:true,monitored:true,runId:existing.id,actions:alerts.length,email});
   }
   if(existing) {
     if(String(existing.note || "").includes("[email:sent]")) return NextResponse.json({ok:true,alreadyLocked:true,emailAlreadySent:true,runId:existing.id});
