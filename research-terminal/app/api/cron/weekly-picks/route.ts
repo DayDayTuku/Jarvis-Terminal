@@ -41,6 +41,10 @@ function alignPrice(price:number,direction:"up"|"down"|"nearest"="nearest") {
   const round=direction==="up"?Math.ceil:direction==="down"?Math.floor:Math.round;
   return round(price/step)*step;
 }
+function previousPriceTick(price:number) {
+  const level=alignPrice(price,"nearest");
+  return level-priceStep(Math.max(0,level-0.001));
+}
 function kind(item:{setup:string;score:number}) { return item.score>=85 && /(PULLBACK|ACCUMULATION|TREND)/.test(item.setup.toUpperCase()) ? "CORE" : "TACTICAL"; }
 function weight(item:{setup:string;score:number},regime:string) { const base=kind(item)==="CORE"?(item.score>=90?15:12.5):(item.score>=90?10:7.5); const multiplier=regime==="RISK ON"?1:regime==="EMERGING"?.8:.6; return Math.max(5,Math.round(base*multiplier/2.5)*2.5); }
 async function getBars(ticker:string, since:string):Promise<Bar[]> {
@@ -66,7 +70,8 @@ async function buildLifecycle(runId:string, priorRun:any, prior:any[], current:C
     const active = filled ? bars.slice(touch) : [];
     const hardStop = Number.isFinite(Number(old.hard_stop)) ? Number(old.hard_stop) : -Infinity;
     const stopLevel = Math.max(hardStop, Number(old.invalidation));
-    const invalidationIndex = active.findIndex((bar) => bar.low <= stopLevel);
+    const stopTrigger = previousPriceTick(alignPrice(stopLevel,"up"));
+    const invalidationIndex = active.findIndex((bar) => bar.low <= stopTrigger);
     const targetIndex = active.findIndex((bar) => bar.high >= Number(old.target_one));
     const invalidated = invalidationIndex >= 0 && (targetIndex < 0 || invalidationIndex <= targetIndex);
     const targetReached = targetIndex >= 0 && (invalidationIndex < 0 || targetIndex < invalidationIndex);
@@ -167,10 +172,14 @@ export async function GET(request:NextRequest) {
       const sessionHigh=Math.max(...active.map((bar)=>bar.high));
       const hardStop=Number.isFinite(Number(item.hard_stop))?Number(item.hard_stop):-Infinity;
       const stopLevel=Math.max(hardStop,alignPrice(Number(item.invalidation),"up"));
+      const stopTrigger=previousPriceTick(stopLevel);
       const targetLevel=alignPrice(Number(item.target_one),"down");
-      if(sessionLow<=stopLevel && !String(state.reason || "").includes("[stop-alert:sent]")) {
+      if(state.invalidated && sessionLow>stopTrigger) {
+        await supabase.from("jarvis_weekly_actions").update({action:"HOLD",target_weight:Number(item.position_weight || 0),entry_filled:true,invalidated:false,reason:"Setup remains valid; price did not trade one valid tick below invalidation."}).eq("run_id",existing.id).eq("ticker",item.ticker);
+      }
+      if(sessionLow<=stopTrigger && !String(state.reason || "").includes("[stop-alert:sent]")) {
         await supabase.from("jarvis_weekly_actions").update({action:"EXIT",target_weight:0,entry_filled:true,invalidated:true,reason:"Price traded through the active stop level."}).eq("run_id",existing.id).eq("ticker",item.ticker);
-        alerts.push({ticker:item.ticker,action:"STOP / EXIT",sessionLow,sessionHigh,trigger:stopLevel});
+        alerts.push({ticker:item.ticker,action:"STOP / EXIT",sessionLow,sessionHigh,trigger:stopTrigger});
       } else if(Number.isFinite(targetLevel) && sessionHigh>=targetLevel && !String(state.reason || "").includes("[target-alert:sent]")) {
         await supabase.from("jarvis_weekly_actions").update({action:"REDUCE",target_weight:Number(item.position_weight || 0)/2,entry_filled:true,target_reached:true,reason:"First target reached; take profit and reduce exposure."}).eq("run_id",existing.id).eq("ticker",item.ticker);
         alerts.push({ticker:item.ticker,action:"TAKE PROFIT",sessionLow,sessionHigh,trigger:targetLevel});
