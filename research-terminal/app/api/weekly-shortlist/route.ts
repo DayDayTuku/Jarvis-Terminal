@@ -33,6 +33,9 @@ type LifecycleAction = {
   invalidated: boolean; reason: string;
 };
 type PriceBar = { open:number; high:number; low:number; close:number };
+function priceStep(price:number){ return price<200?1:price<500?2:price<2000?5:price<5000?10:25; }
+function alignPrice(price:number){ const step=priceStep(price); return Math.round(price/step)*step; }
+function previousPriceTick(price:number){ const level=alignPrice(price); return level-priceStep(Math.max(0,level-0.001)); }
 
 async function getBars(ticker:string, since:string):Promise<PriceBar[]> {
   try {
@@ -56,7 +59,8 @@ async function buildLifecycle(runId:string, priorRun:any, priorCandidates:any[],
       const entryFilled=touchIndex>=0;
       const fill=entryFilled ? Math.min(Number(prior.planned_entry_high),Math.max(Number(prior.planned_entry_low),bars[touchIndex].open)) : null;
       const activeBars=entryFilled ? bars.slice(touchIndex) : [];
-      const invalidationIndex=activeBars.findIndex((bar)=>bar.low<=Number(prior.invalidation));
+      const invalidationTrigger=previousPriceTick(Number(prior.invalidation));
+      const invalidationIndex=activeBars.findIndex((bar)=>bar.low<=invalidationTrigger);
       const targetIndex=activeBars.findIndex((bar)=>bar.high>=Number(prior.target_one));
       const invalidated=invalidationIndex>=0&&(targetIndex<0||invalidationIndex<=targetIndex);
       const targetReached=targetIndex>=0&&(invalidationIndex<0||targetIndex<invalidationIndex);
