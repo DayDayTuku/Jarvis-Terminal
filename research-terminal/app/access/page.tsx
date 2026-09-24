@@ -27,7 +27,7 @@ function AccessForm() {
     event.preventDefault();
     setLoading(true);
     setError('');
-    const { error } = mode === 'login'
+    const { data, error } = mode === 'login'
       ? await supabase.auth.signInWithPassword({ email, password })
       : await supabase.auth.signUp({ email, password });
 
@@ -42,10 +42,16 @@ function AccessForm() {
       setMode('login');
       return;
     }
-    setLoginTransition(true);
-    await new Promise((resolve) => window.setTimeout(resolve, 1500));
-    router.push(search.get('returnTo') || '/');
-    router.refresh();
+      if (!data.session) {
+        setError('Your session could not be established. Please try again.');
+        setLoading(false);
+        return;
+      }
+      setIntroVisible(false);
+      setLoginTransition(true);
+      await new Promise((resolve) => window.setTimeout(resolve, 1250));
+      router.replace(search.get('returnTo') || '/');
+      router.refresh();
   };
 
   const switchMode = (nextMode: 'login' | 'signup') => {
@@ -323,10 +329,10 @@ function AccessForm() {
           to { opacity: 1; transform: translateY(0); }
         }
 
-        .access-login-transition{position:fixed;inset:0;z-index:10020;display:grid;place-content:center;justify-items:center;overflow:hidden;background:#020407;animation:loginCurtainOut 1.5s cubic-bezier(.76,0,.24,1) both}.access-login-grid{position:absolute;inset:0;opacity:.14;background-image:linear-gradient(#48a6ff16 1px,transparent 1px),linear-gradient(90deg,#48a6ff16 1px,transparent 1px);background-size:42px 42px;mask-image:radial-gradient(circle at center,#000,transparent 68%);animation:loginGridFocus 1.25s ease-out both}.access-login-mark{position:relative;width:132px;height:132px;display:grid;place-items:center}.access-login-mark:before{content:'';position:absolute;inset:-18px;border:1px solid #48a6ff42;border-radius:50%;animation:loginRing 1.05s cubic-bezier(.2,.82,.2,1) both}.access-login-mark img{position:relative;z-index:3;width:124px;height:124px;object-fit:cover;animation:loginLogoBuild 1.05s cubic-bezier(.16,1,.3,1) both}.mark-fragment{position:absolute;z-index:4;width:56px;height:2px;background:linear-gradient(90deg,transparent,#48a6ff,transparent);box-shadow:0 0 15px #48a6ffaa;transform-origin:center}.fragment-one{animation:fragmentOne .78s cubic-bezier(.2,.82,.2,1) both}.fragment-two{animation:fragmentTwo .82s .05s cubic-bezier(.2,.82,.2,1) both}.fragment-three{animation:fragmentThree .82s .1s cubic-bezier(.2,.82,.2,1) both}.fragment-four{animation:fragmentFour .78s .14s cubic-bezier(.2,.82,.2,1) both}.access-login-transition>strong{margin-top:22px;color:#eef5fb;font-size:11px;letter-spacing:.24em;animation:loginCopy .45s .72s ease-out both}.access-login-transition>small{margin-top:9px;color:#48a6ff;font-size:7px;letter-spacing:.2em;animation:loginCopy .45s .82s ease-out both}@keyframes loginLogoBuild{0%{opacity:0;transform:scale(.5) rotate(-8deg);filter:blur(10px) brightness(2);clip-path:inset(49% 47%)}42%{opacity:.75;clip-path:inset(16% 19%)}76%{opacity:1;transform:scale(1.06);filter:blur(0) brightness(1.22);clip-path:inset(0)}100%{opacity:1;transform:scale(1);filter:none;clip-path:inset(0)}}@keyframes fragmentOne{0%{opacity:0;transform:translate(-86px,-62px) rotate(42deg) scaleX(.2)}55%{opacity:1}100%{opacity:0;transform:translate(-9px,-18px) rotate(42deg) scaleX(1)}}@keyframes fragmentTwo{0%{opacity:0;transform:translate(82px,-58px) rotate(-46deg) scaleX(.2)}55%{opacity:1}100%{opacity:0;transform:translate(11px,-17px) rotate(-46deg) scaleX(1)}}@keyframes fragmentThree{0%{opacity:0;transform:translate(-84px,58px) rotate(-44deg) scaleX(.2)}55%{opacity:1}100%{opacity:0;transform:translate(-12px,18px) rotate(-44deg) scaleX(1)}}@keyframes fragmentFour{0%{opacity:0;transform:translate(86px,62px) rotate(40deg) scaleX(.2)}55%{opacity:1}100%{opacity:0;transform:translate(10px,19px) rotate(40deg) scaleX(1)}}@keyframes loginRing{0%{opacity:0;transform:scale(.45) rotate(-45deg)}48%{opacity:.9}100%{opacity:0;transform:scale(1.32) rotate(85deg)}}@keyframes loginGridFocus{from{opacity:0;transform:scale(1.12)}to{opacity:.14;transform:scale(1)}}@keyframes loginCopy{from{opacity:0;transform:translateY(7px)}to{opacity:1;transform:translateY(0)}}@keyframes loginCurtainOut{0%,78%{opacity:1}100%{opacity:0;visibility:hidden}}
+        .access-login-transition{position:fixed;inset:0;z-index:10020;display:grid;place-content:center;justify-items:center;overflow:hidden;background:#020407;animation:loginOverlayIn .2s ease-out both}.access-login-grid{position:absolute;inset:0;opacity:.14;background-image:linear-gradient(#48a6ff16 1px,transparent 1px),linear-gradient(90deg,#48a6ff16 1px,transparent 1px);background-size:42px 42px;mask-image:radial-gradient(circle at center,#000,transparent 68%);animation:loginGridFocus 1.25s ease-out both}.access-login-mark{position:relative;width:132px;height:132px;display:grid;place-items:center}.access-login-mark:before{content:'';position:absolute;inset:-18px;border:1px solid #48a6ff42;border-radius:50%;animation:loginRing 1.05s cubic-bezier(.2,.82,.2,1) both}.access-login-mark img{position:relative;z-index:3;width:124px;height:124px;object-fit:cover;animation:loginLogoBuild 1.05s cubic-bezier(.16,1,.3,1) both}.mark-fragment{position:absolute;z-index:4;width:56px;height:2px;background:linear-gradient(90deg,transparent,#48a6ff,transparent);box-shadow:0 0 15px #48a6ffaa;transform-origin:center}.fragment-one{animation:fragmentOne .78s cubic-bezier(.2,.82,.2,1) both}.fragment-two{animation:fragmentTwo .82s .05s cubic-bezier(.2,.82,.2,1) both}.fragment-three{animation:fragmentThree .82s .1s cubic-bezier(.2,.82,.2,1) both}.fragment-four{animation:fragmentFour .78s .14s cubic-bezier(.2,.82,.2,1) both}.access-login-transition>strong{margin-top:22px;color:#eef5fb;font-size:11px;letter-spacing:.24em;animation:loginCopy .45s .72s ease-out both}.access-login-transition>small{margin-top:9px;color:#48a6ff;font-size:7px;letter-spacing:.2em;animation:loginCopy .45s .82s ease-out both}@keyframes loginLogoBuild{0%{opacity:0;transform:scale(.5) rotate(-8deg);filter:blur(10px) brightness(2);clip-path:inset(49% 47%)}42%{opacity:.75;clip-path:inset(16% 19%)}76%{opacity:1;transform:scale(1.06);filter:blur(0) brightness(1.22);clip-path:inset(0)}100%{opacity:1;transform:scale(1);filter:none;clip-path:inset(0)}}@keyframes fragmentOne{0%{opacity:0;transform:translate(-86px,-62px) rotate(42deg) scaleX(.2)}55%{opacity:1}100%{opacity:0;transform:translate(-9px,-18px) rotate(42deg) scaleX(1)}}@keyframes fragmentTwo{0%{opacity:0;transform:translate(82px,-58px) rotate(-46deg) scaleX(.2)}55%{opacity:1}100%{opacity:0;transform:translate(11px,-17px) rotate(-46deg) scaleX(1)}}@keyframes fragmentThree{0%{opacity:0;transform:translate(-84px,58px) rotate(-44deg) scaleX(.2)}55%{opacity:1}100%{opacity:0;transform:translate(-12px,18px) rotate(-44deg) scaleX(1)}}@keyframes fragmentFour{0%{opacity:0;transform:translate(86px,62px) rotate(40deg) scaleX(.2)}55%{opacity:1}100%{opacity:0;transform:translate(10px,19px) rotate(40deg) scaleX(1)}}@keyframes loginRing{0%{opacity:0;transform:scale(.45) rotate(-45deg)}48%{opacity:.9}100%{opacity:0;transform:scale(1.32) rotate(85deg)}}@keyframes loginGridFocus{from{opacity:0;transform:scale(1.12)}to{opacity:.14;transform:scale(1)}}@keyframes loginCopy{from{opacity:0;transform:translateY(7px)}to{opacity:1;transform:translateY(0)}}@keyframes loginOverlayIn{from{opacity:0}to{opacity:1}}
         @media (prefers-reduced-motion: reduce) {
           .access-intro { display: none; }
-          .access-login-transition { animation-duration: .35s; }
+          .access-login-transition { animation-duration: .01s; }
           .access-login-mark img { animation: none; }
           .mark-fragment, .access-login-mark::before, .access-login-grid { display: none; }
           .access-card,
