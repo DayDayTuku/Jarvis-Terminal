@@ -8,7 +8,7 @@ type MarketData = {
   heatmap: Array<{ label: string; daily: number | null; weekly: number | null }>;
 };
 type FredData = { freshness: string; regime: Array<{ date: string; growth: number; inflation: number }> };
-type SetupKey = "all" | "breakout" | "pullback" | "momentum" | "reversal";
+type SetupKey = "all" | "breakout" | "pullback" | "momentum" | "reversal" | "short_breakdown";
 type Setup = {
   ticker: string; name: string; setup: Exclude<SetupKey, "all">; score: number;
   close: number; change: number | null; volume: number; relativeVolume: number | null;
@@ -26,6 +26,7 @@ const setupMeta = {
   pullback: { label: "HEALTHY PULLBACK", subtitle: "Uptrend returning to support", color: "#43d4a3" },
   momentum: { label: "MOMENTUM", subtitle: "Trend remains strong, but not extreme", color: "#b889ff" },
   reversal: { label: "REVERSAL", subtitle: "Early rebound near a recent low", color: "#ffb45e" },
+  short_breakdown: { label: "OPTIONAL SHORT", subtitle: "BEI-eligible bearish breakdown with borrow required", color: "#ff6678" },
 } as const;
 
 function price(value: number | null) {
@@ -102,7 +103,7 @@ export default function QuantLab({
           <div style={{ maxWidth: 680 }}>
             <span style={{ color: "#48a6ff", fontSize: 8, letterSpacing: ".12em" }}>SETUP FINDER · BETA</span>
             <h2 style={{ margin: "7px 0 5px", fontSize: 21 }}>What may be setting up for the next 3–20 sessions?</h2>
-            <p style={{ margin: 0, color: "#8793a3", font: "400 11px/1.55 var(--font-geist-sans)" }}>End-of-day shortlist for semi-swing research. Pick a setup, review the trading plan, then validate the chart before acting.</p>
+            <p style={{ margin: 0, color: "#8793a3", font: "400 11px/1.55 var(--font-geist-sans)" }}>End-of-day long shortlist plus an optional risk-capped short. Shorts are limited to one, must be on the official BEI list, and still require confirmed borrow availability.</p>
           </div>
           <button onClick={load} disabled={loading} style={{ alignSelf: "center", minHeight: 34, padding: "0 14px", border: "1px solid #263547", background: "#0a111a", color: "#c8d2de", fontSize: 8, cursor: "pointer" }}>{loading ? "SCANNING…" : "↻ REFRESH SCAN"}</button>
         </div>
@@ -114,13 +115,13 @@ export default function QuantLab({
         </div>
 
         <div className="setup-steps">
-          <div><b>1</b><span><strong>Choose a setup</strong><small>Start with Healthy Pullback if you prefer lower chase risk.</small></span></div>
-          <div><b>2</b><span><strong>Review the plan</strong><small>Check entry, invalidation, target, and liquidity.</small></span></div>
-          <div><b>3</b><span><strong>Verify the chart</strong><small>Only act after the latest close and news are confirmed.</small></span></div>
+          <div><b>1</b><span><strong>Choose independently</strong><small>Long and short candidates compete on their own rules; cash remains valid.</small></span></div>
+          <div><b>2</b><span><strong>Review the plan</strong><small>Check entry, invalidation, target, liquidity, and borrow.</small></span></div>
+          <div><b>3</b><span><strong>Verify eligibility</strong><small>Short only when the official BEI list and broker borrow both confirm availability.</small></span></div>
         </div>
 
         <div style={{ display: "flex", gap: 7, padding: 12, overflowX: "auto", borderBottom: "1px solid var(--line)" }}>
-          {(["all", "breakout", "pullback", "momentum", "reversal"] as SetupKey[]).map((key) => {
+          {(["all", "breakout", "pullback", "momentum", "reversal", "short_breakdown"] as SetupKey[]).map((key) => {
             const active = filter === key;
             const count = key === "all" ? data?.setups.length ?? 0 : counts[key] ?? 0;
             return <button key={key} onClick={() => setFilter(key)} style={{ flex: "0 0 auto", minHeight: 34, padding: "0 12px", border: `1px solid ${active ? "#48a6ff" : "#202b38"}`, background: active ? "#0a1b2d" : "#090d13", color: active ? "#eef6ff" : "#8390a0", fontSize: 8, cursor: "pointer" }}>{key === "all" ? "BEST SETUPS" : setupMeta[key].label} · {count}</button>;
@@ -160,7 +161,7 @@ export default function QuantLab({
               <div style={{ marginTop: 18, padding: 14, border: "1px solid #203248", background: "#08121d" }}>
                 <span style={{ color: "#6f7f91", fontSize: 7 }}>POSSIBLE PLAN · NOT AN ORDER</span>
                 <div className="setup-plan-grid" style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 10, marginTop: 11 }}>
-                  {[["ENTRY AREA", `${price(selected.entryLow)}–${price(selected.entryHigh)}`], ["INVALID BELOW", price(selected.invalidation)], ["FIRST TARGET", price(selected.target)], ["RISK / REWARD", `1 : ${selected.riskReward.toFixed(1)}`]].map(([label, value]) => <div key={label}><span style={{ color: "#657284", fontSize: 7 }}>{label}</span><strong style={{ display: "block", marginTop: 5, fontSize: 11 }}>{value}</strong></div>)}
+                  {[["ENTRY AREA", `${price(selected.entryLow)}–${price(selected.entryHigh)}`], [selected.setup === "short_breakdown" ? "INVALID ABOVE" : "INVALID BELOW", price(selected.invalidation)], ["FIRST TARGET", price(selected.target)], ["RISK / REWARD", `1 : ${selected.riskReward.toFixed(1)}`]].map(([label, value]) => <div key={label}><span style={{ color: "#657284", fontSize: 7 }}>{label}</span><strong style={{ display: "block", marginTop: 5, fontSize: 11 }}>{value}</strong></div>)}
                 </div>
               </div>
 
@@ -181,7 +182,7 @@ export default function QuantLab({
 
       <article className="panel">
         <button onClick={() => setShowMethod((value) => !value)} style={{ width: "100%", display: "flex", justifyContent: "space-between", padding: "13px 15px", border: 0, background: "transparent", color: "#9ba8b7", fontSize: 8, cursor: "pointer" }}><span>HOW THE SCORE WORKS</span><span>{showMethod ? "HIDE ↑" : "SEE CALCULATION ↓"}</span></button>
-        {showMethod && <div style={{ padding: "0 15px 15px", color: "#778596", font: "400 10px/1.6 var(--font-geist-sans)" }}>The shortlist uses closing-price structure, 20/50/200-day trends, RSI, relative volume, and recent highs/lows. Illiquid shares are filtered out. The plan levels are mechanical research guides, not predictions. Always verify corporate actions, news, liquidity, and the live chart before entering.</div>}
+        {showMethod && <div style={{ padding: "0 15px 15px", color: "#778596", font: "400 10px/1.6 var(--font-geist-sans)" }}>The shortlist uses closing-price structure, 20/50/200-day trends, RSI, relative volume, and recent highs/lows. Illiquid shares are filtered out. Optional shorts are capped at one, sized below longs, and require both official BEI eligibility and real borrow availability. The plan levels are mechanical research guides, not predictions. Always verify corporate actions, news, liquidity, and the live chart before entering.</div>}
       </article>
 
       <SimpleReplay />
