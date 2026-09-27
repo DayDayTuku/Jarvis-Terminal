@@ -20,7 +20,7 @@ function escapeHtml(value:unknown) {
   return String(value ?? "").replace(/[&<>"']/g, (char) => entities[char] || char);
 }
 function regimeFor(setups:Setup[]) {
-  const valid = setups.filter((item) => item.riskReward >= 1.7);
+  const valid = setups.filter((item) => !isShortSetup(item) && item.riskReward >= 1.7);
   const broad = valid.filter((item) => item.score >= 75).length;
   const strong = valid.filter((item) => item.score >= 85).length;
   return broad >= 5 ? "RISK ON" : broad >= 3 ? "EMERGING" : strong ? "NEUTRAL" : "RISK OFF";
@@ -30,7 +30,7 @@ function pick(setups:Setup[], regime:string) {
   const minimum = regime === "RISK ON" ? 75 : regime === "EMERGING" ? 80 : 85;
   const maximum = regime === "RISK ON" ? 5 : regime === "EMERGING" ? 3 : 1;
   const sectors = new Map<string,number>();
-  return [...setups].sort((a,b) => b.score - a.score || b.riskReward - a.riskReward)
+  return [...setups].filter((item) => !isShortSetup(item)).sort((a,b) => b.score - a.score || b.riskReward - a.riskReward)
     .filter((item) => item.score >= minimum && item.riskReward >= 1.7)
     .filter((item) => { const sector=item.sector || "Other"; const count=sectors.get(sector) || 0; if(count >= 2) return false; sectors.set(sector,count+1); return true; })
     .slice(0,maximum);
@@ -45,8 +45,12 @@ function previousPriceTick(price:number) {
   const level=alignPrice(price,"nearest");
   return level-priceStep(Math.max(0,level-0.001));
 }
+function nextPriceTick(price:number) { const level=alignPrice(price,"nearest"); return level+priceStep(level+0.001); }
+function isShortSetup(item:{setup?:string}) { return String(item.setup||"").toLowerCase().startsWith("short_"); }
 function kind(item:{setup:string;score:number}) { return item.score>=85 && /(PULLBACK|ACCUMULATION|TREND)/.test(item.setup.toUpperCase()) ? "CORE" : "TACTICAL"; }
 function weight(item:{setup:string;score:number},regime:string) { const base=kind(item)==="CORE"?(item.score>=90?15:12.5):(item.score>=90?10:7.5); const multiplier=regime==="RISK ON"?1:regime==="EMERGING"?.8:.6; return Math.max(5,Math.round(base*multiplier/2.5)*2.5); }
+function pickShort(setups:Setup[]) { return [...setups].filter(isShortSetup).filter((item)=>item.score>=85&&item.riskReward>=2).sort((a,b)=>b.score-a.score||b.riskReward-a.riskReward).slice(0,1); }
+function shortWeight(item:Setup,longs:Setup[],regime:string) { const weights=longs.map((row)=>weight(row,regime)).sort((a,b)=>a-b); const median=weights.length?weights[Math.floor(weights.length/2)]:10; const stop=Math.max(.1,(item.invalidation-item.close)/item.close*100); return Math.max(0,Math.floor(Math.min(8,median*.7,50/stop)*2)/2); }
 async function getBars(ticker:string, since:string):Promise<Bar[]> {
   try {
     const period1 = Math.floor(new Date(since + "T00:00:00+07:00").getTime()/1000);
@@ -68,11 +72,12 @@ async function buildLifecycle(runId:string, priorRun:any, prior:any[], current:C
     const filled = touch >= 0;
     const fill = filled ? alignPrice(Math.min(Number(old.planned_entry_high),Math.max(Number(old.planned_entry_low),bars[touch].open)),"nearest") : null;
     const active = filled ? bars.slice(touch) : [];
-    const hardStop = Number.isFinite(Number(old.hard_stop)) ? Number(old.hard_stop) : -Infinity;
-    const stopLevel = Math.max(hardStop, Number(old.invalidation));
-    const stopTrigger = previousPriceTick(alignPrice(stopLevel,"up"));
-    const invalidationIndex = active.findIndex((bar) => bar.low <= stopTrigger);
-    const targetIndex = active.findIndex((bar) => bar.high >= Number(old.target_one));
+    const short=isShortSetup(old);
+    const hardStop = Number.isFinite(Number(old.hard_stop)) ? Number(old.hard_stop) : (short?Infinity:-Infinity);
+    const stopLevel = short?Math.min(hardStop,Number(old.invalidation)):Math.max(hardStop,Number(old.invalidation));
+    const stopTrigger = short?nextPriceTick(alignPrice(stopLevel,"up")):previousPriceTick(alignPrice(stopLevel,"up"));
+    const invalidationIndex = active.findIndex((bar) => short?bar.high>=stopTrigger:bar.low<=stopTrigger);
+    const targetIndex = active.findIndex((bar) => short?bar.low<=Number(old.target_one):bar.high>=Number(old.target_one));
     const invalidated = invalidationIndex >= 0 && (targetIndex < 0 || invalidationIndex <= targetIndex);
     const targetReached = targetIndex >= 0 && (invalidationIndex < 0 || targetIndex < invalidationIndex);
     const next = currentByTicker.get(old.ticker);
@@ -88,7 +93,7 @@ async function buildLifecycle(runId:string, priorRun:any, prior:any[], current:C
     actions.push({ run_id:runId, prior_run_id:priorRun.id, ticker:old.ticker, action, previous_score:Number(old.score), current_score:next?Number(next.score):null, target_weight:targetWeight, theoretical_fill:fill, entry_filled:filled, target_reached:targetReached, invalidated, reason });
   }
   const oldTickers = new Set(prior.map((item) => item.ticker));
-  for(const item of current) if(!oldTickers.has(item.ticker)) actions.push({ run_id:runId, prior_run_id:priorRun?.id, ticker:item.ticker, action:"BUY", previous_score:null, current_score:Number(item.score), target_weight:Number(item.position_weight)||12.5, theoretical_fill:null, entry_filled:false, target_reached:false, invalidated:false, reason:priorRun?"New V5 qualifier; use the stated entry range.":"Initial V5 Weekly Pick; do not chase." });
+  for(const item of current) if(!oldTickers.has(item.ticker)) actions.push({ run_id:runId, prior_run_id:priorRun?.id, ticker:item.ticker, action:"BUY", previous_score:null, current_score:Number(item.score), target_weight:Number(item.position_weight)||12.5, theoretical_fill:null, entry_filled:false, target_reached:false, invalidated:false, reason:isShortSetup(item)?"Optional V5 short qualifier. Confirm official BEI eligibility and borrow availability before entry.":priorRun?"New V5 qualifier; use the stated entry range.":"Initial V5 Weekly Pick; do not chase." });
   return actions;
 }
 async function weeklyRecipients(supabase:any) {
@@ -170,17 +175,20 @@ export async function GET(request:NextRequest) {
       const state:any=actionState.get(item.ticker) || {};
       const sessionLow=Math.min(...active.map((bar)=>bar.low));
       const sessionHigh=Math.max(...active.map((bar)=>bar.high));
-      const hardStop=Number.isFinite(Number(item.hard_stop))?Number(item.hard_stop):-Infinity;
-      const stopLevel=Math.max(hardStop,alignPrice(Number(item.invalidation),"up"));
-      const stopTrigger=previousPriceTick(stopLevel);
-      const targetLevel=alignPrice(Number(item.target_one),"down");
-      if(state.invalidated && sessionLow>stopTrigger) {
-        await supabase.from("jarvis_weekly_actions").update({action:"HOLD",target_weight:Number(item.position_weight || 0),entry_filled:true,invalidated:false,reason:"Setup remains valid; price did not trade one valid tick below invalidation."}).eq("run_id",existing.id).eq("ticker",item.ticker);
+      const short=isShortSetup(item);
+      const hardStop=Number.isFinite(Number(item.hard_stop))?Number(item.hard_stop):(short?Infinity:-Infinity);
+      const stopLevel=short?Math.min(hardStop,alignPrice(Number(item.invalidation),"up")):Math.max(hardStop,alignPrice(Number(item.invalidation),"up"));
+      const stopTrigger=short?nextPriceTick(stopLevel):previousPriceTick(stopLevel);
+      const targetLevel=alignPrice(Number(item.target_one),short?"up":"down");
+      const stopHit=short?sessionHigh>=stopTrigger:sessionLow<=stopTrigger;
+      const targetHit=short?sessionLow<=targetLevel:sessionHigh>=targetLevel;
+      if(state.invalidated && !stopHit) {
+        await supabase.from("jarvis_weekly_actions").update({action:"HOLD",target_weight:Number(item.position_weight || 0),entry_filled:true,invalidated:false,reason:short?"Short remains valid; price did not trade one valid tick above invalidation.":"Setup remains valid; price did not trade one valid tick below invalidation."}).eq("run_id",existing.id).eq("ticker",item.ticker);
       }
-      if(sessionLow<=stopTrigger && !String(state.reason || "").includes("[stop-alert:sent]")) {
+      if(stopHit && !String(state.reason || "").includes("[stop-alert:sent]")) {
         await supabase.from("jarvis_weekly_actions").update({action:"EXIT",target_weight:0,entry_filled:true,invalidated:true,reason:"Price traded through the active stop level."}).eq("run_id",existing.id).eq("ticker",item.ticker);
         alerts.push({ticker:item.ticker,action:"STOP / EXIT",sessionLow,sessionHigh,trigger:stopTrigger});
-      } else if(Number.isFinite(targetLevel) && sessionHigh>=targetLevel && !String(state.reason || "").includes("[target-alert:sent]")) {
+      } else if(Number.isFinite(targetLevel) && targetHit && !String(state.reason || "").includes("[target-alert:sent]")) {
         await supabase.from("jarvis_weekly_actions").update({action:"REDUCE",target_weight:Number(item.position_weight || 0)/2,entry_filled:true,target_reached:true,reason:"First target reached; take profit and reduce exposure."}).eq("run_id",existing.id).eq("ticker",item.ticker);
         alerts.push({ticker:item.ticker,action:"TAKE PROFIT",sessionLow,sessionHigh,trigger:targetLevel});
       }
@@ -221,20 +229,22 @@ export async function GET(request:NextRequest) {
   const scanner:any=await scannerResponse.json();
   const setups=Array.isArray(scanner?.setups)?scanner.setups as Setup[]:[];
   const regime=regimeFor(setups);
-  const selected=pick(setups,regime);
+  const longs=pick(setups,regime);
+  const shorts=pickShort(setups).filter((item)=>shortWeight(item,longs,regime)>=3);
+  const selected=[...longs,...shorts];
   if(dryRun) return NextResponse.json({ok:true,dryRun:true,weekOf,regime,picks:selected.map((item)=>item.ticker)});
   const {data:priorRun}=await supabase.from("jarvis_weekly_runs").select("*").lt("week_of",weekOf).order("week_of",{ascending:false}).limit(1).maybeSingle();
   const {data:priorCandidates}=priorRun?await supabase.from("jarvis_weekly_candidates").select("*").eq("run_id",priorRun.id).order("rank"):{data:[]};
-  const {data:run,error:runError}=await supabase.from("jarvis_weekly_runs").insert({week_of:weekOf,snapshot_kind:"forward",methodology_version:"v5",status:"locked",market_regime:"V5 "+regime,note:selected.length?"Automated Friday Weekly Picks with lifecycle actions.":"No qualified setup this week."}).select().single();
+  const {data:run,error:runError}=await supabase.from("jarvis_weekly_runs").insert({week_of:weekOf,snapshot_kind:"forward",methodology_version:"v5",status:"locked",market_regime:"V5 "+regime+(shorts.length?" · OPTIONAL SHORT":""),note:selected.length?"Automated Friday Weekly Picks with lifecycle actions and an optional risk-capped short overlay.":"No qualified setup this week."}).select().single();
   if(runError||!run) return NextResponse.json({error:"Unable to create weekly run."},{status:500});
-  const candidates=selected.map((item,index)=>({run_id:run.id,rank:index+1,ticker:item.ticker.slice(0,12),setup:item.setup.slice(0,30),score:Number(item.score),signal_close:alignPrice(Number(item.close),"nearest"),planned_entry_low:alignPrice(Number(item.entryLow),"up"),planned_entry_high:alignPrice(Number(item.entryHigh),"down"),invalidation:alignPrice(Number(item.invalidation),"up"),hard_stop:alignPrice(Number(item.close)*.94,"up"),target_one:alignPrice(Number(item.target),"down"),risk_reward:Number(item.riskReward),position_size_idr:Math.min(1250000,75000/Math.max(.01,(Number(item.close)-Number(item.invalidation))/Number(item.close))),position_weight:weight(item,regime),reasons:Array.isArray(item.reasons)?item.reasons.slice(0,4):[],caution:String(item.caution||"").slice(0,500)}));
+  const candidates=selected.map((item,index)=>({run_id:run.id,rank:index+1,ticker:item.ticker.slice(0,12),setup:item.setup.slice(0,30),score:Number(item.score),signal_close:alignPrice(Number(item.close),"nearest"),planned_entry_low:alignPrice(Number(item.entryLow),"up"),planned_entry_high:alignPrice(Number(item.entryHigh),"down"),invalidation:alignPrice(Number(item.invalidation),"up"),hard_stop:alignPrice(Number(item.close)*(isShortSetup(item)?1.06:.94),"up"),target_one:alignPrice(Number(item.target),isShortSetup(item)?"up":"down"),risk_reward:Number(item.riskReward),position_size_idr:Math.min(1250000,75000/Math.max(.01,Math.abs(Number(item.close)-Number(item.invalidation))/Number(item.close))),position_weight:isShortSetup(item)?shortWeight(item,longs,regime):weight(item,regime),reasons:Array.isArray(item.reasons)?item.reasons.slice(0,4):[],caution:String(item.caution||"").slice(0,500)}));
   if(candidates.length) { const {error}=await supabase.from("jarvis_weekly_candidates").insert(candidates); if(error) return NextResponse.json({error:"Run created, but picks could not be saved."},{status:500}); }
   const actions=await buildLifecycle(run.id,priorRun,priorCandidates||[],candidates);
   if(actions.length) { const {error}=await supabase.from("jarvis_weekly_actions").insert(actions); if(error) return NextResponse.json({error:"Run created, but actions could not be saved."},{status:500}); }
   let email;
   try { email=await sendDigest(weekOf,regime,candidates,actions,recipients); }
   catch(error) { console.error("Weekly Picks email failed", error); return NextResponse.json({error:"Weekly Picks email failed.",detail:error instanceof Error?error.message:"unknown"},{status:502}); }
-  const baseNote=selected.length?"Automated Friday Weekly Picks with lifecycle actions.":"No qualified setup this week.";
+  const baseNote=selected.length?"Automated Friday Weekly Picks with lifecycle actions and an optional risk-capped short overlay.":"No qualified setup this week.";
   const marker=email.sent?"[email:sent]":"[email:failed:"+String(email.reason || email.failures?.[0]?.status || "unknown")+"]";
   await supabase.from("jarvis_weekly_runs").update({note:baseNote+" "+marker}).eq("id",run.id);
   return NextResponse.json({ok:email.sent,runId:run.id,regime,picks:candidates.length,actions:actions.length,email},{status:email.sent?200:502});
