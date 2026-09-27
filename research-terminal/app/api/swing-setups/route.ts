@@ -9,7 +9,8 @@ const COLUMNS = [
   "SMA200", "High.1M", "Low.1M", "Recommend.All",
 ] as const;
 
-type SetupKey = "breakout" | "pullback" | "momentum" | "reversal";
+type SetupKey = "breakout" | "pullback" | "momentum" | "reversal" | "short_breakdown";
+const SHORT_ELIGIBLE = new Set((process.env.JARVIS_SHORT_ELIGIBLE || "").split(",").map((ticker) => ticker.trim().toUpperCase().replace(".JK", "")).filter(Boolean));
 type RawRow = Record<(typeof COLUMNS)[number], number | string | null>;
 
 function num(value: unknown): number | null {
@@ -31,6 +32,12 @@ function riskPlan(close: number, ema20: number | null, low1m: number | null, set
     target: Math.round(target),
     riskReward: setup === "reversal" ? 1.7 : 2,
   };
+}
+
+function shortRiskPlan(close: number, ema20: number | null, high1m: number | null) {
+  const invalidation = Math.min(high1m ?? close * 1.08, Math.max(ema20 ?? close * 1.05, close * 1.04));
+  const risk = Math.max(invalidation - close, close * 0.025);
+  return { entryLow: Math.round(close * 0.99), entryHigh: Math.round(close * 1.01), invalidation: Math.round(invalidation), target: Math.round(Math.max(1, close - risk * 2)), riskReward: 2 };
 }
 
 function classify(row: RawRow) {
@@ -57,6 +64,15 @@ function classify(row: RawRow) {
   const aboveLongTrend = sma200 === null || close >= sma200;
   const nearHigh = high1m ? close >= high1m * 0.965 : false;
   const nearLow = low1m ? close <= low1m * 1.12 : false;
+
+  const ticker = String(row.name ?? "").replace("IDX:", "");
+  const shortTrend = ema20 !== null && ema50 !== null && close < ema20 && ema20 <= ema50;
+  const belowLongTrend = sma200 !== null && close < sma200;
+  const shortBreakdown = SHORT_ELIGIBLE.has(ticker) && nearLow && shortTrend && belowLongTrend && (relativeVolume ?? 0) >= 1.1 && (rsi ?? 50) >= 28 && (rsi ?? 50) <= 48 && (recommendation ?? 0) <= -0.1;
+  if (shortBreakdown) {
+    const shortScore = 58 + Math.min(14, ((relativeVolume ?? 1) - 1) * 18) + 10 + 8 + Math.min(10, Math.abs(recommendation ?? 0) * 20);
+    return { ticker, name: typeof row.description === "string" ? row.description : String(row.name ?? ""), setup: "short_breakdown" as SetupKey, score: clamp(shortScore), close, change, volume, relativeVolume, rsi, marketCap, distance20, trend: false, reasons: ["Price is breaking toward its 1-month low", "The 20-day trend is below the 50-day trend", "Volume and broader technical readings confirm weakness"], caution: "Short only when the ticker is on the official BEI list and borrow is available. A move above resistance invalidates the trade.", ...shortRiskPlan(close, ema20, high1m) };
+  }
 
   let setup: SetupKey;
   let score: number;
@@ -88,7 +104,7 @@ function classify(row: RawRow) {
   }
 
   return {
-    ticker: String(row.name ?? "").replace("IDX:", ""),
+    ticker,
     name: typeof row.description === "string" ? row.description : String(row.name ?? ""),
     setup,
     score: clamp(score),
