@@ -1073,3 +1073,40 @@ html[data-theme=light] .paper-upload button {
 html[data-theme=light] .paper-upload button:disabled { opacity: .5; }
 html[data-theme=light] .paper-list a { color: var(--blue) !important; }
 html[data-theme=light] .paper-list article:hover { background: #f7f9fb !important; }
+
+
+/* Research Papers: branded native file picker */
+.paper-upload input[type='file'] {
+  padding: 5px 6px !important;
+  cursor: pointer;
+}
+.paper-upload input[type='file']::file-selector-button {
+  min-height: 32px;
+  margin: 0 12px 0 0;
+  padding: 0 13px;
+  border: 1px solid var(--line-strong);
+  border-radius: 2px;
+  background: var(--panel-raised);
+  color: var(--text);
+  font: 700 8px var(--font-geist-mono), monospace;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: border-color .15s, color .15s, background .15s;
+}
+.paper-upload input[type='file']::file-selector-button:hover {
+  border-color: var(--blue);
+  color: var(--blue);
+  background: color-mix(in srgb, var(--blue) 8%, var(--panel));
+}
+.paper-upload input[type='file']:focus-visible { outline: 1px solid var(--blue); outline-offset: 2px; }
+html[data-theme=light] .paper-upload input[type='file']::file-selector-button {
+  background: #eef3f7 !important;
+  color: #17202a !important;
+  border-color: #b8c4cf !important;
+}
+html[data-theme=light] .paper-upload input[type='file']::file-selector-button:hover {
+  background: #e2edf6 !important;
+  color: #0b6fbf !important;
+  border-color: #0b6fbf !important;
+}
