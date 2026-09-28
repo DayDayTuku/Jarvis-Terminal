@@ -30,7 +30,7 @@ export default function ResearchPapers() {
     setLoading(true);
     try {
       const response = await fetch('/api/research-papers', { cache: 'no-store' });
-      const payload = await response.json();
+      const payload = await response.json() as { error?: string; papers?: Paper[]; canUpload?: boolean };
       if (!response.ok) throw new Error(payload.error || 'Unable to load research papers.');
       setPapers(payload.papers || []);
       setCanUpload(Boolean(payload.canUpload));
@@ -60,7 +60,7 @@ export default function ResearchPapers() {
     body.set('publishedOn', publishedOn);
     try {
       const response = await fetch('/api/research-papers', { method: 'POST', body });
-      const payload = await response.json();
+      const payload = await response.json() as { error?: string };
       if (!response.ok) throw new Error(payload.error || 'Upload failed.');
       setTitle(''); setSector(''); setSummary('');
       if (fileRef.current) fileRef.current.value = '';
