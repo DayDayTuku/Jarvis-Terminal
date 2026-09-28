@@ -8,9 +8,10 @@ import QuantLab from '../components/QuantLab';
 import PortfolioStressLab from '../components/PortfolioStressLab';
 import FeedbackModal from '../components/FeedbackModal';
 import FeedbackInbox from '../components/FeedbackInbox';
+import ResearchPapers from '../components/ResearchPapers';
 
 type Scheme = 'default' | 'deuteranopia' | 'protanopia' | 'tritanopia';
-type Section = 'OVERVIEW' | 'MACRO' | 'MARKETS' | 'NEWS' | 'QUANT LAB' | 'PORTFOLIO' | 'GPR INDEX' | 'CORRELATIONS' | 'SEASONALITY' | 'MARKET PARTICIPANT';
+type Section = 'OVERVIEW' | 'MACRO' | 'MARKETS' | 'NEWS' | 'QUANT LAB' | 'PORTFOLIO' | 'GPR INDEX' | 'RESEARCH PAPERS' | 'SEASONALITY' | 'MARKET PARTICIPANT';
 type RegimePoint = { date: string; growth: number; inflation: number };
 type FredData = { status: string; freshness: string; indicators: Array<{ name: string; actual: number; mean: number; z: number; unit: string }>; yields: Array<{ maturity: string; value: number }>; regime: RegimePoint[] };
 type Constituent = { ticker: string; price: number; daily: number | null; weekly: number | null };
@@ -46,17 +47,12 @@ const fallbackHeat: MarketData['heatmap'] = [
 const fallbackYield = [4.41, 4.29, 4.12, 4.03, 4.06, 4.18, 4.36];
 const fallbackTrail: RegimePoint[] = Array.from({ length: 36 }, (_, index) => { const date = new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth() - (35 - index), 1)); return { date: date.toISOString().slice(0,10), growth: 1.1 - index * .045 + Math.sin(index * .7) * .3, inflation: -.7 + index * .04 + Math.cos(index * .5) * .34 }; });
 
-const correlationRows = [
-  ['SEA GPR', '.34', '.41', '.29', '-.18', '-.26'],
-  ['CHINA GPR', '.47', '.58', '.36', '.33', '-.31'],
-  ['US GPR', '.12', '.08', '.44', '.51', '-.22'],
-];
 const gprBars = [25,29,27,34,31,38,41,37,46,43,52,49,55,61,57,64];
 const navigation: Array<{ label: Section; icon: string }> = [
   { label: 'OVERVIEW', icon: '⌂' }, { label: 'MACRO', icon: '∿' }, { label: 'MARKETS', icon: '◇' },
   { label: 'NEWS', icon: '◫' }, { label: 'QUANT LAB', icon: 'Σ' },
   { label: 'PORTFOLIO', icon: '◈' },
-  { label: 'CORRELATIONS', icon: '⠿' }, { label: 'SEASONALITY', icon: '▦' }, { label: 'MARKET PARTICIPANT', icon: '≋' },
+  { label: 'RESEARCH PAPERS', icon: '▤' }, { label: 'SEASONALITY', icon: '▦' }, { label: 'MARKET PARTICIPANT', icon: '≋' },
 ];
 
 function sectionSlug(section: Section) {
@@ -204,7 +200,6 @@ export default function Home() {
   const dxy = marketChange('DXY'); const oil = marketChange('OIL'); const liveCount = Number(Boolean(fred)) + Number(Boolean(markets)) + Number(Boolean(gdelt)) + Number(Boolean(calendar));
   const currentRegime = (fred?.regime ?? fallbackTrail).at(-1)!;
   const selectedHeat = heatmap.find((item) => item.label === selectedSector) ?? heatmap[0];
-  const liveCorrelationRows = useMemo(() => correlationMatrix(gdelt, markets), [gdelt, markets]);
   const selectedCot = cot?.series.find((item) => item.key === cotAsset) ?? cot?.series[0] ?? null;
 
   const validSectorMoves = (markets?.heatmap ?? [])
@@ -363,7 +358,7 @@ export default function Home() {
           <article className="panel methodology-panel"><PanelHead index="02" title="METHOD NOTES" /><div><h3>Why 60 / 40?</h3><p>Event severity receives more weight so a sharp escalation moves the index faster than a gradual rise in coverage. Frequency still captures slower risk build-ups.</p><h3>What the score is not</h3><p>It is a directional research signal. GDELT classification noise and reporting density prevent it from being an academic-grade measure.</p><h3>Regional scope</h3><p>Southeast Asia and China are primary. The United States is included as global macro context.</p></div></article>
         </section>}
 
-        {active === 'CORRELATIONS' && <section className="panel correlation-panel actual-matrix"><PanelHead index="01" title="60-DAY ROLLING CORRELATION"><div className="legend"><span>NEGATIVE</span><i /><span>POSITIVE</span></div></PanelHead><div className="matrix-intro"><div><h3>REGIONAL GDELT FREQUENCY × ASSET RETURNS</h3><p>Pearson correlation of daily changes. This is a live keyword-risk proxy until Goldstein event history is available.</p></div><span>{liveCorrelationRows ? 'LIVE PROXY · NOT FULL GPR' : 'MATRIX VALUES ILLUSTRATIVE'}</span></div><div className="matrix correlation-only"><div className="matrix-row matrix-labels"><span />{['COAL ETF','NICKEL EQ.','OIL','DXY','JKSE'].map((item) => <b key={item}>{item}</b>)}</div>{(liveCorrelationRows ?? correlationRows).map((row) => <div className="matrix-row" key={row[0]}><b>{row[0]}</b>{row.slice(1).map((value,index) => { const n=Number(value); return <span key={index} className={Math.abs(n)>=.3 ? n>0 ? 'corr-pos' : 'corr-neg' : ''}>{value}</span>; })}</div>)}</div><div className="matrix-footnotes"><p><strong>COAL ETF</strong> COAL · coal-industry equity ETF proxy</p><p><strong>NICKEL EQUITY</strong> VALE · nickel-exposed producer equity proxy</p><p><strong>OIL</strong> WTI crude futures</p><p><strong>DXY</strong> US Dollar Index</p><p><strong>JKSE</strong> IDX Composite</p></div><PanelFoot left={liveCorrelationRows ? 'GDELT DOC + YAHOO SERIES CONNECTED' : 'LIVE SERIES UNAVAILABLE · ILLUSTRATIVE FALLBACK'} right="60 TRADING DAYS" /></section>}
+        {active === 'RESEARCH PAPERS' && <ResearchPapers />}
 
         {active === 'SEASONALITY' && <section className="panel seasonality-panel"><PanelHead index="01" title="MONTHLY RETURN SEASONALITY"><div className="ticker-switcher">{[...new Set([seasonTicker, 'BUMI', 'AMMN', 'ADRO', 'JKSE'])].map((ticker)=><button key={ticker} onClick={()=>setSeasonTicker(ticker)} className={seasonTicker===ticker?'active':''}>{ticker}</button>)}</div></PanelHead>{seasonality ? <><div className="season-summary"><div><span>SELECTED SERIES</span><strong>{seasonality.ticker}</strong><small>{seasonality.symbol}</small></div><p>Average calendar-month return across completed monthly observations. Historical tendency only—not a forecast.</p><b>BASED ON {seasonality.years} YEARS OF HISTORICAL DATA · {seasonality.from}–{seasonality.through}</b></div><div className="season-grid">{seasonality.months.map((month)=><div key={month.month} className={`season-tile ${heatTone(month.average)}`}><span>{monthName(month.month)}</span><strong>{signed(month.average)}%</strong><small>{month.positiveRate.toFixed(0)}% POSITIVE · N={month.observations}</small></div>)}</div><div className="season-legend"><span>WEAKER AVERAGE</span><i/><span>STRONGER AVERAGE</span></div><PanelFoot left="AVERAGE MONTHLY CLOSE-TO-CLOSE RETURN" right="YAHOO FINANCE UPSTREAM · DAILY HISTORY" /></> : <FeedUnavailable title="SEASONALITY FEED UNAVAILABLE" body="No historical values are shown until Yahoo returns a valid 5–10 year price series." />}</section>}
 
@@ -523,7 +518,5 @@ function relativeLabel(last:number,average:number,name:string){if(!last||!averag
 function countryCode(country:string){const value=country.toLowerCase();return value.includes('indonesia')?'ID':value.includes('china')?'CN':value.includes('united states')?'US':country.slice(0,2).toUpperCase()}
 function monthName(month:number){return ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'][month-1]}
 function compact(value:number){const absolute=Math.abs(value);const sign=value<0?'-':'';return absolute>=1_000_000?`${sign}${(absolute/1_000_000).toFixed(1)}M`:absolute>=1_000?`${sign}${(absolute/1_000).toFixed(1)}K`:`${Math.round(value)}`}
-function pearson(xs:number[],ys:number[]){if(xs.length<10||xs.length!==ys.length)return null;const mx=xs.reduce((a,b)=>a+b,0)/xs.length;const my=ys.reduce((a,b)=>a+b,0)/ys.length;let top=0,xx=0,yy=0;for(let i=0;i<xs.length;i++){const dx=xs[i]-mx,dy=ys[i]-my;top+=dx*dy;xx+=dx*dx;yy+=dy*dy}const bottom=Math.sqrt(xx*yy);return bottom?top/bottom:null}
-function correlationMatrix(gdelt:GdeltData|null,markets:MarketData|null){if(!gdelt||!markets||markets.assets.length<5)return null;const assetNames=['COAL','NICKEL','OIL','DXY','JKSE'];const rows=gdelt.regions.map((region)=>{const riskByDate=new Map(region.timeline.map((point,index)=>{const prior=region.timeline[index-1]?.value;return [point.date,prior&&prior!==0?(point.value/prior-1)*100:null]}));const values=assetNames.map((name)=>{const asset=markets.assets.find((item)=>item.name===name);if(!asset)return null;const xs:number[]=[],ys:number[]=[];asset.timestamps.forEach((stamp,index)=>{const close=asset.closes[index],prior=asset.closes[index-1];const date=new Date(stamp*1000).toISOString().slice(0,10);const risk=riskByDate.get(date);if(close!==null&&prior!==null&&prior&&risk!==null&&risk!==undefined){xs.push(risk);ys.push((close/prior-1)*100)}});return pearson(xs.slice(-60),ys.slice(-60))});if(values.some((value)=>value===null))return null;return [`${region.region} GPR`,...values.map((value)=>value!.toFixed(2))]});return rows.some((row)=>row===null)?null:rows as string[][]}
 function titleCase(value:string){return value.toLowerCase().replace(/\b\w/g,(x)=>x.toUpperCase())}
-function sectionDescription(section:Section){return ({OVERVIEW:'The readings that need attention before the next research session.',MACRO:'Live FRED signals for growth, inflation and the Treasury curve.',MARKETS:'Daily and weekly market performance with the IDX watchlist.',NEWS:'Beta · IDX, macro, and commodity coverage ranked by decision impact.','QUANT LAB':'Beta · Transparent cross-asset and IDX breadth signals.',PORTFOLIO:'Beta · Personal factor exposure, concentration, and scenario stress testing.', 'GPR INDEX':'Auditable geopolitical risk inputs, weights and regional scores.',CORRELATIONS:'Rolling relationships between regional risk and selected market series.',SEASONALITY:'Historical monthly return tendencies across selected IDX names and the benchmark.','MARKET PARTICIPANT':'Weekly CFTC positioning by trader category for major futures markets.'})[section]}
+function sectionDescription(section:Section){return ({OVERVIEW:'The readings that need attention before the next research session.',MACRO:'Live FRED signals for growth, inflation and the Treasury curve.',MARKETS:'Daily and weekly market performance with the IDX watchlist.',NEWS:'Beta · IDX, macro, and commodity coverage ranked by decision impact.','QUANT LAB':'Beta · Transparent cross-asset and IDX breadth signals.',PORTFOLIO:'Beta · Personal factor exposure, concentration, and scenario stress testing.', 'GPR INDEX':'Auditable geopolitical risk inputs, weights and regional scores.','RESEARCH PAPERS':'Institutional research library with admin-managed publication.',SEASONALITY:'Historical monthly return tendencies across selected IDX names and the benchmark.','MARKET PARTICIPANT':'Weekly CFTC positioning by trader category for major futures markets.'})[section]}
