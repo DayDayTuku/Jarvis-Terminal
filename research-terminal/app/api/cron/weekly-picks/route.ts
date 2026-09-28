@@ -117,9 +117,10 @@ async function sendMarketAlerts(items:MarketAlert[], recipients:string[]) {
   const html="<!doctype html><html><body style='margin:0;background:#f4f5f7;font-family:Arial;color:#111827'><div style='max-width:720px;margin:auto;padding:28px 16px'><header style='background:#111827;color:white;padding:24px'><small>JARVIS RESEARCH</small><h1>Market-close action</h1><p>A new Weekly Picks trigger was confirmed after market close.</p></header><main style='background:white;padding:22px'><table style='width:100%;border-collapse:collapse' cellpadding='9'><tr style='background:#1f3c52;color:white'><th>Ticker</th><th>Action</th><th>Day low / high</th><th>Trigger</th></tr>"+rows+"</table><p style='color:#6b7280;font-size:12px'>This is an automated rules-based monitoring alert, not investment advice.</p></main></div></body></html>";
   const senderAddress=fromAddress.match(/<([^>]+)>/)?.[1] || "onboarding@resend.dev";
   const deliveryRecipients=[...new Set([...recipients.map((email)=>email.toLowerCase()),senderAddress.toLowerCase()])];
+  const eventKey=items.map((item)=>[item.ticker,item.action,item.trigger].join("-")).sort().join("_").replace(/[^a-zA-Z0-9_-]/g,"").slice(0,140);
   const deliveries:Array<{email:string;ok:boolean;status:number;id:any;error:any}>=[];
   for(const email of deliveryRecipients) {
-    const response=await fetch("https://api.resend.com/emails",{method:"POST",headers:{Authorization:"Bearer "+apiKey,"Content-Type":"application/json"},body:JSON.stringify({from:fromAddress,to:[email],subject:"JARVIS · Market-close action · "+items.length+" new",html})});
+    const response=await fetch("https://api.resend.com/emails",{method:"POST",headers:{Authorization:"Bearer "+apiKey,"Content-Type":"application/json","Idempotency-Key":"market-alert/"+eventKey+"/"+email},body:JSON.stringify({from:fromAddress,to:[email],subject:"JARVIS · Market-close action · "+items.length+" new",html})});
     const data:any=await response.json().catch(()=>({}));
     deliveries.push({email,ok:response.ok,status:response.status,id:data.id||null,error:data.message||null});
     await new Promise((resolve)=>setTimeout(resolve,150));
@@ -140,7 +141,7 @@ async function sendDigest(weekOf:string, regime:string, candidates:Candidate[], 
   const deliveryRecipients=[...new Set([...recipients.map((email)=>email.toLowerCase()),senderAddress.toLowerCase()])];
   const deliveries:Array<{email:string;ok:boolean;status:number;id:any;error:any}>=[];
   for(const email of deliveryRecipients) {
-    const response=await fetch("https://api.resend.com/emails",{method:"POST",headers:{Authorization:"Bearer "+apiKey,"Content-Type":"application/json"},body:JSON.stringify({from:fromAddress,to:[email],subject:"JARVIS V5 · Weekly Picks · "+weekOf,html})});
+    const response=await fetch("https://api.resend.com/emails",{method:"POST",headers:{Authorization:"Bearer "+apiKey,"Content-Type":"application/json","Idempotency-Key":"weekly-digest/"+weekOf+"/"+email},body:JSON.stringify({from:fromAddress,to:[email],subject:"JARVIS V5 · Weekly Picks · "+weekOf,html})});
     const data:any=await response.json().catch(()=>({}));
     deliveries.push({email,ok:response.ok,status:response.status,id:data.id||null,error:data.message||null});
     await new Promise((resolve)=>setTimeout(resolve,150));
