@@ -106,9 +106,20 @@ async function weeklyRecipients(supabase:any) {
   } catch { return [...new Set(configured)]; }
 }
 
+type DeliveryType = "weekly_digest"|"market_alert";
+async function deliveryState(supabase:any,eventKey:string,email:string) {
+  const recipient=email.trim().toLowerCase();
+  const {data}=await supabase.from("jarvis_email_deliveries").select("status,provider_id").eq("event_key",eventKey).eq("recipient",recipient).maybeSingle();
+  return {recipient,sent:data?.status==="sent",providerId:data?.provider_id||null};
+}
+async function markDelivery(supabase:any,eventKey:string,eventType:DeliveryType,email:string,status:"pending"|"sent"|"failed",providerId?:string|null,error?:string|null) {
+  const now=new Date().toISOString();
+  await supabase.from("jarvis_email_deliveries").upsert({event_key:eventKey,event_type:eventType,recipient:email.trim().toLowerCase(),status,provider_id:providerId||null,error:error||null,attempted_at:now,sent_at:status==="sent"?now:null,updated_at:now},{onConflict:"event_key,recipient"});
+}
+
 type MarketAlert = { ticker:string; action:"STOP / EXIT"|"TAKE PROFIT"; sessionLow:number; sessionHigh:number; trigger:number };
 
-async function sendMarketAlerts(items:MarketAlert[], recipients:string[]) {
+async function sendMarketAlerts(items:MarketAlert[], recipients:string[], supabase:any) {
   const apiKey=process.env.RESEND_API_KEY;
   if(!apiKey) return {sent:false,reason:"not_configured"};
   if(!items.length) return {sent:false,reason:"no_new_actions"};
@@ -117,11 +128,15 @@ async function sendMarketAlerts(items:MarketAlert[], recipients:string[]) {
   const html="<!doctype html><html><body style='margin:0;background:#f4f5f7;font-family:Arial;color:#111827'><div style='max-width:720px;margin:auto;padding:28px 16px'><header style='background:#111827;color:white;padding:24px'><small>JARVIS RESEARCH</small><h1>Market-close action</h1><p>A new Weekly Picks trigger was confirmed after market close.</p></header><main style='background:white;padding:22px'><table style='width:100%;border-collapse:collapse' cellpadding='9'><tr style='background:#1f3c52;color:white'><th>Ticker</th><th>Action</th><th>Day low / high</th><th>Trigger</th></tr>"+rows+"</table><p style='color:#6b7280;font-size:12px'>This is an automated rules-based monitoring alert, not investment advice.</p></main></div></body></html>";
   const senderAddress=fromAddress.match(/<([^>]+)>/)?.[1] || "onboarding@resend.dev";
   const deliveryRecipients=[...new Set([...recipients.map((email)=>email.toLowerCase()),senderAddress.toLowerCase()])];
-  const eventKey=items.map((item)=>[item.ticker,item.action,item.trigger].join("-")).sort().join("_").replace(/[^a-zA-Z0-9_-]/g,"").slice(0,140);
+  const eventKey="market-alert/"+items.map((item)=>[item.ticker,item.action,item.trigger].join("-")).sort().join("_").replace(/[^a-zA-Z0-9_-]/g,"").slice(0,140);
   const deliveries:Array<{email:string;ok:boolean;status:number;id:any;error:any}>=[];
   for(const email of deliveryRecipients) {
-    const response=await fetch("https://api.resend.com/emails",{method:"POST",headers:{Authorization:"Bearer "+apiKey,"Content-Type":"application/json","Idempotency-Key":"market-alert/"+eventKey+"/"+email},body:JSON.stringify({from:fromAddress,to:[email],subject:"JARVIS · Market-close action · "+items.length+" new",html})});
+    const state=await deliveryState(supabase,eventKey,email);
+    if(state.sent) { deliveries.push({email:state.recipient,ok:true,status:208,id:state.providerId,error:null}); continue; }
+    await markDelivery(supabase,eventKey,"market_alert",email,"pending");
+    const response=await fetch("https://api.resend.com/emails",{method:"POST",headers:{Authorization:"Bearer "+apiKey,"Content-Type":"application/json","Idempotency-Key":eventKey+"/"+email},body:JSON.stringify({from:fromAddress,to:[email],subject:"JARVIS · Market-close action · "+items.length+" new",html})});
     const data:any=await response.json().catch(()=>({}));
+    await markDelivery(supabase,eventKey,"market_alert",email,response.ok?"sent":"failed",data.id||null,data.message||null);
     deliveries.push({email,ok:response.ok,status:response.status,id:data.id||null,error:data.message||null});
     await new Promise((resolve)=>setTimeout(resolve,150));
   }
@@ -129,7 +144,7 @@ async function sendMarketAlerts(items:MarketAlert[], recipients:string[]) {
   return {sent:failures.length===0,ids:deliveries.filter((item)=>item.ok).map((item)=>item.id),recipients:deliveryRecipients.length,failures};
 }
 
-async function sendDigest(weekOf:string, regime:string, candidates:Candidate[], actions:Action[], recipientOverride?:string[]) {
+async function sendDigest(weekOf:string, regime:string, candidates:Candidate[], actions:Action[], supabase:any, recipientOverride?:string[]) {
   const apiKey=process.env.RESEND_API_KEY;
   if(!apiKey) return {sent:false,reason:"not_configured"};
   const recipients=recipientOverride || (process.env.JARVIS_EMAIL_TO || "iggerzefanya@gmail.com").split(",").map((email)=>email.trim()).filter(Boolean);
@@ -140,9 +155,14 @@ async function sendDigest(weekOf:string, regime:string, candidates:Candidate[], 
   const senderAddress=fromAddress.match(/<([^>]+)>/)?.[1] || "onboarding@resend.dev";
   const deliveryRecipients=[...new Set([...recipients.map((email)=>email.toLowerCase()),senderAddress.toLowerCase()])];
   const deliveries:Array<{email:string;ok:boolean;status:number;id:any;error:any}>=[];
+  const eventKey="weekly-digest/"+weekOf;
   for(const email of deliveryRecipients) {
-    const response=await fetch("https://api.resend.com/emails",{method:"POST",headers:{Authorization:"Bearer "+apiKey,"Content-Type":"application/json","Idempotency-Key":"weekly-digest/"+weekOf+"/"+email},body:JSON.stringify({from:fromAddress,to:[email],subject:"JARVIS V5 · Weekly Picks · "+weekOf,html})});
+    const state=await deliveryState(supabase,eventKey,email);
+    if(state.sent) { deliveries.push({email:state.recipient,ok:true,status:208,id:state.providerId,error:null}); continue; }
+    await markDelivery(supabase,eventKey,"weekly_digest",email,"pending");
+    const response=await fetch("https://api.resend.com/emails",{method:"POST",headers:{Authorization:"Bearer "+apiKey,"Content-Type":"application/json","Idempotency-Key":eventKey+"/"+email},body:JSON.stringify({from:fromAddress,to:[email],subject:"JARVIS V5 · Weekly Picks · "+weekOf,html})});
     const data:any=await response.json().catch(()=>({}));
+    await markDelivery(supabase,eventKey,"weekly_digest",email,response.ok?"sent":"failed",data.id||null,data.message||null);
     deliveries.push({email,ok:response.ok,status:response.status,id:data.id||null,error:data.message||null});
     await new Promise((resolve)=>setTimeout(resolve,150));
   }
@@ -196,7 +216,7 @@ export async function GET(request:NextRequest) {
     }
     let email:any={sent:false,reason:"no_new_actions"};
     if(alerts.length) {
-      try { email=await sendMarketAlerts(alerts,recipients); console.log("MARKET_ALERT_RESULT",JSON.stringify({alerts,email,recipients:recipients.length})); }
+      try { email=await sendMarketAlerts(alerts,recipients,supabase); console.log("MARKET_ALERT_RESULT",JSON.stringify({alerts,email,recipients:recipients.length})); }
       catch(error) { console.error("Market alert email failed",error); email={sent:false,reason:"send_failed"}; }
       if(email.sent) {
         for(const alert of alerts) {
@@ -209,7 +229,6 @@ export async function GET(request:NextRequest) {
     return NextResponse.json({ok:true,monitored:true,runId:existing.id,actions:alerts.length,email});
   }
   if(existing) {
-    if(String(existing.note || "").includes("[email:sent]")) return NextResponse.json({ok:true,alreadyLocked:true,emailAlreadySent:true,runId:existing.id});
     const [candidateResult,actionResult]=await Promise.all([
       supabase.from("jarvis_weekly_candidates").select("*").eq("run_id",existing.id).order("rank"),
       supabase.from("jarvis_weekly_actions").select("*").eq("run_id",existing.id),
@@ -218,7 +237,7 @@ export async function GET(request:NextRequest) {
     const savedActions=(actionResult.data || []) as Action[];
     const savedRegime=String(existing.market_regime || "V5 NEUTRAL").replace(/^V5\s+/,"");
     let email;
-    try { email=await sendDigest(weekOf,savedRegime,savedCandidates,savedActions,recipients); }
+    try { email=await sendDigest(weekOf,savedRegime,savedCandidates,savedActions,supabase,recipients); }
     catch(error) { console.error("Weekly Picks retry failed", error); return NextResponse.json({error:"Weekly Picks email failed.",detail:error instanceof Error?error.message:"unknown"},{status:502}); }
     const cleanNote=String(existing.note || "").replace(/\s*\[email:(?:sent|failed:[^\]]+)\]\s*/g," ").trim();
     const marker=email.sent?"[email:sent]":"[email:failed:"+String(email.reason || email.failures?.[0]?.status || "unknown")+"]";
@@ -243,7 +262,7 @@ export async function GET(request:NextRequest) {
   const actions=await buildLifecycle(run.id,priorRun,priorCandidates||[],candidates);
   if(actions.length) { const {error}=await supabase.from("jarvis_weekly_actions").insert(actions); if(error) return NextResponse.json({error:"Run created, but actions could not be saved."},{status:500}); }
   let email;
-  try { email=await sendDigest(weekOf,regime,candidates,actions,recipients); }
+  try { email=await sendDigest(weekOf,regime,candidates,actions,supabase,recipients); }
   catch(error) { console.error("Weekly Picks email failed", error); return NextResponse.json({error:"Weekly Picks email failed.",detail:error instanceof Error?error.message:"unknown"},{status:502}); }
   const baseNote=selected.length?"Automated Friday Weekly Picks with lifecycle actions and an optional risk-capped short overlay.":"No qualified setup this week.";
   const marker=email.sent?"[email:sent]":"[email:failed:"+String(email.reason || email.failures?.[0]?.status || "unknown")+"]";
