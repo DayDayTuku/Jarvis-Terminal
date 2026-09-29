@@ -1,25 +1,27 @@
-'use client';
+'use client'
 
-import { useState } from 'react';
-import { createClient } from '../utils/supabase/client';
+import { useState } from 'react'
+import { createClient } from '../utils/supabase/client'
+import AdminAnalyticsLink from './AdminAnalyticsLink'
 
 export default function SettingsLogout() {
-  const [loggingOut, setLoggingOut] = useState(false);
-  const [error, setError] = useState('');
+  const [loggingOut, setLoggingOut] = useState(false)
+  const [error, setError] = useState('')
 
   const handleLogout = async () => {
-    setLoggingOut(true);
-    setError('');
-    const { error: signOutError } = await createClient().auth.signOut();
+    setLoggingOut(true)
+    setError('')
+    const { error: signOutError } = await createClient().auth.signOut()
     if (signOutError) {
-      setError('LOG OUT FAILED · PLEASE TRY AGAIN');
-      setLoggingOut(false);
-      return;
+      setError('LOG OUT FAILED · PLEASE TRY AGAIN')
+      setLoggingOut(false)
+      return
     }
-    window.location.href = '/access';
-  };
+    window.location.href = '/access'
+  }
 
-  return (
+  return <>
+    <AdminAnalyticsLink />
     <div className="setting-block">
       <h3>ACCOUNT</h3>
       <p>End this Jarvis session on this device.</p>
@@ -28,5 +30,5 @@ export default function SettingsLogout() {
         {loggingOut ? 'SIGNING OUT…' : 'LOG OUT'}
       </button>
     </div>
-  );
+  </>
 }
