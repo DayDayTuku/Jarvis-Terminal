@@ -14,10 +14,13 @@ export async function POST(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const body = await request.json().catch(() => null)
-  const eventName = typeof body?.eventName === 'string' ? body.eventName : ''
-  const pagePath = typeof body?.pagePath === 'string' ? body.pagePath.slice(0, 180) : ''
-  const metadata = body?.metadata && typeof body.metadata === 'object' && !Array.isArray(body.metadata) ? body.metadata : {}
+  const body: unknown = await request.json().catch(() => null)
+  const payload = body && typeof body === 'object' ? body as Record<string, unknown> : {}
+  const eventName = typeof payload.eventName === 'string' ? payload.eventName : ''
+  const pagePath = typeof payload.pagePath === 'string' ? payload.pagePath.slice(0, 180) : ''
+  const metadata = payload.metadata && typeof payload.metadata === 'object' && !Array.isArray(payload.metadata)
+    ? payload.metadata as Record<string, unknown>
+    : {}
 
   if (!ALLOWED_EVENTS.has(eventName) || !pagePath.startsWith('/')) {
     return NextResponse.json({ error: 'Invalid analytics event.' }, { status: 400 })
