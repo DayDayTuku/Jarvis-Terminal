@@ -46,7 +46,7 @@ export default function AdminAnalyticsPage() {
 
   useEffect(()=>{
     fetch('/api/admin/analytics',{cache:'no-store'})
-      .then(async(response)=>{ const body=await response.json(); if(!response.ok) throw new Error(body.error||'Unable to load analytics.'); return body })
+      .then(async(response)=>{ const body=await response.json() as Partial<Analytics> & { error?: string }; if(!response.ok) throw new Error(body.error||'Unable to load analytics.'); return body as Analytics })
       .then(setData)
       .catch((cause)=>setError(cause instanceof Error?cause.message:'Unable to load analytics.'))
   },[])
