@@ -1,5 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "../../../utils/supabase/server";
+import {
+  deriveStatus,
+  evaluatePosition,
+  isShortSetup,
+  type LifecycleActionName,
+  type PriceBar,
+} from "@/lib/weekly-lifecycle";
 
 function isAdmin(user: { app_metadata?: Record<string, unknown> } | null) {
   return user?.app_metadata?.role === "admin";
@@ -20,6 +27,10 @@ function mayLockNow() {
 function escapeHtml(value: unknown) {
   return String(value ?? "").replace(/[&<>"']/g, (char) => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#039;" }[char] ?? char));
 }
+// Internal dedupe markers are stored inside the reason; never show them to users.
+function stripAlertMarkers(value: unknown) {
+  return String(value ?? "").replace(/\s*\[(?:stop|target)-alert:sent\]\s*/g, " ").trim();
+}
 type EmailCandidate = {
   run_id?: string; ticker: string; setup: string; score: number; signal_close?: number;
   planned_entry_low: number; planned_entry_high: number; invalidation: number; hard_stop?: number;
@@ -27,18 +38,11 @@ type EmailCandidate = {
 };
 type LifecycleAction = {
   run_id?: string; prior_run_id?: string; ticker: string;
-  action: "BUY"|"HOLD"|"REDUCE"|"EXIT"|"REPLACE"|"NO_ENTRY"|"EXPIRED";
+  action: LifecycleActionName;
   previous_score: number|null; current_score: number|null; target_weight: number;
   theoretical_fill: number|null; entry_filled: boolean; target_reached: boolean;
   invalidated: boolean; reason: string;
 };
-type PriceBar = { open:number; high:number; low:number; close:number };
-function priceStep(price:number){ return price<200?1:price<500?2:price<2000?5:price<5000?10:25; }
-function alignPrice(price:number){ const step=priceStep(price); return Math.round(price/step)*step; }
-function previousPriceTick(price:number){ const level=alignPrice(price); return level-priceStep(Math.max(0,level-0.001)); }
-function nextPriceTick(price:number){ const level=alignPrice(price); return level+priceStep(level+0.001); }
-function isShortSetup(item:{setup?:string}){ return String(item.setup||"").toLowerCase().startsWith("short_"); }
-
 async function getBars(ticker:string, since:string):Promise<PriceBar[]> {
   try {
     const period1=Math.floor(new Date(`${since}T00:00:00+07:00`).getTime()/1000);
@@ -57,27 +61,9 @@ async function buildLifecycle(runId:string, priorRun:any, priorCandidates:any[],
   if(priorRun) {
     for(const prior of priorCandidates) {
       const bars=await getBars(prior.ticker,priorRun.week_of);
-      const touchIndex=bars.findIndex((bar)=>bar.high>=Number(prior.planned_entry_low)&&bar.low<=Number(prior.planned_entry_high));
-      const entryFilled=touchIndex>=0;
-      const fill=entryFilled ? Math.min(Number(prior.planned_entry_high),Math.max(Number(prior.planned_entry_low),bars[touchIndex].open)) : null;
-      const activeBars=entryFilled ? bars.slice(touchIndex) : [];
-      const short=isShortSetup(prior);
-      const invalidationTrigger=short?nextPriceTick(Number(prior.invalidation)):previousPriceTick(Number(prior.invalidation));
-      const invalidationIndex=activeBars.findIndex((bar)=>short?bar.high>=invalidationTrigger:bar.low<=invalidationTrigger);
-      const targetIndex=activeBars.findIndex((bar)=>short?bar.low<=Number(prior.target_one):bar.high>=Number(prior.target_one));
-      const invalidated=invalidationIndex>=0&&(targetIndex<0||invalidationIndex<=targetIndex);
-      const targetReached=targetIndex>=0&&(invalidationIndex<0||targetIndex<invalidationIndex);
       const current=currentByTicker.get(prior.ticker);
-      let action:LifecycleAction["action"]="HOLD";
-      let targetWeight=Number(prior.position_weight)||12.5;
-      let reason="Setup remains selected and its score is stable.";
-      if(!entryFilled&&!current){ action="EXPIRED"; targetWeight=0; reason="Entry range was not filled and the name left this week's picks."; }
-      else if(invalidated){ action="EXIT"; targetWeight=0; reason="Price traded through the stated invalidation level; the thesis is no longer valid."; }
-      else if(targetReached){ action="REDUCE"; targetWeight=Math.max(0,targetWeight/2); reason="First target was reached; lock part of the gain and trail the remainder."; }
-      else if(!current){ action="EXIT"; targetWeight=0; reason="The name is no longer selected by V5; close the theoretical position at the next liquid session."; }
-      else if(Number(current.score)<Number(prior.score)-5){ action="REDUCE"; targetWeight=Math.max(0,targetWeight/2); reason="Still selected, but score deteriorated by more than 5 points; reduce exposure."; }
-      else if(!entryFilled){ action="NO_ENTRY"; targetWeight=0; reason="Setup is still valid, but the planned entry range has not traded; do not chase."; }
-      actions.push({run_id:runId,prior_run_id:priorRun.id,ticker:prior.ticker,action,previous_score:Number(prior.score),current_score:current?Number(current.score):null,target_weight:targetWeight,theoretical_fill:fill,entry_filled:entryFilled,target_reached:targetReached,invalidated,reason});
+      const outcome=evaluatePosition(prior, bars, current);
+      actions.push({run_id:runId,prior_run_id:priorRun.id,ticker:prior.ticker,action:outcome.action,previous_score:outcome.previousScore,current_score:current?Number(current.score):null,target_weight:outcome.targetWeight,theoretical_fill:outcome.theoreticalFill,entry_filled:outcome.entryFilled,target_reached:outcome.targetReached,invalidated:outcome.invalidated,reason:outcome.reason});
     }
   }
   const priorTickers=new Set(priorCandidates.map((item)=>item.ticker));
@@ -90,7 +76,7 @@ async function sendWeeklyDigest(weekOf:string,marketRegime:string,candidates:Ema
   const recipients=(process.env.JARVIS_EMAIL_TO||"iggerzefanya@gmail.com,ghazaerland@gmail.com").split(",").map((email)=>email.trim()).filter(Boolean);
   if(!apiKey) return {sent:false,reason:"not_configured"};
   const candidateByTicker=new Map(candidates.map((item)=>[item.ticker,item]));
-  const actionRows=actions.length?actions.map((item)=>`<tr><td style="padding:9px;border-bottom:1px solid #e5e7eb;font-weight:700">${escapeHtml(item.ticker)}</td><td style="padding:9px;border-bottom:1px solid #e5e7eb;font-weight:700">${item.action==="BUY"&&isShortSetup(candidateByTicker.get(item.ticker)??{})?"SHORT":item.action}</td><td style="padding:9px;border-bottom:1px solid #e5e7eb;text-align:right">${item.target_weight.toFixed(1)}%</td><td style="padding:9px;border-bottom:1px solid #e5e7eb">${escapeHtml(item.reason)}</td></tr>`).join(""):'<tr><td colspan="4" style="padding:16px;color:#6b7280">No prior-position action this week.</td></tr>';
+  const actionRows=actions.length?actions.map((item)=>`<tr><td style="padding:9px;border-bottom:1px solid #e5e7eb;font-weight:700">${escapeHtml(item.ticker)}</td><td style="padding:9px;border-bottom:1px solid #e5e7eb;font-weight:700">${item.action==="BUY"&&isShortSetup(candidateByTicker.get(item.ticker)??{})?"SHORT":item.action}</td><td style="padding:9px;border-bottom:1px solid #e5e7eb;text-align:right">${item.target_weight.toFixed(1)}%</td><td style="padding:9px;border-bottom:1px solid #e5e7eb">${escapeHtml(stripAlertMarkers(item.reason))}</td></tr>`).join(""):'<tr><td colspan="4" style="padding:16px;color:#6b7280">No prior-position action this week.</td></tr>';
   const rows=candidates.length?candidates.map((item)=>`<tr><td style="padding:9px;border-bottom:1px solid #e5e7eb;font-weight:700">${escapeHtml(item.ticker)}</td><td style="padding:9px;border-bottom:1px solid #e5e7eb">${escapeHtml(item.setup)}</td><td style="padding:9px;border-bottom:1px solid #e5e7eb;text-align:right">${Number(item.score).toFixed(1)}</td><td style="padding:9px;border-bottom:1px solid #e5e7eb;text-align:right">${Number(item.planned_entry_low).toLocaleString("id-ID")}–${Number(item.planned_entry_high).toLocaleString("id-ID")}</td></tr>`).join(""):'<tr><td colspan="4" style="padding:16px;color:#6b7280">No qualified setup. Capital remains in cash.</td></tr>';
   const html=`<!doctype html><html><body style="margin:0;background:#f4f5f7;font-family:Arial,sans-serif;color:#111827"><div style="max-width:760px;margin:auto;padding:28px 16px"><div style="background:#111827;color:#fff;padding:24px;border-radius:14px 14px 0 0"><div style="font-size:12px;letter-spacing:2px;color:#9ca3af">JARVIS RESEARCH TERMINAL</div><h1 style="margin:8px 0 6px">V5 Weekly Picks</h1><div style="color:#d1d5db">Week of ${escapeHtml(weekOf)} · ${escapeHtml(marketRegime)}</div></div><div style="background:#fff;padding:22px;border-radius:0 0 14px 14px"><h2 style="font-size:16px">What to do with last week</h2><table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr style="background:#1f3c52;color:white"><th style="padding:9px;text-align:left">Ticker</th><th style="padding:9px;text-align:left">Action</th><th style="padding:9px;text-align:right">Target weight</th><th style="padding:9px;text-align:left">Why</th></tr></thead><tbody>${actionRows}</tbody></table><h2 style="font-size:16px;margin-top:24px">This week's picks</h2><table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr style="background:#1f3c52;color:white"><th style="padding:9px;text-align:left">Ticker</th><th style="padding:9px;text-align:left">Setup</th><th style="padding:9px;text-align:right">Score</th><th style="padding:9px;text-align:right">Entry range</th></tr></thead><tbody>${rows}</tbody></table><p style="margin-top:20px;color:#6b7280;font-size:12px">Rules-based research output, not investment advice. Every pick will be reviewed in the following weekly update with a HOLD, REDUCE, EXIT, NO_ENTRY, or EXPIRED status. NO_ENTRY means do not chase above the range.</p></div></div></body></html>`;
   try { const response=await fetch("https://api.resend.com/emails",{method:"POST",headers:{Authorization:`Bearer ${apiKey}`,"Content-Type":"application/json"},body:JSON.stringify({from:process.env.JARVIS_EMAIL_FROM||"Jarvis Beta <onboarding@resend.dev>",to:process.env.JARVIS_EMAIL_FROM?recipients:recipients.slice(0,1),subject:`JARVIS V5 · Weekly Picks · ${weekOf}`,html})}); if(!response.ok)return{sent:false,reason:"provider_error",status:response.status}; const data=await response.json() as {id?:string}; return{sent:true,id:data.id??null}; } catch{return{sent:false,reason:"network_error"};}
@@ -103,7 +89,8 @@ export async function GET(){
   if(error)return NextResponse.json({error:"Weekly tracking is unavailable."},{status:503});
   if(!run)return NextResponse.json({run:null,candidates:[],reviews:[],actions:[],canLock:isAdmin(user)&&mayLockNow()});
   const[{data:candidates},{data:reviews},{data:actions}]=await Promise.all([supabase.from("jarvis_weekly_candidates").select("*").eq("run_id",run.id).order("rank"),supabase.from("jarvis_weekly_reviews").select("*").eq("run_id",run.id).eq("user_id",user.id),supabase.from("jarvis_weekly_actions").select("*").eq("run_id",run.id).order("created_at")]);
-  return NextResponse.json({run,candidates:candidates??[],reviews:reviews??[],actions:actions??[],canLock:isAdmin(user)&&mayLockNow(),currentWeek:fridayOfCurrentWeek()});
+  const actionsWithStatus=(actions??[]).map((action:LifecycleAction)=>({...action,status:deriveStatus({action:action.action,entryFilled:Boolean(action.entry_filled),targetReached:Boolean(action.target_reached),invalidated:Boolean(action.invalidated)})}));
+  return NextResponse.json({run,candidates:candidates??[],reviews:reviews??[],actions:actionsWithStatus,canLock:isAdmin(user)&&mayLockNow(),currentWeek:fridayOfCurrentWeek()});
 }
 
 export async function POST(request:NextRequest){

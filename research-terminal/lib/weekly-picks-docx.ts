@@ -25,6 +25,7 @@ type WeeklyReportInput = {
 };
 
 const encoder = new TextEncoder();
+const stripAlertMarkers = (value: string) => String(value ?? "").replace(/\s*\[(?:stop|target)-alert:sent\]\s*/g, " ").trim();
 const u16 = (n:number) => Buffer.from([n & 255, (n >>> 8) & 255]);
 const u32 = (n:number) => Buffer.from([n & 255, (n >>> 8) & 255, (n >>> 16) & 255, (n >>> 24) & 255]);
 const crcTable = Array.from({ length: 256 }, (_, n) => {
@@ -81,7 +82,7 @@ function table(headers:string[], rows:string[][], widths:number[]) {
 }
 
 export function generateWeeklyPicksDocx({ weekOf, regime, picks, actions }:WeeklyReportInput) {
-  const actionRows = actions.length ? actions.map((a) => [a.ticker, a.action, `${a.target_weight.toFixed(1)}%`, a.reason]) : [["-", "NO CHANGE", "0%", "No prior-position action this week."]];
+  const actionRows = actions.length ? actions.map((a) => [a.ticker, a.action, `${a.target_weight.toFixed(1)}%`, stripAlertMarkers(a.reason)]) : [["-", "NO CHANGE", "0%", "No prior-position action this week."]];
   const pickRows = picks.length ? picks.map((x) => [x.ticker, x.setup, Number(x.score).toFixed(1), `${Number(x.planned_entry_low).toLocaleString("id-ID")} - ${Number(x.planned_entry_high).toLocaleString("id-ID")}`, Number(x.invalidation).toLocaleString("id-ID")]) : [["-", "CASH", "-", "-", "-"]];
   let body = "";
   body += p("JARVIS WEEKLY PICKS", { style: "Title", bold: true, size: 44, after: 180 });

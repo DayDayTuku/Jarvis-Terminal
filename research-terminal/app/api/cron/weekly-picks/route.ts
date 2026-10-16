@@ -1,12 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import {
+  alignPrice,
+  evaluatePosition,
+  isShortSetup,
+  positionTriggers,
+  type LifecycleActionName,
+  type PriceBar,
+} from "@/lib/weekly-lifecycle";
 
 export const maxDuration = 60;
 
 type Setup = { ticker:string; setup:string; score:number; close:number; sector?:string; entryLow:number; entryHigh:number; invalidation:number; target:number; riskReward:number; reasons?:string[]; caution?:string };
 type Candidate = { run_id?:string; ticker:string; setup:string; score:number; signal_close?:number; planned_entry_low:number; planned_entry_high:number; invalidation:number; hard_stop?:number; target_one?:number; position_weight:number };
-type Action = { run_id?:string; prior_run_id?:string; ticker:string; action:"BUY"|"HOLD"|"REDUCE"|"EXIT"|"NO_ENTRY"|"EXPIRED"; previous_score:number|null; current_score:number|null; target_weight:number; theoretical_fill:number|null; entry_filled:boolean; target_reached:boolean; invalidated:boolean; reason:string };
-type Bar = { open:number; high:number; low:number; close:number };
+type Action = { run_id?:string; prior_run_id?:string; ticker:string; action:LifecycleActionName; previous_score:number|null; current_score:number|null; target_weight:number; theoretical_fill:number|null; entry_filled:boolean; target_reached:boolean; invalidated:boolean; reason:string };
+type Bar = PriceBar;
 
 function wibWeekday() { return new Intl.DateTimeFormat("en-US", { timeZone:"Asia/Jakarta", weekday:"short" }).format(new Date()); }
 function currentFriday() {
@@ -18,6 +26,11 @@ function currentFriday() {
 function escapeHtml(value:unknown) {
   const entities:Record<string,string> = { "&":"&amp;", "<":"&lt;", ">":"&gt;", "\"":"&quot;", "'":"&#039;" };
   return String(value ?? "").replace(/[&<>"']/g, (char) => entities[char] || char);
+}
+// Internal dedupe markers live inside the stored reason so a trigger only fires
+// once. They must never reach users, so strip them before rendering or sending.
+function stripAlertMarkers(value:unknown) {
+  return String(value ?? "").replace(/\s*\[(?:stop|target)-alert:sent\]\s*/g," ").trim();
 }
 function regimeFor(setups:Setup[]) {
   const valid = setups.filter((item) => !isShortSetup(item) && item.riskReward >= 1.7);
@@ -35,18 +48,6 @@ function pick(setups:Setup[], regime:string) {
     .filter((item) => { const sector=item.sector || "Other"; const count=sectors.get(sector) || 0; if(count >= 2) return false; sectors.set(sector,count+1); return true; })
     .slice(0,maximum);
 }
-function priceStep(price:number) { return price < 200 ? 1 : price < 500 ? 2 : price < 2000 ? 5 : price < 5000 ? 10 : 25; }
-function alignPrice(price:number,direction:"up"|"down"|"nearest"="nearest") {
-  const step=priceStep(price);
-  const round=direction==="up"?Math.ceil:direction==="down"?Math.floor:Math.round;
-  return round(price/step)*step;
-}
-function previousPriceTick(price:number) {
-  const level=alignPrice(price,"nearest");
-  return level-priceStep(Math.max(0,level-0.001));
-}
-function nextPriceTick(price:number) { const level=alignPrice(price,"nearest"); return level+priceStep(level+0.001); }
-function isShortSetup(item:{setup?:string}) { return String(item.setup||"").toLowerCase().startsWith("short_"); }
 function kind(item:{setup:string;score:number}) { return item.score>=85 && /(PULLBACK|ACCUMULATION|TREND)/.test(item.setup.toUpperCase()) ? "CORE" : "TACTICAL"; }
 function weight(item:{setup:string;score:number},regime:string) { const base=kind(item)==="CORE"?(item.score>=90?15:12.5):(item.score>=90?10:7.5); const multiplier=regime==="RISK ON"?1:regime==="EMERGING"?.8:.6; return Math.max(5,Math.round(base*multiplier/2.5)*2.5); }
 function pickShort(setups:Setup[]) { return [...setups].filter(isShortSetup).filter((item)=>item.score>=85&&item.riskReward>=2).sort((a,b)=>b.score-a.score||b.riskReward-a.riskReward).slice(0,1); }
@@ -68,29 +69,9 @@ async function buildLifecycle(runId:string, priorRun:any, prior:any[], current:C
   const actions:Action[] = [];
   if(priorRun) for(const old of prior) {
     const bars = await getBars(old.ticker,priorRun.week_of);
-    const touch = bars.findIndex((bar) => bar.high >= Number(old.planned_entry_low) && bar.low <= Number(old.planned_entry_high));
-    const filled = touch >= 0;
-    const fill = filled ? alignPrice(Math.min(Number(old.planned_entry_high),Math.max(Number(old.planned_entry_low),bars[touch].open)),"nearest") : null;
-    const active = filled ? bars.slice(touch) : [];
-    const short=isShortSetup(old);
-    const hardStop = Number.isFinite(Number(old.hard_stop)) ? Number(old.hard_stop) : (short?Infinity:-Infinity);
-    const stopLevel = short?Math.min(hardStop,Number(old.invalidation)):Math.max(hardStop,Number(old.invalidation));
-    const stopTrigger = short?nextPriceTick(alignPrice(stopLevel,"up")):previousPriceTick(alignPrice(stopLevel,"up"));
-    const invalidationIndex = active.findIndex((bar) => short?bar.high>=stopTrigger:bar.low<=stopTrigger);
-    const targetIndex = active.findIndex((bar) => short?bar.low<=Number(old.target_one):bar.high>=Number(old.target_one));
-    const invalidated = invalidationIndex >= 0 && (targetIndex < 0 || invalidationIndex <= targetIndex);
-    const targetReached = targetIndex >= 0 && (invalidationIndex < 0 || targetIndex < invalidationIndex);
     const next = currentByTicker.get(old.ticker);
-    let action:Action["action"] = "HOLD";
-    let targetWeight = Number(old.position_weight) || 12.5;
-    let reason = "Setup remains selected and its score is stable.";
-    if(!filled && !next) { action="EXPIRED"; targetWeight=0; reason="Entry was not filled and the stock left this week's picks."; }
-    else if(invalidated) { action="EXIT"; targetWeight=0; reason="Price traded through the hard-stop level."; }
-    else if(targetReached) { action="REDUCE"; targetWeight/=2; reason="First target was reached; reduce and trail the remainder."; }
-    else if(!next) { action="EXIT"; targetWeight=0; reason="The stock is no longer selected by V5."; }
-    else if(Number(next.score) < Number(old.score)-5) { action="REDUCE"; targetWeight/=2; reason="Score deteriorated by more than five points."; }
-    else if(!filled) { action="NO_ENTRY"; targetWeight=0; reason="Entry range was not traded; do not chase."; }
-    actions.push({ run_id:runId, prior_run_id:priorRun.id, ticker:old.ticker, action, previous_score:Number(old.score), current_score:next?Number(next.score):null, target_weight:targetWeight, theoretical_fill:fill, entry_filled:filled, target_reached:targetReached, invalidated, reason });
+    const outcome = evaluatePosition(old, bars, next);
+    actions.push({ run_id:runId, prior_run_id:priorRun.id, ticker:old.ticker, action:outcome.action, previous_score:outcome.previousScore, current_score:next?Number(next.score):null, target_weight:outcome.targetWeight, theoretical_fill:outcome.theoreticalFill, entry_filled:outcome.entryFilled, target_reached:outcome.targetReached, invalidated:outcome.invalidated, reason:outcome.reason });
   }
   const oldTickers = new Set(prior.map((item) => item.ticker));
   for(const item of current) if(!oldTickers.has(item.ticker)) actions.push({ run_id:runId, prior_run_id:priorRun?.id, ticker:item.ticker, action:"BUY", previous_score:null, current_score:Number(item.score), target_weight:Number(item.position_weight)||12.5, theoretical_fill:null, entry_filled:false, target_reached:false, invalidated:false, reason:isShortSetup(item)?"Optional V5 short qualifier. Confirm official BEI eligibility and borrow availability before entry.":priorRun?"New V5 qualifier; use the stated entry range.":"Initial V5 Weekly Pick; do not chase." });
@@ -148,7 +129,7 @@ async function sendDigest(weekOf:string, regime:string, candidates:Candidate[], 
   const apiKey=process.env.RESEND_API_KEY;
   if(!apiKey) return {sent:false,reason:"not_configured"};
   const recipients=recipientOverride || (process.env.JARVIS_EMAIL_TO || "iggerzefanya@gmail.com").split(",").map((email)=>email.trim()).filter(Boolean);
-  const actionRows=actions.length?actions.map((item)=>"<tr><td>"+escapeHtml(item.ticker)+"</td><td><b>"+item.action+"</b></td><td>"+Number(item.target_weight || 0).toFixed(1)+"%</td><td>"+escapeHtml(item.reason)+"</td></tr>").join(""):"<tr><td colspan='4'>No prior-position action this week.</td></tr>";
+  const actionRows=actions.length?actions.map((item)=>"<tr><td>"+escapeHtml(item.ticker)+"</td><td><b>"+item.action+"</b></td><td>"+Number(item.target_weight || 0).toFixed(1)+"%</td><td>"+escapeHtml(stripAlertMarkers(item.reason))+"</td></tr>").join(""):"<tr><td colspan='4'>No prior-position action this week.</td></tr>";
   const pickRows=candidates.length?candidates.map((item)=>"<tr><td><b>"+escapeHtml(item.ticker)+"</b></td><td>"+escapeHtml(item.setup)+"</td><td>"+Number(item.score).toFixed(1)+"</td><td>"+Number(item.planned_entry_low).toLocaleString("id-ID")+"–"+Number(item.planned_entry_high).toLocaleString("id-ID")+"</td></tr>").join(""):"<tr><td colspan='4'>No qualified setup. Capital remains in cash.</td></tr>";
   const html="<!doctype html><html><body style='margin:0;background:#f4f5f7;font-family:Arial;color:#111827'><div style='max-width:760px;margin:auto;padding:28px 16px'><header style='background:#111827;color:white;padding:24px'><small>JARVIS RESEARCH</small><h1>Weekly Picks</h1><p>Week of "+escapeHtml(weekOf)+" · V5 "+escapeHtml(regime)+"</p></header><main style='background:white;padding:22px'><h2>Last week's positions</h2><table style='width:100%;border-collapse:collapse' cellpadding='9'><tr style='background:#1f3c52;color:white'><th>Ticker</th><th>Action</th><th>Weight</th><th>Reason</th></tr>"+actionRows+"</table><h2>This week's picks</h2><table style='width:100%;border-collapse:collapse' cellpadding='9'><tr style='background:#1f3c52;color:white'><th>Ticker</th><th>Setup</th><th>Score</th><th>Entry</th></tr>"+pickRows+"</table><p style='color:#6b7280;font-size:12px'>Rules-based research, not investment advice. Every pick is reviewed next week as HOLD, REDUCE, EXIT, NO_ENTRY, or EXPIRED.</p></main></div></body></html>";
   const fromAddress=process.env.JARVIS_EMAIL_FROM||"Jarvis Research <onboarding@resend.dev>";
@@ -190,28 +171,30 @@ export async function GET(request:NextRequest) {
     const alerts:MarketAlert[]=[];
     for(const item of watch || []) {
       const bars=await getBars(item.ticker,existing.week_of);
-      const touch=bars.findIndex((bar)=>bar.high>=Number(item.planned_entry_low)&&bar.low<=Number(item.planned_entry_high));
-      const active=touch>=0?bars.slice(touch):[];
-      if(!active.length) continue;
+      // Same window and same level maths as the Friday rollover (lib/weekly-lifecycle),
+      // so the monitor and the rollover can never disagree on the same trade.
+      const triggers=positionTriggers(item,bars);
+      if(!triggers.entered) continue;
       const state:any=actionState.get(item.ticker) || {};
-      const sessionLow=Math.min(...active.map((bar)=>bar.low));
-      const sessionHigh=Math.max(...active.map((bar)=>bar.high));
-      const short=isShortSetup(item);
-      const hardStop=Number.isFinite(Number(item.hard_stop))?Number(item.hard_stop):(short?Infinity:-Infinity);
-      const stopLevel=short?Math.min(hardStop,alignPrice(Number(item.invalidation),"up")):Math.max(hardStop,alignPrice(Number(item.invalidation),"up"));
-      const stopTrigger=short?nextPriceTick(stopLevel):previousPriceTick(stopLevel);
-      const targetLevel=alignPrice(Number(item.target_one),short?"up":"down");
-      const stopHit=short?sessionHigh>=stopTrigger:sessionLow<=stopTrigger;
-      const targetHit=short?sessionLow<=targetLevel:sessionHigh>=targetLevel;
-      if(state.invalidated && !stopHit) {
-        await supabase.from("jarvis_weekly_actions").update({action:"HOLD",target_weight:Number(item.position_weight || 0),entry_filled:true,invalidated:false,reason:short?"Short remains valid; price did not trade one valid tick above invalidation.":"Setup remains valid; price did not trade one valid tick below invalidation."}).eq("run_id",existing.id).eq("ticker",item.ticker);
+      const stopAlerted=String(state.reason || "").includes("[stop-alert:sent]");
+      const targetAlerted=String(state.reason || "").includes("[target-alert:sent]");
+      const sessionLow=triggers.sessionLow ?? 0;
+      const sessionHigh=triggers.sessionHigh ?? 0;
+      // A stop-out closes the position for the rest of the week and is terminal.
+      // Once stopped we never re-open it, and we never let a later target touch
+      // relabel the same trade as a take-profit. A "cut" must stay "cut".
+      if(state.invalidated || triggers.stopped) {
+        if(triggers.stopped && !stopAlerted) {
+          if(!state.invalidated) await supabase.from("jarvis_weekly_actions").update({action:"EXIT",target_weight:0,entry_filled:true,invalidated:true,reason:"Price traded through the active stop level."}).eq("run_id",existing.id).eq("ticker",item.ticker);
+          alerts.push({ticker:item.ticker,action:"STOP / EXIT",sessionLow,sessionHigh,trigger:triggers.stopTrigger});
+        }
+        continue;
       }
-      if(stopHit && !String(state.reason || "").includes("[stop-alert:sent]")) {
-        await supabase.from("jarvis_weekly_actions").update({action:"EXIT",target_weight:0,entry_filled:true,invalidated:true,reason:"Price traded through the active stop level."}).eq("run_id",existing.id).eq("ticker",item.ticker);
-        alerts.push({ticker:item.ticker,action:"STOP / EXIT",sessionLow,sessionHigh,trigger:stopTrigger});
-      } else if(Number.isFinite(targetLevel) && targetHit && !String(state.reason || "").includes("[target-alert:sent]")) {
-        await supabase.from("jarvis_weekly_actions").update({action:"REDUCE",target_weight:Number(item.position_weight || 0)/2,entry_filled:true,target_reached:true,reason:"First target reached; take profit and reduce exposure."}).eq("run_id",existing.id).eq("ticker",item.ticker);
-        alerts.push({ticker:item.ticker,action:"TAKE PROFIT",sessionLow,sessionHigh,trigger:targetLevel});
+      // First target is a one-shot partial take-profit and is only evaluated
+      // while the position is still open (skipped entirely after a stop-out above).
+      if(triggers.targetHit && !state.target_reached && !targetAlerted) {
+        await supabase.from("jarvis_weekly_actions").update({action:"REDUCE",target_weight:Number(item.position_weight || 0)/2,entry_filled:true,target_reached:true,invalidated:false,reason:"First target reached; take profit and reduce exposure."}).eq("run_id",existing.id).eq("ticker",item.ticker);
+        alerts.push({ticker:item.ticker,action:"TAKE PROFIT",sessionLow,sessionHigh,trigger:triggers.targetTrigger});
       }
     }
     let email:any={sent:false,reason:"no_new_actions"};

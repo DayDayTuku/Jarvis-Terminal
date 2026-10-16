@@ -78,8 +78,13 @@ export async function GET() {
       regime: latestRun.market_regime,
       status: latestRun.status,
       picks: picks || 0,
+      // Milestones, not mutually exclusive: a name can touch its first target and
+      // still be stopped later. `targetsBanked` is the one that means "a winner
+      // that was not also cut", so the counts can never look like they add up to
+      // more picks than exist.
       invalidated: actionRows.filter((row) => row.invalidated).length,
       targetsReached: actionRows.filter((row) => row.target_reached).length,
+      targetsBanked: actionRows.filter((row) => row.target_reached && !row.invalidated).length,
       actions: actionRows.reduce<Record<string, number>>((acc, row) => {
         acc[row.action] = (acc[row.action] || 0) + 1
         return acc

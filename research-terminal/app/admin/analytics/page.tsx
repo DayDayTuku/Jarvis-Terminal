@@ -8,7 +8,7 @@ type Analytics = {
   featureUsage: Array<{ name:string; count:number }>
   topPages: Array<{ path:string; count:number }>
   dailyActive: Array<{ date:string; users:number }>
-  weekly: null | { weekOf:string; regime:string; status:string; picks:number; invalidated:number; targetsReached:number; actions:Record<string,number> }
+  weekly: null | { weekOf:string; regime:string; status:string; picks:number; invalidated:number; targetsReached:number; targetsBanked:number; actions:Record<string,number> }
 }
 
 const styles: Record<string, CSSProperties> = {
@@ -72,7 +72,7 @@ export default function AdminAnalyticsPage() {
 
     <section style={{...styles.split,marginTop:16}}>
       <article style={styles.panel}><h2 style={styles.panelTitle}>Most-Visited Routes · 30D</h2>{data.topPages.length?data.topPages.map((item)=><div key={item.path} style={styles.row}><code>{item.path}</code><strong>{item.count}</strong></div>):<p style={styles.note}>No page-view events yet.</p>}</article>
-      <article style={styles.panel}><h2 style={styles.panelTitle}>Latest Weekly Picks Health</h2>{data.weekly?<><div style={styles.row}><span>Week</span><strong>{data.weekly.weekOf}</strong></div><div style={styles.row}><span>Regime</span><strong>{data.weekly.regime}</strong></div><div style={styles.row}><span>Picks</span><strong>{data.weekly.picks}</strong></div><div style={styles.row}><span>Invalidated</span><strong>{data.weekly.invalidated}</strong></div><div style={styles.row}><span>Targets reached</span><strong>{data.weekly.targetsReached}</strong></div><p style={styles.note}>Actions: {Object.entries(data.weekly.actions).map(([key,value])=>key+' '+value).join(' · ')||'No actions yet'}</p></>:<p style={styles.note}>No Weekly Picks run is available.</p>}</article>
+      <article style={styles.panel}><h2 style={styles.panelTitle}>Latest Weekly Picks Health</h2>{data.weekly?<><div style={styles.row}><span>Week</span><strong>{data.weekly.weekOf}</strong></div><div style={styles.row}><span>Regime</span><strong>{data.weekly.regime}</strong></div><div style={styles.row}><span>Picks</span><strong>{data.weekly.picks}</strong></div><div style={styles.row}><span>Stopped out</span><strong>{data.weekly.invalidated}</strong></div><div style={styles.row}><span>Targets touched</span><strong>{data.weekly.targetsReached}</strong></div><div style={styles.row}><span>Targets banked</span><strong>{data.weekly.targetsBanked}</strong></div><p style={styles.note}>Actions: {Object.entries(data.weekly.actions).map(([key,value])=>key+' '+value).join(' · ')||'No actions yet'}</p></>:<p style={styles.note}>No Weekly Picks run is available.</p>}</article>
     </section>
     <p style={{...styles.note,marginTop:16}}>Generated {new Date(data.generatedAt).toLocaleString('en-GB',{timeZone:'Asia/Jakarta'})} WIB · Metrics begin accumulating from analytics activation.</p>
   </div></main>
