@@ -33,7 +33,7 @@ const signed = (value: number | null, digits = 2) => (value === null ? "—" : `
 
 // Macro / regional series that feed the exposure overlay. USD/IDR leads local
 // risk appetite; ^VIX and the regional indices carry the global read.
-const MACRO_SYMBOLS = ["IDR=X", "^VIX", "^JKSE", "^HSI", "^KS11", "^N225", "^STI", "^GSPC"];
+const MACRO_SYMBOLS = ["IDR=X", "^VIX", "^JKSE", "^HSI", "^KS11", "^N225", "^STI", "^GSPC", "DX-Y.NYB", "^TNX", "CL=F", "GC=F", "EEM"];
 const IDR = "IDR=X";
 const VIX = "^VIX";
 const REGION = ["^HSI", "^KS11", "^N225", "^STI"];
@@ -72,6 +72,19 @@ const indexSoft = (read: MacroRead): number => {
 };
 const riskFlags = (read: MacroRead): number =>
   [idrWeak(read), vixHigh(read), regionSoft(read), indexSoft(read)].filter((value) => value < 1).length;
+
+// The four reads that separated trade outcomes in BOTH halves of the sample:
+// rupiah below its 50-day average, VIX rising, Jakarta index down 20 days, and
+// oil rising. Each is a genuine risk-off tell for the Indonesian tape.
+const RISK_READS: Array<(read: MacroRead) => boolean> = [
+  (read) => { const value = read.distFromSma(IDR, 50); return value !== null && value > 0; },
+  (read) => { const value = read.change(VIX, 5); return value !== null && value > 0; },
+  (read) => { const value = read.change("^JKSE", 20); return value !== null && value < 0; },
+  (read) => { const value = read.change("CL=F", 20); return value !== null && value > 0; },
+];
+const riskScore = (read: MacroRead): number => RISK_READS.filter((flag) => flag(read)).length;
+/** Linear exposure cut by how many risk reads are lit (0 → full, 4 → flat). */
+const gradedScale = (read: MacroRead): number => [1, 0.75, 0.5, 0.25, 0][riskScore(read)] ?? 1;
 
 function row(label: string, result: BacktestResult): string {
   const s = result.summary;
@@ -119,14 +132,14 @@ async function main(): Promise<void> {
     // "always 50%" row is the null: if a signal cannot beat plain deleveraging it
     // is not a timing signal at all.
     { label: "macro: idr 20d → 50%", policy: { holdThroughDrops: true, costPct: 0.4, macro: idrScale(20) } },
-    { label: "macro: idr 20d → 0%", policy: { holdThroughDrops: true, costPct: 0.4, macro: idrScale(20, 0) } },
-    { label: "macro: idr 10d → 50%", policy: { holdThroughDrops: true, costPct: 0.4, macro: idrScale(10) } },
-    { label: "macro: idr 60d → 50%", policy: { holdThroughDrops: true, costPct: 0.4, macro: idrScale(60) } },
+    { label: "macro: idr>sma50 → 50%", policy: { holdThroughDrops: true, costPct: 0.4, macro: (read) => (RISK_READS[0](read) ? 0.5 : 1) } },
+    { label: "macro: 4-signal ≥2 → 50%", policy: { holdThroughDrops: true, costPct: 0.4, macro: (read) => (riskScore(read) >= 2 ? 0.5 : 1) } },
+    { label: "macro: 4-signal ≥2 → 0%", policy: { holdThroughDrops: true, costPct: 0.4, macro: (read) => (riskScore(read) >= 2 ? 0 : 1) } },
+    { label: "macro: 4-signal ≥3 → 0%", policy: { holdThroughDrops: true, costPct: 0.4, macro: (read) => (riskScore(read) >= 3 ? 0 : 1) } },
+    { label: "macro: 4-signal graded", policy: { holdThroughDrops: true, costPct: 0.4, macro: gradedScale } },
     { label: "control: always 50%", policy: { holdThroughDrops: true, costPct: 0.4, macro: () => 0.5 } },
-    { label: "macro: vix ≥22 → 0%", policy: { holdThroughDrops: true, costPct: 0.4, macro: (read) => (vixHigh(read) < 1 ? 0 : 1) } },
-    { label: "macro: region<200d → 0%", policy: { holdThroughDrops: true, costPct: 0.4, macro: (read) => (regionSoft(read) < 1 ? 0 : 1) } },
+    { label: "macro: vix≥22 → 0%", policy: { holdThroughDrops: true, costPct: 0.4, macro: (read) => (vixHigh(read) < 1 ? 0 : 1) } },
     { label: "macro: jkse<200d → 0%", policy: { holdThroughDrops: true, costPct: 0.4, macro: (read) => (indexSoft(read) < 1 ? 0 : 1) } },
-    { label: "macro: ≥2 flags → 0%", policy: { holdThroughDrops: true, costPct: 0.4, macro: (read) => (riskFlags(read) >= 2 ? 0 : 1) } },
   ];
 
   // The live model now uses the fitted score, so the baseline is the fitted
@@ -160,12 +173,26 @@ async function main(): Promise<void> {
   // compare the settled trades whose scan week it flagged against the rest.
   if (macroBars.size) {
     console.log("\nMacro signal diagnostic (baseline trades grouped by scan week):");
+    const up = (symbol: string, days: number) => (read: MacroRead) => { const v = read.change(symbol, days); return v !== null && v > 0; };
+    const down = (symbol: string, days: number) => (read: MacroRead) => { const v = read.change(symbol, days); return v !== null && v < 0; };
+    const aboveSma = (symbol: string, days: number) => (read: MacroRead) => { const v = read.distFromSma(symbol, days); return v !== null && v > 0; };
+    const belowSma = (symbol: string, days: number) => (read: MacroRead) => { const v = read.distFromSma(symbol, days); return v !== null && v < 0; };
     const signals: Array<[string, (read: MacroRead) => boolean]> = [
-      ["idr weak", (read) => idrWeak(read) < 1],
+      ["idr up 20d", up(IDR, 20)],
+      ["idr up 5d", up(IDR, 5)],
+      ["idr > sma50", aboveSma(IDR, 50)],
+      ["dxy up 20d", up("DX-Y.NYB", 20)],
+      ["us10y up 20d", up("^TNX", 20)],
+      ["vix up 5d", up(VIX, 5)],
       ["vix ≥22", (read) => vixHigh(read) < 1],
-      ["region<200d", (read) => regionSoft(read) < 1],
-      ["jkse<200d", (read) => indexSoft(read) < 1],
-      ["≥2 flags", (read) => riskFlags(read) >= 2],
+      ["spx dn 20d", down("^GSPC", 20)],
+      ["hsi dn 20d", down("^HSI", 20)],
+      ["oil up 20d", up("CL=F", 20)],
+      ["gold up 20d", up("GC=F", 20)],
+      ["eem dn 20d", down("EEM", 20)],
+      ["jkse dn 20d", down("^JKSE", 20)],
+      ["jkse < 200d", belowSma("^JKSE", 200)],
+      ["region < 200d", (read) => regionSoft(read) < 1],
     ];
     for (const [name, flag] of signals) {
       let on = 0, onSum = 0, onWins = 0, off = 0, offSum = 0, offWins = 0;
