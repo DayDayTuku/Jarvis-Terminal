@@ -3,6 +3,7 @@
 :root {
   --bg: #000000; --panel: #080808; --panel-raised: #0d0d0d; --line: #242424; --line-strong: #3a3a3a;
   --text: #e8edf3; --muted: #778596; --blue: #48a6ff; --orange: #ff9840; --positive: #43d4a3; --negative: #ff6678;
+  --bep: #ffffff;
 }
 * { box-sizing: border-box; }
 html { background: var(--bg); scroll-behavior: smooth; }
@@ -816,6 +817,62 @@ body { min-height: 100%; background: #000; -webkit-text-size-adjust: 100%; overs
 @media(max-width:560px){.weekly-head{display:grid}.weekly-lock{justify-items:start}.weekly-row{grid-template-columns:28px 1fr 82px}.weekly-row>div:nth-child(4){display:none}.weekly-shortlist footer{display:grid}}
 
 
+/* Weekly Picks Track Record */
+.track-record{overflow:hidden}
+.track-head{display:flex;justify-content:space-between;gap:16px;padding:16px;border-bottom:1px solid var(--line)}
+.track-head span{color:var(--blue);font-size:8px;letter-spacing:.1em}
+.track-head h3{margin:6px 0 3px;font-size:16px}
+.track-head p{margin:0;max-width:640px;color:var(--muted);font:400 10px/1.5 var(--font-geist-sans)}
+.track-refresh{align-self:start;min-height:30px;padding:0 10px;border:1px solid var(--line-strong);background:var(--panel-raised);color:var(--text);font-size:8px;letter-spacing:.06em;cursor:pointer}
+.track-refresh:hover{border-color:var(--blue);color:var(--blue)}
+.track-refresh:disabled{opacity:.55;cursor:default}
+.track-loading,.track-error{min-height:160px;display:grid;place-content:center;justify-items:center;gap:6px;padding:24px;text-align:center}
+.track-loading{color:var(--muted);font-size:9px}
+.track-error strong{font-size:12px}
+.track-error span{max-width:440px;color:var(--muted);font:400 10px/1.5 var(--font-geist-sans)}
+.track-stats{display:grid;grid-template-columns:repeat(6,1fr);border-bottom:1px solid var(--line)}
+.track-stats>div{padding:13px;border-right:1px solid var(--line)}
+.track-stats>div:last-child{border-right:0}
+.track-stats span{color:var(--muted);font-size:7px;letter-spacing:.06em}
+.track-stats strong{display:block;margin-top:6px;font-size:15px;font-weight:560}
+.track-charts{display:grid;grid-template-columns:minmax(280px,1.4fr) minmax(220px,1fr);border-bottom:1px solid var(--line)}
+.track-curve{padding:15px;border-right:1px solid var(--line)}
+.track-cap{display:block;color:var(--muted);font-size:7px;letter-spacing:.06em}
+.track-spark{width:100%;height:90px;margin-top:6px}
+.track-bep{stroke:var(--bep);stroke-width:1;stroke-dasharray:3 3}
+.track-line{fill:none;stroke-width:1.6}
+.track-line.up{stroke:var(--positive)}
+.track-line.down{stroke:var(--negative)}
+.track-axis{display:flex;justify-content:space-between;margin-top:4px;color:var(--muted);font-size:8px}
+.track-bench{display:grid;align-content:start;gap:10px;padding:15px}
+.track-bench-row{display:flex;justify-content:space-between;gap:10px;align-items:baseline}
+.track-bench-row span{color:var(--muted);font-size:10px}
+.track-bench-row strong{font-size:11px;font-weight:560}
+.track-bench-row.edge{margin-top:8px;padding-top:8px;border-top:1px solid var(--line)}
+.track-bench .meta{color:var(--muted);font-size:8px;line-height:1.6}
+.track-table{max-height:360px;overflow-y:auto}
+.track-grid{display:grid;grid-template-columns:84px minmax(0,1fr) 96px 96px 92px 84px;gap:8px;align-items:center;padding:10px 14px}
+.track-thead{position:sticky;top:0;z-index:1;background:var(--panel);border-bottom:1px solid var(--line);color:var(--muted);font-size:7px;letter-spacing:.06em}
+.track-trow{border-bottom:1px solid var(--line);font-size:10px}
+.track-trow:hover{background:var(--panel-raised)}
+.track-week{color:var(--muted)}
+.track-pick b{font-size:11px}
+.track-pick small{display:block;margin-top:2px;color:var(--muted);font-size:7px}
+.track-short{margin-left:5px;color:var(--negative);font-size:7px}
+.track-price{color:var(--muted)}
+.track-price small{display:block;font-size:7px}
+.track-reason{font-size:8px}
+.track-num{text-align:right}
+.track-num b{display:block;font-size:11px}
+.track-num small{display:block;margin-top:2px;color:var(--muted);font-size:7px}
+.track-record .pos{color:var(--positive)}
+.track-record .neg{color:var(--negative)}
+.track-record .flat{color:var(--muted)}
+.track-record footer{display:flex;justify-content:space-between;gap:12px;padding:9px 12px;color:var(--muted);font-size:7px}
+@media(max-width:900px){.track-stats{grid-template-columns:repeat(3,1fr)}.track-stats>div:nth-child(3n){border-right:0}.track-charts{grid-template-columns:1fr}.track-curve{border-right:0;border-bottom:1px solid var(--line)}.track-grid{grid-template-columns:72px minmax(0,1fr) 84px 78px}.track-grid>*:nth-child(4),.track-grid>*:nth-child(5){display:none}}
+@media(max-width:560px){.track-head{display:grid}.track-grid{grid-template-columns:64px minmax(0,1fr) 76px}.track-grid>*:nth-child(3),.track-grid>*:nth-child(4),.track-grid>*:nth-child(5){display:none}.track-record footer{display:grid}}
+
+
 /* Complete light theme surfaces */
 html[data-theme=light] :is(.date-rule,.watch-meta,.thesis-check,.relationship-note,.suite-head,.portfolio-summary,.suite-method,.setup-steps,.setup-toolbar,.replay-head,.replay-method,.cot-legend){background:var(--panel-raised)!important;color:var(--text)!important;border-color:var(--line)!important}
 html[data-theme=light] :is(.range-switcher button.active,.ticker-switcher button.active,.ticker-switcher button:hover){background:#e7edf2!important;color:var(--text)!important}
@@ -897,6 +954,12 @@ html[data-theme=light] :is(.weekly-rank,.weekly-row small,.weekly-row span,.week
 html[data-theme=light] .weekly-decision button { background: #ffffff !important; color: var(--muted) !important; border-color: var(--line-strong) !important; }
 html[data-theme=light] .weekly-decision .approve.active { background: #e7f6ef !important; color: #087653 !important; border-color: #4aa987 !important; }
 html[data-theme=light] .weekly-decision .reject.active { background: #fdebed !important; color: #a52b3a !important; border-color: #d96a78 !important; }
+html[data-theme=light] { --bep: #000000; }
+html[data-theme=light] .track-record { background: var(--panel) !important; color: var(--text) !important; }
+html[data-theme=light] :is(.track-head,.track-stats,.track-stats>div,.track-charts,.track-curve,.track-thead,.track-trow,.track-record footer) { border-color: var(--line) !important; }
+html[data-theme=light] .track-trow:hover { background: var(--panel-raised) !important; }
+html[data-theme=light] .track-thead { background: var(--panel) !important; }
+html[data-theme=light] .track-refresh { background: var(--panel-raised) !important; color: var(--text) !important; border-color: var(--line-strong) !important; }
 
 
 /* Complete Stock Detail Modal light surfaces */
