@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { stopTrigger, targetTrigger, tradeOutcome, type PriceBar, type PriorPosition } from "../lib/weekly-lifecycle.ts";
-import { computeFeatures, runBacktest, simulateTrade, stats, type BacktestBar } from "../lib/backtest.ts";
+import { computeFeatures, macroReadFor, runBacktest, simulateTrade, stats, type BacktestBar } from "../lib/backtest.ts";
 
 const bar = (date: string, open: number, high: number, low: number, close: number): PriceBar => ({ date, open, high, low, close });
 const round = (value: number | null, digits = 2) => (value === null ? null : Number(value.toFixed(digits)));
@@ -231,4 +231,47 @@ test("stats computes expectancy and profit factor from settled trades", () => {
   assert.equal(summary.winRate?.toFixed(0), "67");
   assert.equal(round(summary.avgReturn, 4), round(10 / 3, 4));
   assert.equal(round(summary.profitFactor, 4), 3); // 15 / 5
+});
+
+test("macroReadFor: reads FX change and distance-from-SMA as of a date", () => {
+  const macro = new Map<string, BacktestBar[]>([
+    ["IDR=X", [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((n) => ({ date: `2026-01-${String(n).padStart(2, "0")}`, open: 0, high: 0, low: 0, close: 15000 + n * 100, volume: 0 }))],
+  ]);
+  const read = macroReadFor(macro, "2026-01-10");
+  // Close rose from 15,100 (2026-01-01) to 16,000 — a weakening rupiah.
+  assert.equal(round(read.change("IDR=X", 9)), round(((16000 - 15100) / 15100) * 100));
+  assert.equal(read.value("IDR=X"), 16000);
+  assert.ok((read.distFromSma("IDR=X", 5) ?? 0) > 0); // above its 5-day average
+  assert.equal(read.value("^VIX"), null); // missing series fails open
+  assert.equal(read.change("IDR=X", 99), null); // too short a window is null
+});
+
+test("runBacktest: a macro overlay scales the week's new-pick weights", () => {
+  const dates = businessDays(320);
+  const tickers = ["AAAA", "BBBB", "CCCC"];
+  const barsByTicker = new Map<string, BacktestBar[]>();
+  tickers.forEach((ticker, offset) => {
+    barsByTicker.set(
+      ticker,
+      series(
+        dates,
+        (index) => 1000 + offset * 40 + 90 * Math.sin(index / 22 + offset) + index * 1.2,
+        (index) => 20_000_000 * (index % 5 === 0 ? 2.4 : 1),
+      ),
+    );
+  });
+  const scanDates = dates.filter((_, index) => index % 5 === 4 && index > 60);
+  const sectors = new Map(tickers.map((ticker) => [ticker, "Tech"]));
+
+  const full = runBacktest({ scanDates, barsByTicker, sectors, policy: { costPct: 0.4 } });
+  const half = runBacktest({ scanDates, barsByTicker, sectors, policy: { costPct: 0.4, macro: () => 0.5 } });
+
+  assert.ok(full.trades.length > 0);
+  // Same trades either way; only the weekly contribution is scaled down. The
+  // synthetic book can be net-negative, so compare magnitudes.
+  assert.equal(half.trades.length, full.trades.length);
+  const fullReturn = full.summary.portfolioReturn ?? 0;
+  const halfReturn = half.summary.portfolioReturn ?? 0;
+  assert.notEqual(fullReturn, 0);
+  assert.ok(Math.abs(halfReturn) < Math.abs(fullReturn));
 });

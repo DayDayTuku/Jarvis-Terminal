@@ -41,6 +41,21 @@ import { signalsOf, type ScoreSignals } from "./score-model.ts";
 
 export type BacktestBar = { date: string; open: number; high: number; low: number; close: number; volume: number };
 
+/**
+ * Market context handed to a `macro` overlay. Every read is as of `date` and
+ * returns null when the series is missing or too short, so an overlay can fail
+ * open (full size) rather than silently stand the book down on bad data.
+ */
+export type MacroRead = {
+  date: string;
+  /** Latest close of `symbol` at or before the date. */
+  value: (symbol: string) => number | null;
+  /** Percent change of `symbol`'s close over the last `sessions` bars. */
+  change: (symbol: string, sessions: number) => number | null;
+  /** Percent distance of `symbol`'s close above/below its `window`-bar average. */
+  distFromSma: (symbol: string, window: number) => number | null;
+};
+
 export type BacktestPolicy = {
   plan: PlanPolicy;
   /** Minimum R:R a pick must show. The live rule is 1.7. */
@@ -63,6 +78,13 @@ export type BacktestPolicy = {
   costPct?: number;
   /** Only open longs while the index closes above its N-day average (0 = off). */
   marketSma?: number;
+  /**
+   * Macro risk overlay. Given the market context at a scan date, return a gross
+   * exposure multiplier in [0, 1] applied to every NEW pick that week (1 = full
+   * size, 0 = stand aside). This is where FX, volatility and regional-equity
+   * stress get turned into defence.
+   */
+  macro?: (read: MacroRead) => number;
   /** Minimum average daily turnover in rupiah (overrides the shipped floor). */
   minTurnoverIdr?: number;
 };
@@ -111,6 +133,8 @@ export type BacktestStats = {
   stdev: number | null;
   /** Worst peak-to-trough of the trade-sequenced equity curve, in percent. */
   maxDrawdown: number | null;
+  /** Total compounded return of the weekly weighted-exposure curve, in percent. */
+  portfolioReturn: number | null;
 };
 
 export type BacktestResult = {
@@ -341,6 +365,8 @@ export type BacktestInput = {
   barsByTicker: Map<string, BacktestBar[]>;
   /** The index series (e.g. ^JKSE), used by the `marketSma` filter. */
   marketBars?: BacktestBar[];
+  /** Extra series keyed by symbol (FX, ^VIX, regional indices) for `macro`. */
+  macroBars?: Map<string, BacktestBar[]>;
   sectors?: Map<string, string>;
   shortEligible?: Set<string>;
   policy?: Partial<BacktestPolicy>;
@@ -392,6 +418,7 @@ export function stats(trades: BacktestTrade[]): BacktestStats {
     drawdown = Math.min(drawdown, equity / peak - 1);
   }
   const maxDrawdown = weekly.size > 1 ? drawdown * 100 : null;
+  const portfolioReturn = weekly.size ? (equity - 1) * 100 : null;
 
   return {
     trades: settled.length,
@@ -408,6 +435,7 @@ export function stats(trades: BacktestTrade[]): BacktestStats {
     tail,
     stdev,
     maxDrawdown,
+    portfolioReturn,
   };
 }
 
@@ -444,6 +472,41 @@ export function setupToPosition(setup: Setup, direction: "LONG" | "SHORT", plan:
 function indexAsOf(bars: BacktestBar[], date: string): number {
   for (let i = bars.length - 1; i >= 0; i--) if (bars[i].date <= date) return i;
   return -1;
+}
+
+/**
+ * Build the macro read for a date from a symbol→bars map. Exported so the CLI
+ * can run the same reads for diagnostics (e.g. "were flagged weeks actually
+ * worse?") instead of duplicating the definitions.
+ */
+export function macroReadFor(macro: Map<string, BacktestBar[]>, date: string): MacroRead {
+  const series = (symbol: string): { bars: BacktestBar[]; index: number } | null => {
+    const bars = macro.get(symbol);
+    if (!bars || !bars.length) return null;
+    const index = indexAsOf(bars, date);
+    return index >= 0 ? { bars, index } : null;
+  };
+  return {
+    date,
+    value(symbol) {
+      const found = series(symbol);
+      return found ? found.bars[found.index].close : null;
+    },
+    change(symbol, sessions) {
+      const found = series(symbol);
+      if (!found) return null;
+      const from = found.index - sessions;
+      if (from < 0) return null;
+      const base = found.bars[from].close;
+      return base ? ((found.bars[found.index].close - base) / base) * 100 : null;
+    },
+    distFromSma(symbol, window) {
+      const found = series(symbol);
+      if (!found || found.index < window - 1) return null;
+      const average = mean(found.bars.slice(found.index + 1 - window, found.index + 1).map((bar) => bar.close));
+      return average ? ((found.bars[found.index].close - average) / average) * 100 : null;
+    },
+  };
 }
 
 /**
@@ -506,6 +569,9 @@ export function runBacktest(input: BacktestInput): BacktestResult {
     return market[index].close > average;
   };
 
+  const macro = input.macroBars ?? new Map<string, BacktestBar[]>();
+  const macroRead = (date: string): MacroRead => macroReadFor(macro, date);
+
   const picksByTicker = new Map<string, Pick[]>();
 
   scanDates.forEach((scanDate, weekIndex) => {
@@ -529,14 +595,20 @@ export function runBacktest(input: BacktestInput): BacktestResult {
     const tradeThisWeek = (!policy.regimes || policy.regimes.includes(regime)) && marketOpen(scanDate);
     const longs = tradeThisWeek ? pickLongs(scored, regime, input.thresholds, excluded) : [];
     const shorts = tradeThisWeek ? pickShort(scored).filter((setup) => shortWeight(setup, longs, regime) >= 3) : [];
+    // Macro overlay: shrink (or stand down) this week's NEW risk. Held positions
+    // keep their size — defence applies to fresh exposure, not open trades.
+    const exposure = policy.macro ? Math.max(0, Math.min(1, policy.macro(macroRead(scanDate)))) : 1;
 
     const push = (setup: Setup, direction: "LONG" | "SHORT", weight: number) => {
       const list = picksByTicker.get(setup.ticker) ?? [];
       list.push({ weekIndex, weekOf: scanDate, setup: setup.setup, score: setup.score, weight, direction, item: setupToPosition(setup, direction, policy.plan) });
       picksByTicker.set(setup.ticker, list);
     };
-    for (const setup of longs) push(setup, "LONG", positionWeight(setup, regime));
-    for (const setup of shorts) push(setup, "SHORT", shortWeight(setup, longs, regime));  });
+    if (exposure > 0) {
+      for (const setup of longs) push(setup, "LONG", positionWeight(setup, regime) * exposure);
+      for (const setup of shorts) push(setup, "SHORT", shortWeight(setup, longs, regime) * exposure);
+    }
+  });
 
   const trades: BacktestTrade[] = [];
   for (const [ticker, picks] of picksByTicker) {
