@@ -12,7 +12,7 @@ import { runBacktest, type BacktestPolicy, type BacktestResult } from "../lib/ba
 import { DEFAULT_POLICY, type Setup } from "../lib/setup-model.ts";
 import { loadUniverse } from "./yahoo.ts";
 
-type Args = { years: number; limit: number; tickers: string[] | null; scaleOut: boolean; concurrency: number };
+type Args = { years: number; limit: number; tickers: string[] | null; scaleOut: boolean; concurrency: number; from: string | null; to: string | null };
 
 function parseArgs(argv: string[]): Args {
   const get = (name: string): string | undefined => argv.find((arg) => arg.startsWith(`--${name}=`))?.split("=").slice(1).join("=");
@@ -23,6 +23,8 @@ function parseArgs(argv: string[]): Args {
     tickers: tickers ? tickers.split(",").map((ticker) => ticker.trim().toUpperCase()) : null,
     scaleOut: argv.includes("--scale-out"),
     concurrency: Number(get("concurrency") ?? 5),
+    from: get("from") ?? null,
+    to: get("to") ?? null,
   };
 }
 
@@ -50,30 +52,35 @@ function header(): string {
 
 async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
-  const { barsByTicker, sectors, scanDates } = await loadUniverse(args);
+  const loaded = await loadUniverse(args);
+  const barsByTicker = loaded.barsByTicker;
+  const sectors = loaded.sectors;
+  const calendar = loaded.calendar;
+  const scanDates = loaded.scanDates.filter((date) => (!args.from || date >= args.from) && (!args.to || date <= args.to));
+  console.error(`Window: ${scanDates[0] ?? "—"} → ${scanDates[scanDates.length - 1] ?? "—"} (${scanDates.length} scans).`);
 
   // A modest short list; flip this on with the BEI-eligible list to include shorts.
   const shortEligible = new Set<string>();
 
   const variants: Array<{ label: string; policy: Partial<BacktestPolicy>; scoreWith?: (setup: Setup) => number }> = [
     { label: "baseline (live)", policy: {} },
-    { label: "atr stops", policy: { plan: { ...DEFAULT_POLICY, stopMode: "atr" } } },
+    { label: "costs 0.4%", policy: { costPct: 0.4 } },
+    { label: "hold to stop/target", policy: { holdThroughDrops: true } },
+    { label: "hold + costs", policy: { holdThroughDrops: true, costPct: 0.4 } },
+    { label: "index>200d", policy: { marketSma: 200 } },
+    { label: "index>200d + costs", policy: { marketSma: 200, costPct: 0.4 } },
+    { label: "hold + index>200d + costs", policy: { holdThroughDrops: true, marketSma: 200, costPct: 0.4 } },
+    { label: "hold + index>100d + costs", policy: { holdThroughDrops: true, marketSma: 100, costPct: 0.4 } },
+    { label: "target 1.5R", policy: { plan: { ...DEFAULT_POLICY, targetR: 1.5 }, minRiskReward: 1.4 } },
     { label: "room targets", policy: { plan: { ...DEFAULT_POLICY, targetMode: "room" } } },
     { label: "minRR 2.0", policy: { minRiskReward: 2.0 } },
-    { label: "scale-out", policy: { scaleOut: true } },
-    { label: "costs 0.4%", policy: { costPct: 0.4 } },
-    { label: "risk-on only", policy: { regimes: ["RISK ON"] } },
-    { label: "no reversal", policy: { excludeSetups: ["reversal"] } },
-    { label: "risk-on + no reversal + costs", policy: { regimes: ["RISK ON"], excludeSetups: ["reversal"], costPct: 0.4 } },
-    { label: "time stop 20d", policy: { maxHoldingDays: 20 } },
-    { label: "atr+room+scale+time", policy: { plan: { ...DEFAULT_POLICY, stopMode: "atr", targetMode: "room" }, scaleOut: true, maxHoldingDays: 20 } },
   ];
 
   // The live model now uses the fitted score, so the baseline is the fitted
   // variant. The legacy row keeps the old hand-tuned score visible for contrast.
   variants.push({ label: "legacy score", policy: {}, scoreWith: (setup) => setup.legacyScore });
 
-  const runs = variants.map((variant) => ({ label: variant.label, result: runBacktest({ scanDates, barsByTicker, sectors, shortEligible, policy: variant.policy, scoreWith: variant.scoreWith }) }));
+  const runs = variants.map((variant) => ({ label: variant.label, result: runBacktest({ scanDates, barsByTicker, marketBars: calendar, sectors, shortEligible, policy: variant.policy, scoreWith: variant.scoreWith }) }));
 
   console.log("");
   console.log(header());

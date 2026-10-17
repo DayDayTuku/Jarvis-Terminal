@@ -48,12 +48,20 @@ export type BacktestPolicy = {
   scaleOut: boolean;
   /** Close a position after this many sessions if it has not resolved. */
   maxHoldingDays: number | null;
+  /**
+   * When true, a position is NOT closed just because the name dropped off the
+   * weekly list: it runs to its stop or target (or `maxHoldingDays`). The
+   * shipped rule closes on the drop, which is how 56% of cells actually end.
+   */
+  holdThroughDrops?: boolean;
   /** Only open new positions while the week's regime is one of these. */
   regimes?: Regime[];
   /** Setups to take out of the book entirely. */
   excludeSetups?: SetupKey[];
   /** Round-trip cost in percent of notional, charged on every settled trade. */
   costPct?: number;
+  /** Only open longs while the index closes above its N-day average (0 = off). */
+  marketSma?: number;
 };
 
 export const DEFAULT_BACKTEST_POLICY: BacktestPolicy = {
@@ -236,14 +244,20 @@ export function simulateTrade(input: {
   direction: "LONG" | "SHORT";
   scaleOut: boolean;
   maxHoldingDays: number | null;
+  /** How many sessions the entry order stays good for. Null = the whole window. */
+  entryWindowDays?: number | null;
 }): SimOutcome {
-  const { item, bars, direction, scaleOut, maxHoldingDays } = input;
+  const { item, bars, direction, scaleOut, maxHoldingDays, entryWindowDays = null } = input;
   const short = direction === "SHORT";
   const stop = stopTrigger(item);
   const target = targetTrigger(item);
   const hasTarget = Number.isFinite(target);
 
-  const entryIndex = bars.findIndex((bar) => bar.high >= Number(item.planned_entry_low) && bar.low <= Number(item.planned_entry_high));
+  const entrySearchEnd = entryWindowDays === null ? bars.length : Math.min(bars.length, entryWindowDays);
+  let entryIndex = -1;
+  for (let i = 0; i < entrySearchEnd; i++) {
+    if (bars[i].high >= Number(item.planned_entry_low) && bars[i].low <= Number(item.planned_entry_high)) { entryIndex = i; break; }
+  }
   if (entryIndex < 0) {
     return { ticker: item.ticker, direction, status: "NO_ENTRY", entryDate: null, entryPrice: null, exitDate: null, exitPrice: null, exitReason: "NO_ENTRY", returnPct: null, rMultiple: null };
   }
@@ -316,6 +330,8 @@ export type BacktestInput = {
   /** ISO dates to scan, ascending. One per week is the natural choice. */
   scanDates: string[];
   barsByTicker: Map<string, BacktestBar[]>;
+  /** The index series (e.g. ^JKSE), used by the `marketSma` filter. */
+  marketBars?: BacktestBar[];
   sectors?: Map<string, string>;
   shortEligible?: Set<string>;
   policy?: Partial<BacktestPolicy>;
@@ -432,6 +448,16 @@ export function runBacktest(input: BacktestInput): BacktestResult {
   const scanDates = [...input.scanDates].sort();
   const runCount = scanDates.length;
 
+  const market = input.marketBars ?? [];
+  const marketOpen = (date: string): boolean => {
+    const window = policy.marketSma ?? 0;
+    if (window <= 0 || market.length < window) return true;
+    const index = indexAsOf(market, date);
+    if (index < window - 1) return false;
+    const average = mean(market.slice(index + 1 - window, index + 1).map((bar) => bar.close));
+    return market[index].close > average;
+  };
+
   const picksByTicker = new Map<string, Pick[]>();
 
   scanDates.forEach((scanDate, weekIndex) => {
@@ -452,7 +478,7 @@ export function runBacktest(input: BacktestInput): BacktestResult {
     // setup is excluded.
     const setups = policy.excludeSetups?.length ? scored.filter((setup) => !policy.excludeSetups!.includes(setup.setup)) : scored;
     const regime = regimeFor(setups);
-    const tradeThisWeek = !policy.regimes || policy.regimes.includes(regime);
+    const tradeThisWeek = (!policy.regimes || policy.regimes.includes(regime)) && marketOpen(scanDate);
     const longs = tradeThisWeek ? pickLongs(setups, regime, input.thresholds) : [];
     const shorts = tradeThisWeek ? pickShort(setups).filter((setup) => shortWeight(setup, longs, regime) >= 3) : [];
 
@@ -473,11 +499,17 @@ export function runBacktest(input: BacktestInput): BacktestResult {
       if (!plan) continue;
       const openWeekOf = scanDates[streak.openIndex];
       const closeWeekOf = streak.closeIndex !== null ? scanDates[streak.closeIndex] : null;
-      const windowBars = bars.filter((bar) => bar.date && bar.date > openWeekOf && (closeWeekOf === null || bar.date < closeWeekOf));
-      const outcome = simulateTrade({ item: plan.item, bars: windowBars, direction: plan.direction, scaleOut: policy.scaleOut, maxHoldingDays: policy.maxHoldingDays });
+      // Shipped: a name that drops off the list is closed at that week's close.
+      // "Let it run": ignore the drop and hold to stop/target, capped by sessions.
+      const holdThroughDrops = policy.holdThroughDrops === true;
+      const windowBars = bars.filter((bar) => bar.date && bar.date > openWeekOf && (holdThroughDrops || closeWeekOf === null || bar.date < closeWeekOf));
+      const holdingCap = holdThroughDrops ? policy.maxHoldingDays ?? 60 : policy.maxHoldingDays;
+      // The planned entry order is only good for the week it was placed, in both
+      // arms, so the comparison isolates the exit rule.
+      const outcome = simulateTrade({ item: plan.item, bars: windowBars, direction: plan.direction, scaleOut: policy.scaleOut, maxHoldingDays: holdingCap, entryWindowDays: 5 });
       const exitReason: BacktestTrade["exitReason"] =
-        outcome.exitReason === "WEEK_END" ? (closeWeekOf === null ? "OPEN" : "DROPPED") : (outcome.exitReason as BacktestTrade["exitReason"]);
-      const status = outcome.status === "OPEN" && closeWeekOf !== null ? "CLOSED" : outcome.status;
+        outcome.exitReason === "WEEK_END" ? (closeWeekOf === null || holdThroughDrops ? "OPEN" : "DROPPED") : (outcome.exitReason as BacktestTrade["exitReason"]);
+      const status = !holdThroughDrops && outcome.status === "OPEN" && closeWeekOf !== null ? "CLOSED" : outcome.status;
       // Charge the round-trip cost on every settled trade, in both percent and R.
       let returnPct = outcome.returnPct;
       let rMultiple = outcome.rMultiple;

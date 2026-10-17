@@ -174,6 +174,51 @@ test("runBacktest replays a weekly scan end to end and is deterministic", () => 
   }
 });
 
+test("hold-through-drops never reports a weekly DROPPED exit", () => {
+  const dates = businessDays(320);
+  const tickers = ["AAAA", "BBBB", "CCCC"];
+  const barsByTicker = new Map<string, BacktestBar[]>();
+  tickers.forEach((ticker, offset) => {
+    barsByTicker.set(
+      ticker,
+      series(
+        dates,
+        (index) => 1000 + offset * 40 + 90 * Math.sin(index / 22 + offset) + index * 1.2,
+        (index) => 1_000_000 * (index % 5 === 0 ? 2.4 : 1),
+      ),
+    );
+  });
+  const scanDates = dates.filter((_, index) => index % 5 === 4 && index > 60);
+  const sectors = new Map(tickers.map((ticker) => [ticker, "Tech"]));
+
+  const held = runBacktest({ scanDates, barsByTicker, sectors, policy: { holdThroughDrops: true } });
+  assert.ok(held.trades.length > 0);
+  assert.equal(held.trades.filter((trade) => trade.exitReason === "DROPPED").length, 0);
+});
+
+test("a market filter that is never open produces no trades", () => {
+  const dates = businessDays(320);
+  const tickers = ["AAAA", "BBBB"];
+  const barsByTicker = new Map<string, BacktestBar[]>();
+  tickers.forEach((ticker, offset) => {
+    barsByTicker.set(ticker, series(dates, (index) => 1000 + offset * 40 + 60 * Math.sin(index / 18 + offset), () => 1_000_000));
+  });
+  // A market that only ever falls is never above its own average.
+  const marketBars: BacktestBar[] = dates.map((date, index) => ({
+    date,
+    open: 6000 - index,
+    high: 6000 - index,
+    low: 6000 - index,
+    close: 6000 - index,
+    volume: 1_000_000,
+  }));
+  const scanDates = dates.filter((_, index) => index % 5 === 4 && index > 60);
+  const sectors = new Map(tickers.map((ticker) => [ticker, "Tech"]));
+
+  const gated = runBacktest({ scanDates, barsByTicker, marketBars, sectors, policy: { marketSma: 200 } });
+  assert.equal(gated.trades.length, 0);
+});
+
 test("stats computes expectancy and profit factor from settled trades", () => {
   const trades = [
     { status: "CLOSED", returnPct: 10, rMultiple: 2 },

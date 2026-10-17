@@ -64,6 +64,8 @@ export type PlanPolicy = {
   targetMode: "rr" | "room";
   /** Multiple used in "room" mode (and to derive the fallback room). */
   roomMultiple: number;
+  /** Target distance in R for "rr" mode. The shipped value is 2 (1.7 for reversals). */
+  targetR: number;
 };
 
 /** The shipped rule: flip to "atr"/"room" only after the backtest justifies it. */
@@ -72,6 +74,7 @@ export const DEFAULT_POLICY: PlanPolicy = {
   atrStopMult: 2,
   targetMode: "rr",
   roomMultiple: 2,
+  targetR: 2,
 };
 
 export type Setup = {
@@ -148,7 +151,7 @@ export function planLevels(args: {
     const rawStop = useAtr ? close - (atr as number) * policy.atrStopMult : percentStop;
     const risk = Math.max(close - rawStop, close * 0.025);
     const invalidation = Math.round(Math.max(low1m ?? 0, rawStop));
-    const multiple = setup === "reversal" ? 1.7 : 2;
+    const multiple = setup === "reversal" ? 1.7 : policy.targetR;
     const room = high1m !== null ? Math.max(0, high1m - close) : risk * policy.roomMultiple;
     const rawTarget = policy.targetMode === "room"
       ? close + Math.min(risk * policy.roomMultiple, room)
@@ -173,7 +176,7 @@ export function planLevels(args: {
   const room = low1m !== null ? Math.max(0, close - low1m) : risk * policy.roomMultiple;
   const rawTarget = policy.targetMode === "room"
     ? close - Math.min(risk * policy.roomMultiple, room)
-    : close - risk * 2;
+    : close - risk * policy.targetR;
   const target = Math.round(Math.max(1, rawTarget));
   const measured = risk > 0 ? (close - target) / risk : 0;
   return {
@@ -181,7 +184,7 @@ export function planLevels(args: {
     entryHigh: Math.round(close * 1.01),
     invalidation,
     target,
-    riskReward: policy.targetMode === "room" ? measured : 2,
+    riskReward: policy.targetMode === "room" ? measured : policy.targetR,
     measuredRiskReward: measured,
     stopDistancePct: ((invalidation - close) / close) * 100,
   };

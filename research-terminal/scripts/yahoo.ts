@@ -50,6 +50,7 @@ export type LoadedUniverse = {
   barsByTicker: Map<string, BacktestBar[]>;
   sectors: Map<string, string>;
   scanDates: string[];
+  calendar: BacktestBar[];
 };
 
 export async function loadUniverse(options: { years: number; limit: number; tickers: string[] | null; concurrency: number }): Promise<LoadedUniverse> {
@@ -75,5 +76,5 @@ export async function loadUniverse(options: { years: number; limit: number; tick
     }
   }
   console.error(`Replaying ${barsByTicker.size} tickers with data.`);
-  return { barsByTicker, sectors, scanDates };
+  return { barsByTicker, sectors, scanDates, calendar };
 }
