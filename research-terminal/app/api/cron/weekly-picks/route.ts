@@ -8,6 +8,7 @@ import {
   type LifecycleActionName,
   type PriceBar,
 } from "@/lib/weekly-lifecycle";
+import { pickLongs as pick, pickShort, positionWeight as weight, regimeFor, shortWeight } from "@/lib/setup-model";
 
 export const maxDuration = 60;
 
@@ -32,26 +33,6 @@ function escapeHtml(value:unknown) {
 function stripAlertMarkers(value:unknown) {
   return String(value ?? "").replace(/\s*\[(?:stop|target)-alert:sent\]\s*/g," ").trim();
 }
-function regimeFor(setups:Setup[]) {
-  const valid = setups.filter((item) => !isShortSetup(item) && item.riskReward >= 1.7);
-  const broad = valid.filter((item) => item.score >= 75).length;
-  const strong = valid.filter((item) => item.score >= 85).length;
-  return broad >= 5 ? "RISK ON" : broad >= 3 ? "EMERGING" : strong ? "NEUTRAL" : "RISK OFF";
-}
-function pick(setups:Setup[], regime:string) {
-  if (regime === "RISK OFF") return [];
-  const minimum = regime === "RISK ON" ? 75 : regime === "EMERGING" ? 80 : 85;
-  const maximum = regime === "RISK ON" ? 5 : regime === "EMERGING" ? 3 : 1;
-  const sectors = new Map<string,number>();
-  return [...setups].filter((item) => !isShortSetup(item)).sort((a,b) => b.score - a.score || b.riskReward - a.riskReward)
-    .filter((item) => item.score >= minimum && item.riskReward >= 1.7)
-    .filter((item) => { const sector=item.sector || "Other"; const count=sectors.get(sector) || 0; if(count >= 2) return false; sectors.set(sector,count+1); return true; })
-    .slice(0,maximum);
-}
-function kind(item:{setup:string;score:number}) { return item.score>=85 && /(PULLBACK|ACCUMULATION|TREND)/.test(item.setup.toUpperCase()) ? "CORE" : "TACTICAL"; }
-function weight(item:{setup:string;score:number},regime:string) { const base=kind(item)==="CORE"?(item.score>=90?15:12.5):(item.score>=90?10:7.5); const multiplier=regime==="RISK ON"?1:regime==="EMERGING"?.8:.6; return Math.max(5,Math.round(base*multiplier/2.5)*2.5); }
-function pickShort(setups:Setup[]) { return [...setups].filter(isShortSetup).filter((item)=>item.score>=85&&item.riskReward>=2).sort((a,b)=>b.score-a.score||b.riskReward-a.riskReward).slice(0,1); }
-function shortWeight(item:Setup,longs:Setup[],regime:string) { const weights=longs.map((row)=>weight(row,regime)).sort((a,b)=>a-b); const median=weights.length?weights[Math.floor(weights.length/2)]:10; const stop=Math.max(.1,(item.invalidation-item.close)/item.close*100); return Math.max(0,Math.floor(Math.min(8,median*.7,50/stop)*2)/2); }
 async function getBars(ticker:string, since:string):Promise<Bar[]> {
   try {
     const period1 = Math.floor(new Date(since + "T00:00:00+07:00").getTime()/1000);

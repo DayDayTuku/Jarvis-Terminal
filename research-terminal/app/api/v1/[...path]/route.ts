@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { deriveStatus, type LifecycleActionName } from "@/lib/weekly-lifecycle";
+import { regimeFor } from "@/lib/setup-model";
 
 export const maxDuration = 30;
 type WindowState = { count:number; resetAt:number };
@@ -27,7 +28,6 @@ async function scanner(origin:string) {
   if(!response.ok) throw new Error("Screener upstream unavailable");
   const payload:any=await response.json(); return Array.isArray(payload?.setups)?payload.setups:[];
 }
-function regimeFor(setups:any[]) { const valid=setups.filter((item)=>Number(item.riskReward)>=1.7); const broad=valid.filter((item)=>Number(item.score)>=75).length; const strong=valid.filter((item)=>Number(item.score)>=85).length; return broad>=5?"RISK ON":broad>=3?"EMERGING":strong?"NEUTRAL":"RISK OFF"; }
 export async function OPTIONS(){return new NextResponse(null,{status:204,headers:corsHeaders()});}
 export async function GET(request:NextRequest,{params}:{params:Promise<{path:string[]}>}){
   const auth=authorize(request); if(!auth.ok)return auth.response;
