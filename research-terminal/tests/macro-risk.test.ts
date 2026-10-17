@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { EXPOSURE_BY_FLAGS, macroExposure, macroFlags, type MacroBar } from "../lib/macro-risk.ts";
+import { BASE_EXPOSURE, EXPOSURE_STEPS, macroExposure, macroFlags, type MacroBar } from "../lib/macro-risk.ts";
 
 const day = (index: number) => new Date(Date.UTC(2025, 0, 1) + index * 86_400_000).toISOString().slice(0, 10);
 const bars = (values: number[]): MacroBar[] => values.map((close, index) => ({ date: day(index), close }));
@@ -20,7 +20,7 @@ test("macroExposure: every read lit stands the week down", () => {
   assert.equal(read.exposure, 0);
 });
 
-test("macroExposure: a calm backdrop keeps full size", () => {
+test("macroExposure: a calm backdrop keeps the base size, never full", () => {
   const series = new Map<string, MacroBar[]>([
     ["IDR=X", falling(60, 16000)], // below its average -> rupiah strong
     ["^VIX", falling(10, 25)],     // easing
@@ -29,7 +29,8 @@ test("macroExposure: a calm backdrop keeps full size", () => {
   ]);
   const read = macroExposure(series, at(falling(60, 16000)));
   assert.deepEqual(read.flags, []);
-  assert.equal(read.exposure, 1);
+  assert.equal(read.exposure, BASE_EXPOSURE);
+  assert.ok(read.exposure < 1); // never full size for no reason
 });
 
 test("macroExposure: the cut is graded by how many reads are lit", () => {
@@ -42,14 +43,24 @@ test("macroExposure: the cut is graded by how many reads are lit", () => {
   ]);
   const read = macroExposure(series, at(rising(60, 15000)));
   assert.equal(read.flags.length, 2);
-  assert.equal(read.exposure, EXPOSURE_BY_FLAGS[2]);
-  assert.equal(read.exposure, 0.5);
+  assert.equal(read.exposure, BASE_EXPOSURE * EXPOSURE_STEPS[2]);
+});
+
+test("macroExposure: an explicit base overrides the default", () => {
+  const calm = new Map<string, MacroBar[]>([
+    ["IDR=X", falling(60, 16000)],
+    ["^VIX", falling(10, 25)],
+    ["^JKSE", rising(30, 6000)],
+    ["CL=F", falling(30, 80)],
+  ]);
+  assert.equal(macroExposure(calm, at(falling(60, 16000)), 1).exposure, 1);
+  assert.equal(macroExposure(calm, at(falling(60, 16000)), 0.5).exposure, 0.5);
 });
 
 test("macroExposure: missing data fails open rather than standing down", () => {
   const read = macroExposure(new Map(), "2026-01-01");
   assert.deepEqual(macroFlags(new Map(), "2026-01-01"), []);
-  assert.equal(read.exposure, 1);
+  assert.equal(read.exposure, BASE_EXPOSURE);
   // A series too short to measure its window is likewise left unlit.
   const short = new Map<string, MacroBar[]>([["IDR=X", rising(10, 15000)]]);
   assert.deepEqual(macroFlags(short, "2026-01-01"), []);

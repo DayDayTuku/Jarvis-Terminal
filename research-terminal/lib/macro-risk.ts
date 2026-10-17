@@ -10,8 +10,9 @@
 //   - ^JKSE down over 20 sessions        (local tape rolling over)
 //   - WTI up over 20 sessions           (import-cost / terms-of-trade hit)
 //
-// Each lit read cuts the size of the week's NEW picks: 0 reads -> 100%,
-// 1 -> 75%, 2 -> 50%, 3 -> 25%, 4 -> 0%. Held positions are never resized. The
+// Each lit read cuts the size of the week's NEW picks, but the book never runs
+// at full size "for no reason": it sits at BASE_EXPOSURE when the backdrop is
+// calm and steps down as reads light. Held positions are never resized. The
 // graded cut beat a constant-deleverage control on risk-adjusted return in both
 // halves, and cut portfolio drawdown from -19.2% to -7.0% (A) and -7.1% to
 // -2.4% (B). Reads that did NOT hold in both halves (DXY, US 10y, S&P, HSI, EEM,
@@ -23,8 +24,18 @@ export type MacroExposure = { exposure: number; flags: string[] };
 /** Symbols fetched for the overlay, in the order their flags are reported. */
 export const MACRO_SYMBOLS = ["IDR=X", "^VIX", "^JKSE", "CL=F"] as const;
 
-/** How much of full size is taken for 0,1,2,3,4 lit reads. */
-export const EXPOSURE_BY_FLAGS = [1, 0.75, 0.5, 0.25, 0] as const;
+/**
+ * Default fraction of full size the book is allowed to run at. Going full size
+ * with a calm, unremarkable backdrop is as unjustified as being defensive for
+ * no reason, so the default is deliberately below 1 and the reads cut from here.
+ * The backtest shows the risk-adjusted ratio is flat across base levels, so this
+ * is a pure risk-appetite dial: 0.6 roughly gives 60% of the return at 60% of
+ * the drawdown of a full-size book.
+ */
+export const BASE_EXPOSURE = 0.6;
+
+/** Fraction of BASE_EXPOSURE taken for 0,1,2,3,4 lit reads. */
+export const EXPOSURE_STEPS = [1, 0.75, 0.5, 0.25, 0] as const;
 
 function indexAsOf(bars: MacroBar[], date: string): number {
   for (let i = bars.length - 1; i >= 0; i--) if (bars[i].date <= date) return i;
@@ -70,9 +81,10 @@ export function macroFlags(series: Map<string, MacroBar[]>, date: string): strin
 }
 
 /** Gross-exposure multiplier for the week's new picks, with its reasons. */
-export function macroExposure(series: Map<string, MacroBar[]>, date: string): MacroExposure {
+export function macroExposure(series: Map<string, MacroBar[]>, date: string, base = BASE_EXPOSURE): MacroExposure {
   const flags = macroFlags(series, date);
-  return { exposure: EXPOSURE_BY_FLAGS[Math.min(flags.length, EXPOSURE_BY_FLAGS.length - 1)], flags };
+  const step = EXPOSURE_STEPS[Math.min(flags.length, EXPOSURE_STEPS.length - 1)];
+  return { exposure: base * step, flags };
 }
 
 /**

@@ -125,11 +125,12 @@ async function main(): Promise<void> {
     // Judged on portfolio return AND drawdown in BOTH halves of the sample. The
     // "always 50%" row is the null: if a signal cannot beat plain deleveraging it
     // is not a timing signal at all.
-    { label: "macro: idr 20d → 50%", policy: { holdThroughDrops: true, costPct: 0.4, macro: idrScale(20) } },
-    { label: "macro: shipped graded", policy: { holdThroughDrops: true, costPct: 0.4, macro: shippedExposure } },
-    { label: "macro: shipped graded → 0%", policy: { holdThroughDrops: true, costPct: 0.4, macro: (read) => (shippedExposure(read) < 1 ? 0 : 1) } },
+    { label: "macro: base 70% (shipped)", policy: { holdThroughDrops: true, costPct: 0.4, macro: shippedExposure } },
+    { label: "macro: base 60%", policy: { holdThroughDrops: true, costPct: 0.4, macro: (read) => macroExposure(macroSeries, read.date, 0.6).exposure } },
+    { label: "macro: base 50%", policy: { holdThroughDrops: true, costPct: 0.4, macro: (read) => macroExposure(macroSeries, read.date, 0.5).exposure } },
+    { label: "macro: base 80%", policy: { holdThroughDrops: true, costPct: 0.4, macro: (read) => macroExposure(macroSeries, read.date, 0.8).exposure } },
+    { label: "macro: base 100% (prev)", policy: { holdThroughDrops: true, costPct: 0.4, macro: (read) => macroExposure(macroSeries, read.date, 1).exposure } },
     { label: "control: always 50%", policy: { holdThroughDrops: true, costPct: 0.4, macro: () => 0.5 } },
-    { label: "macro: jkse<200d → 0%", policy: { holdThroughDrops: true, costPct: 0.4, macro: (read) => (indexSoft(read) < 1 ? 0 : 1) } },
   ];
 
   // The live model now uses the fitted score, so the baseline is the fitted
