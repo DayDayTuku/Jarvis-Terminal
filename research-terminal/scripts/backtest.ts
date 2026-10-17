@@ -61,6 +61,10 @@ async function main(): Promise<void> {
     { label: "room targets", policy: { plan: { ...DEFAULT_POLICY, targetMode: "room" } } },
     { label: "minRR 2.0", policy: { minRiskReward: 2.0 } },
     { label: "scale-out", policy: { scaleOut: true } },
+    { label: "costs 0.4%", policy: { costPct: 0.4 } },
+    { label: "risk-on only", policy: { regimes: ["RISK ON"] } },
+    { label: "no reversal", policy: { excludeSetups: ["reversal"] } },
+    { label: "risk-on + no reversal + costs", policy: { regimes: ["RISK ON"], excludeSetups: ["reversal"], costPct: 0.4 } },
     { label: "time stop 20d", policy: { maxHoldingDays: 20 } },
     { label: "atr+room+scale+time", policy: { plan: { ...DEFAULT_POLICY, stopMode: "atr", targetMode: "room" }, scaleOut: true, maxHoldingDays: 20 } },
   ];
@@ -77,6 +81,10 @@ async function main(): Promise<void> {
   for (const run of runs) console.log(row(run.label, run.result));
 
   const baseline = runs[0].result;
+  const reasons = new Map<string, number>();
+  for (const trade of baseline.trades) reasons.set(trade.exitReason, (reasons.get(trade.exitReason) ?? 0) + 1);
+  console.log("\nBaseline exit reasons:");
+  for (const [reason, count] of [...reasons].sort((a, b) => b[1] - a[1])) console.log(`  ${reason.padEnd(10)} ${count}`);
   console.log("\nBaseline by setup:");
   for (const entry of baseline.bySetup) {
     const s = entry.stats;

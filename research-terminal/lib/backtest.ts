@@ -48,6 +48,12 @@ export type BacktestPolicy = {
   scaleOut: boolean;
   /** Close a position after this many sessions if it has not resolved. */
   maxHoldingDays: number | null;
+  /** Only open new positions while the week's regime is one of these. */
+  regimes?: Regime[];
+  /** Setups to take out of the book entirely. */
+  excludeSetups?: SetupKey[];
+  /** Round-trip cost in percent of notional, charged on every settled trade. */
+  costPct?: number;
 };
 
 export const DEFAULT_BACKTEST_POLICY: BacktestPolicy = {
@@ -439,12 +445,16 @@ export function runBacktest(input: BacktestInput): BacktestResult {
       features.push(computeFeatures(ticker, bars, index, sectors.get(ticker)));
     }
     const classified = classifyAll(features, { shortEligible, policy: policy.plan }).filter((setup) => setup.riskReward >= policy.minRiskReward);
-    const setups = input.scoreWith
+    const scored = input.scoreWith
       ? classified.map((setup) => ({ ...setup, score: input.scoreWith!(setup) })).sort((a, b) => b.score - a.score)
       : classified;
+    // The regime is a read on the whole market, so it is computed before any
+    // setup is excluded.
+    const setups = policy.excludeSetups?.length ? scored.filter((setup) => !policy.excludeSetups!.includes(setup.setup)) : scored;
     const regime = regimeFor(setups);
-    const longs = pickLongs(setups, regime, input.thresholds);
-    const shorts = pickShort(setups).filter((setup) => shortWeight(setup, longs, regime) >= 3);
+    const tradeThisWeek = !policy.regimes || policy.regimes.includes(regime);
+    const longs = tradeThisWeek ? pickLongs(setups, regime, input.thresholds) : [];
+    const shorts = tradeThisWeek ? pickShort(setups).filter((setup) => shortWeight(setup, longs, regime) >= 3) : [];
 
     const push = (setup: Setup, direction: "LONG" | "SHORT", weight: number) => {
       const list = picksByTicker.get(setup.ticker) ?? [];
@@ -468,6 +478,14 @@ export function runBacktest(input: BacktestInput): BacktestResult {
       const exitReason: BacktestTrade["exitReason"] =
         outcome.exitReason === "WEEK_END" ? (closeWeekOf === null ? "OPEN" : "DROPPED") : (outcome.exitReason as BacktestTrade["exitReason"]);
       const status = outcome.status === "OPEN" && closeWeekOf !== null ? "CLOSED" : outcome.status;
+      // Charge the round-trip cost on every settled trade, in both percent and R.
+      let returnPct = outcome.returnPct;
+      let rMultiple = outcome.rMultiple;
+      if (policy.costPct && status === "CLOSED" && returnPct !== null && outcome.entryPrice !== null) {
+        returnPct -= policy.costPct;
+        const risk = Math.abs(outcome.entryPrice - stopTrigger(plan.item));
+        rMultiple = risk > 0 ? ((returnPct / 100) * outcome.entryPrice) / risk : rMultiple;
+      }
       trades.push({
         weekOf: openWeekOf,
         ticker,
@@ -481,8 +499,8 @@ export function runBacktest(input: BacktestInput): BacktestResult {
         exitDate: outcome.exitDate,
         exitPrice: outcome.exitPrice,
         exitReason,
-        returnPct: outcome.returnPct,
-        rMultiple: outcome.rMultiple,
+        returnPct,
+        rMultiple,
       });
     }
   }
