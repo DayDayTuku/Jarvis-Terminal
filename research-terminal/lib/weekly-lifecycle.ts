@@ -130,16 +130,21 @@ export function evaluatePosition(
   prior: PriorPosition,
   bars: PriceBar[],
   next?: NextPosition,
+  state: { entryFilled?: boolean; targetReached?: boolean } = {},
 ): LifecycleOutcome {
   const short = isShortSetup(prior);
   const { index, fill } = entryTouch(bars, prior);
-  const entryFilled = index >= 0;
-  const active = entryFilled ? bars.slice(index) : [];
+  // A carried position was filled in an earlier week, so its entry is not in this
+  // window: `state` carries the live flags forward instead of re-deriving them
+  // from bars that start after the entry. (Re-deriving would read a genuinely
+  // held position as AWAITING_ENTRY and then wrongly expire it.)
+  const entryFilled = state.entryFilled ?? index >= 0;
+  const active = entryFilled ? (index >= 0 ? bars.slice(index) : bars) : [];
   const stop = stopTrigger(prior);
   const target = targetTrigger(prior);
   const hasTarget = Number.isFinite(target);
   const invalidated = entryFilled && active.some((bar) => (short ? bar.high >= stop : bar.low <= stop));
-  const targetReached = entryFilled && hasTarget && active.some((bar) => (short ? bar.low <= target : bar.high >= target));
+  const targetReached = (state.targetReached ?? false) || (entryFilled && hasTarget && active.some((bar) => (short ? bar.low <= target : bar.high >= target)));
   const baseWeight = Number(prior.position_weight) || 12.5;
   const previousScore = Number(prior.score);
 
@@ -181,10 +186,15 @@ export function evaluatePosition(
     };
   }
   if (!next) {
+    // The stock fell out of the weekly list, but the trade plan (stop and first
+    // target) is still live, so hold it until one of them is actually reached
+    // rather than closing on the rollover. The backtest shows holding roughly
+    // doubles the per-trade edge and is the difference between a negative and a
+    // positive result once costs are charged.
     return {
-      action: "EXIT", targetWeight: 0, previousScore, theoreticalFill: fill,
+      action: "HOLD", targetWeight: baseWeight, previousScore, theoreticalFill: fill,
       entryFilled, targetReached, invalidated,
-      reason: "The stock is no longer selected by V5.",
+      reason: "Off this week's list, but the stop and first target are still active; holding.",
     };
   }
   if (Number(next.score) < previousScore - 5) {
@@ -212,21 +222,25 @@ export function evaluatePosition(
  * Intraday trigger state for the monitor. Uses the same cumulative window as
  * evaluatePosition so the monitor and the Friday rollover always agree.
  */
-export function positionTriggers(item: PriorPosition, bars: PriceBar[]) {
+export function positionTriggers(item: PriorPosition, bars: PriceBar[], state: { entered?: boolean; targetReached?: boolean } = {}) {
   const short = isShortSetup(item);
   const { index } = entryTouch(bars, item);
-  const active = index >= 0 ? bars.slice(index) : [];
+  // Same carried-position rule as evaluatePosition: when a position was filled
+  // in an earlier week, treat the whole window as active rather than looking for
+  // an entry that is no longer in it.
+  const entered = state.entered ?? index >= 0;
+  const active = entered ? (index >= 0 ? bars.slice(index) : bars) : [];
   const stop = stopTrigger(item);
   const target = targetTrigger(item);
   const hasTarget = Number.isFinite(target);
   return {
-    entered: index >= 0,
+    entered,
     stopTrigger: stop,
     targetTrigger: target,
     sessionLow: active.length ? Math.min(...active.map((bar) => bar.low)) : null,
     sessionHigh: active.length ? Math.max(...active.map((bar) => bar.high)) : null,
-    stopped: index >= 0 && active.some((bar) => (short ? bar.high >= stop : bar.low <= stop)),
-    targetHit: index >= 0 && hasTarget && active.some((bar) => (short ? bar.low <= target : bar.high >= target)),
+    stopped: entered && active.some((bar) => (short ? bar.high >= stop : bar.low <= stop)),
+    targetHit: entered && !state.targetReached && hasTarget && active.some((bar) => (short ? bar.low <= target : bar.high >= target)),
   };
 }
 
@@ -274,7 +288,7 @@ export type TradeOutcome = {
   target: number | null;
   exitDate: string | null;
   exitPrice: number | null;
-  exitReason: "STOP" | "TARGET" | "WEEK_END" | "NO_ENTRY";
+  exitReason: "STOP" | "TARGET" | "TIME" | "WEEK_END" | "NO_ENTRY";
   returnPct: number | null;
   rMultiple: number | null;
 };
@@ -283,8 +297,12 @@ export type TradeOutcome = {
  * Resolve the realized outcome of one position given its plan and the daily bars
  * spanning its holding window. Pure and deterministic: given the same bars it
  * always returns the same trade, so a recorded result never silently changes.
+ *
+ * `maxHoldingDays` caps the open-ended "hold to stop/target" policy: a position
+ * that hits neither is marked out at the cap so it cannot sit open forever.
  */
-export function tradeOutcome(item: PriorPosition, bars: PriceBar[]): TradeOutcome {
+export function tradeOutcome(item: PriorPosition, bars: PriceBar[], options: { maxHoldingDays?: number | null } = {}): TradeOutcome {
+  const maxHoldingDays = options.maxHoldingDays ?? null;
   const short = isShortSetup(item);
   const stop = stopTrigger(item);
   const target = targetTrigger(item);
@@ -318,6 +336,9 @@ export function tradeOutcome(item: PriorPosition, bars: PriceBar[]): TradeOutcom
     if (stopHit) return settle(bar.date ?? null, stop, "STOP", "CLOSED");
     if (hasTarget && (short ? bar.low <= target : bar.high >= target)) {
       return settle(bar.date ?? null, target, "TARGET", "CLOSED");
+    }
+    if (maxHoldingDays !== null && i - index >= maxHoldingDays) {
+      return settle(bar.date ?? null, bar.close, "TIME", "CLOSED");
     }
   }
   const last = bars[bars.length - 1];

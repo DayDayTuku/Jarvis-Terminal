@@ -73,7 +73,9 @@ async function main(): Promise<void> {
     { label: "hold + 20bn + costs", policy: { holdThroughDrops: true, minTurnoverIdr: 20_000_000_000, costPct: 0.4 } },
     { label: "hold + index>200d + costs", policy: { holdThroughDrops: true, marketSma: 200, costPct: 0.4 } },
     { label: "room targets", policy: { plan: { ...DEFAULT_POLICY, targetMode: "room" } } },
-    { label: "minRR 2.0", policy: { minRiskReward: 2.0 } },
+    { label: "minRR 2.0", policy: { minRiskReward: 2.0, costPct: 0.4 } },
+    { label: "minRR 2.0 + hold", policy: { minRiskReward: 2.0, holdThroughDrops: true, costPct: 0.4 } },
+    { label: "minRR 2.0 + hold + 20bn", policy: { minRiskReward: 2.0, holdThroughDrops: true, minTurnoverIdr: 20_000_000_000, costPct: 0.4 } },
   ];
 
   // The live model now uses the fitted score, so the baseline is the fitted

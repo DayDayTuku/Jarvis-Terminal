@@ -7,7 +7,7 @@ type Trade = {
   status: "CLOSED" | "OPEN" | "NO_ENTRY";
   entryDate: string | null; entryPrice: number | null;
   exitDate: string | null; exitPrice: number | null;
-  exitReason: "STOP" | "TARGET" | "DROPPED" | "OPEN" | "NO_ENTRY";
+  exitReason: "STOP" | "TARGET" | "TIME" | "OPEN" | "NO_ENTRY";
   returnPct: number | null; rMultiple: number | null;
 };
 type Summary = {
@@ -31,7 +31,7 @@ const pct = (value: number | null | undefined, digits = 1) => value === null || 
 const price = (value: number | null | undefined) => value === null || value === undefined ? "—" : new Intl.NumberFormat("id-ID", { maximumFractionDigits: 0 }).format(value);
 const rMultiple = (value: number | null | undefined) => value === null || value === undefined ? "—" : `${value >= 0 ? "+" : ""}${value.toFixed(2)}R`;
 const shortDate = (value: string | null) => value ? new Date(`${value}T00:00:00Z`).toLocaleDateString("en-GB", { day: "2-digit", month: "short", timeZone: "UTC" }).toUpperCase() : "—";
-const reasonTone: Record<Trade["exitReason"], string> = { TARGET: "pos", STOP: "neg", DROPPED: "flat", OPEN: "", NO_ENTRY: "flat" };
+const reasonTone: Record<Trade["exitReason"], string> = { TARGET: "pos", STOP: "neg", TIME: "flat", OPEN: "", NO_ENTRY: "flat" };
 
 function Sparkline({ points }: { points: number[] }) {
   if (points.length < 2) return <div className="track-loading" style={{ minHeight: 90 }}>NOT ENOUGH CLOSED TRADES YET</div>;

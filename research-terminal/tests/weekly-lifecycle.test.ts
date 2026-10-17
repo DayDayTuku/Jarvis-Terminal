@@ -158,6 +158,47 @@ test("evaluatePosition closes on a target when the name drops out", () => {
   assert.equal(out.targetReached, true);
 });
 
+test("evaluatePosition holds a filled position that drops off the list", () => {
+  const bars = [bar("2026-10-12", 990, 1005, 975, 1000)];
+  const out = evaluatePosition(long, bars);
+  assert.equal(out.action, "HOLD");
+  assert.equal(out.entryFilled, true);
+  assert.equal(out.invalidated, false);
+  assert.equal(out.targetWeight, 12.5);
+});
+
+test("tradeOutcome marks a hold out at the session cap", () => {
+  const bars = [bar("2026-10-12", 990, 1005, 975, 1000), bar("2026-10-13", 1000, 1030, 960, 1025)];
+  const out = tradeOutcome(long, bars, { maxHoldingDays: 1 });
+  assert.equal(out.status, "CLOSED");
+  assert.equal(out.exitReason, "TIME");
+  assert.equal(out.exitPrice, 1025);
+});
+
+test("evaluatePosition carries a filled position whose entry is outside the window", () => {
+  // No bar touches the entry range, so entryTouch finds nothing. Without the
+  // carried state this would wrongly read the live position as EXPIRED.
+  const bars = [bar("2026-10-14", 1010, 1030, 1005, 1020)];
+  const out = evaluatePosition(long, bars, undefined, { entryFilled: true, targetReached: false });
+  assert.equal(out.action, "HOLD");
+  assert.equal(out.entryFilled, true);
+  assert.equal(out.targetWeight, 12.5);
+});
+
+test("evaluatePosition stops a carried position when the stop is breached", () => {
+  const bars = [bar("2026-10-14", 1000, 1010, 900, 910)];
+  const out = evaluatePosition(long, bars, undefined, { entryFilled: true, targetReached: false });
+  assert.equal(out.action, "EXIT");
+  assert.equal(out.invalidated, true);
+});
+
+test("positionTriggers tracks a carried position over the whole window", () => {
+  const bars = [bar("2026-10-14", 1000, 1010, 900, 910)];
+  const triggers = positionTriggers(long, bars, { entered: true });
+  assert.equal(triggers.entered, true);
+  assert.equal(triggers.stopped, true);
+});
+
 test("evaluatePosition expires an unfilled name that drops out", () => {
   const bars = [bar("2026-10-12", 1010, 1030, 1005, 1020)];
   const out = evaluatePosition(long, bars);

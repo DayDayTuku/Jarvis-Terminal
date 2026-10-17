@@ -16,9 +16,12 @@ type Trade = {
   status: "CLOSED" | "OPEN" | "NO_ENTRY";
   entryDate: string | null; entryPrice: number | null;
   exitDate: string | null; exitPrice: number | null;
-  exitReason: "STOP" | "TARGET" | "DROPPED" | "OPEN" | "NO_ENTRY";
+  exitReason: "STOP" | "TARGET" | "TIME" | "OPEN" | "NO_ENTRY";
   returnPct: number | null; rMultiple: number | null;
 };
+
+/** Sessions a held position may stay open before it is marked out at the close. */
+const HOLD_CAP_SESSIONS = 60;
 
 const BENCHMARK_SYMBOL = "^JKSE";
 
@@ -111,13 +114,14 @@ export async function GET() {
   const trades: Trade[] = [];
   for (const streak of streaks) {
     const openWeek = runs[streak.openIndex].week_of;
-    const closeWeek = streak.closeIndex !== null ? runs[streak.closeIndex].week_of : null;
-    const bars = (barsByTicker.get(streak.ticker) ?? []).filter((bar) => bar.date && bar.date > openWeek && (closeWeek === null || bar.date < closeWeek));
-    const outcome = tradeOutcome(streak.plan as PriorPosition, bars);
-    let status = outcome.status;
+    // Hold to the stop or the first target: leaving the weekly list no longer
+    // closes a position early, it just stops adding to it. The plan stays live
+    // until a level is reached or the holding cap is hit.
+    const bars = (barsByTicker.get(streak.ticker) ?? []).filter((bar) => bar.date && bar.date > openWeek);
+    const outcome = tradeOutcome(streak.plan as PriorPosition, bars, { maxHoldingDays: HOLD_CAP_SESSIONS });
+    const status = outcome.status;
     const exitReason: Trade["exitReason"] =
-      outcome.exitReason === "WEEK_END" ? (closeWeek === null ? "OPEN" : "DROPPED") : outcome.exitReason;
-    if (status === "OPEN" && closeWeek !== null) status = "CLOSED";
+      outcome.exitReason === "WEEK_END" ? "OPEN" : outcome.exitReason;
     trades.push({
       weekOf: openWeek,
       ticker: streak.ticker,
@@ -189,5 +193,5 @@ export async function GET() {
       return { weekOf, trades: list, closed: closed.length, winRate: closed.length ? (closed.filter((trade) => (trade.returnPct ?? 0) > 0).length / closed.length) * 100 : null };
     });
 
-  return NextResponse.json({ trades, weeks, summary, benchmark, equity: curve, methodology: "entry on the published range · exit at the stop, the first target, or removal from the picks" });
+  return NextResponse.json({ trades, weeks, summary, benchmark, equity: curve, methodology: "entry on the published range · hold to the stop, the first target, or a 60-session cap" });
 }

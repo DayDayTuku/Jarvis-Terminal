@@ -2,11 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "../../../utils/supabase/server";
 import {
   deriveStatus,
-  evaluatePosition,
   isShortSetup,
   type LifecycleActionName,
   type PriceBar,
 } from "@/lib/weekly-lifecycle";
+import { buildLifecycle, carriedPositions, recentRunsBefore } from "@/lib/weekly-positions";
 
 function isAdmin(user: { app_metadata?: Record<string, unknown> } | null) {
   return user?.app_metadata?.role === "admin";
@@ -37,7 +37,7 @@ type EmailCandidate = {
   target_one?: number; position_weight: number;
 };
 type LifecycleAction = {
-  run_id?: string; prior_run_id?: string; ticker: string;
+  run_id?: string; prior_run_id?: string|null; ticker: string;
   action: LifecycleActionName;
   previous_score: number|null; current_score: number|null; target_weight: number;
   theoretical_fill: number|null; entry_filled: boolean; target_reached: boolean;
@@ -53,22 +53,6 @@ async function getBars(ticker:string, since:string):Promise<PriceBar[]> {
     if(!quote) return [];
     return (quote.open??[]).map((open:number|null,index:number)=>({open:Number(open),high:Number(quote.high?.[index]),low:Number(quote.low?.[index]),close:Number(quote.close?.[index])})).filter((bar:PriceBar)=>Object.values(bar).every(Number.isFinite));
   } catch { return []; }
-}
-
-async function buildLifecycle(runId:string, priorRun:any, priorCandidates:any[], currentCandidates:EmailCandidate[]):Promise<LifecycleAction[]> {
-  const currentByTicker=new Map(currentCandidates.map((item)=>[item.ticker,item]));
-  const actions:LifecycleAction[]=[];
-  if(priorRun) {
-    for(const prior of priorCandidates) {
-      const bars=await getBars(prior.ticker,priorRun.week_of);
-      const current=currentByTicker.get(prior.ticker);
-      const outcome=evaluatePosition(prior, bars, current);
-      actions.push({run_id:runId,prior_run_id:priorRun.id,ticker:prior.ticker,action:outcome.action,previous_score:outcome.previousScore,current_score:current?Number(current.score):null,target_weight:outcome.targetWeight,theoretical_fill:outcome.theoreticalFill,entry_filled:outcome.entryFilled,target_reached:outcome.targetReached,invalidated:outcome.invalidated,reason:outcome.reason});
-    }
-  }
-  const priorTickers=new Set(priorCandidates.map((item)=>item.ticker));
-  for(const item of currentCandidates) if(!priorTickers.has(item.ticker)) actions.push({run_id:runId,prior_run_id:priorRun?.id,ticker:item.ticker,action:"BUY",previous_score:null,current_score:Number(item.score),target_weight:Number(item.position_weight)||12.5,theoretical_fill:null,entry_filled:false,target_reached:false,invalidated:false,reason:isShortSetup(item)?"Optional V5 short qualifier. Confirm official BEI eligibility and borrow availability before using the entry range.":priorRun?"New V5 qualifier replacing capacity released from the prior picks; use the stated entry range.":"Initial V5 weekly picks; use the stated entry range and do not chase."});
-  return actions;
 }
 
 async function sendWeeklyDigest(weekOf:string,marketRegime:string,candidates:EmailCandidate[],actions:LifecycleAction[]) {
@@ -106,7 +90,9 @@ export async function POST(request:NextRequest){
   if(runError||!run)return NextResponse.json({error:"Unable to lock weekly run."},{status:500});
   let candidates:EmailCandidate[]=[];
   if(rows.length){candidates=rows.map((item:any,index:number)=>({run_id:run.id,rank:index+1,ticker:String(item.ticker).slice(0,12),setup:String(item.setup).slice(0,30),score:Number(item.score),signal_close:Number(item.close),planned_entry_low:Number(item.entryLow),planned_entry_high:Number(item.entryHigh),invalidation:Number(item.invalidation),hard_stop:isShortSetup(item)?Number(item.close)*1.06:Number(item.close)*.94,target_one:Number(item.target),risk_reward:Number(item.riskReward),position_size_idr:Math.min(1250000,75000/Math.max(.01,Math.abs(Number(item.close)-Number(item.invalidation))/Number(item.close))),position_weight:Number.isFinite(Number(item.positionWeight))?Math.max(0,Math.min(100,Number(item.positionWeight))):12.5,reasons:Array.isArray(item.reasons)?item.reasons.slice(0,4):[],caution:String(item.caution??"").slice(0,500)})); const{error}=await supabase.from("jarvis_weekly_candidates").insert(candidates); if(error)return NextResponse.json({error:"Run locked, but candidates could not be saved."},{status:500});}
-  const actions=await buildLifecycle(run.id,priorRun,priorCandidates??[],candidates);
+  const carryRuns=await recentRunsBefore(supabase,weekOf);
+  const carried=await carriedPositions(supabase,carryRuns,new Set([...(priorCandidates??[]).map((item:any)=>item.ticker),...candidates.map((item)=>item.ticker)]));
+  const actions=await buildLifecycle({runId:run.id,priorRun,prior:priorCandidates??[],current:candidates,carried,getBars});
   if(actions.length){const{error}=await supabase.from("jarvis_weekly_actions").insert(actions); if(error)return NextResponse.json({error:"Run locked, but portfolio actions could not be saved."},{status:500});}
   const email=await sendWeeklyDigest(weekOf,marketRegime,candidates,actions);
   return NextResponse.json({ok:true,runId:run.id,actions,email},{status:201});

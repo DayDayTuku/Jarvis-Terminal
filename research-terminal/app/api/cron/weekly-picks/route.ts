@@ -2,19 +2,19 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import {
   alignPrice,
-  evaluatePosition,
   isShortSetup,
   positionTriggers,
   type LifecycleActionName,
   type PriceBar,
 } from "@/lib/weekly-lifecycle";
+import { buildLifecycle, carriedPositions, recentRunsBefore } from "@/lib/weekly-positions";
 import { pickLongs as pick, pickShort, positionWeight as weight, regimeFor, shortWeight } from "@/lib/setup-model";
 
 export const maxDuration = 60;
 
 type Setup = { ticker:string; setup:string; score:number; close:number; sector?:string; entryLow:number; entryHigh:number; invalidation:number; target:number; riskReward:number; reasons?:string[]; caution?:string };
 type Candidate = { run_id?:string; ticker:string; setup:string; score:number; signal_close?:number; planned_entry_low:number; planned_entry_high:number; invalidation:number; hard_stop?:number; target_one?:number; position_weight:number };
-type Action = { run_id?:string; prior_run_id?:string; ticker:string; action:LifecycleActionName; previous_score:number|null; current_score:number|null; target_weight:number; theoretical_fill:number|null; entry_filled:boolean; target_reached:boolean; invalidated:boolean; reason:string };
+type Action = { run_id?:string; prior_run_id?:string|null; ticker:string; action:LifecycleActionName; previous_score:number|null; current_score:number|null; target_weight:number; theoretical_fill:number|null; entry_filled:boolean; target_reached:boolean; invalidated:boolean; reason:string };
 type Bar = PriceBar;
 
 function wibWeekday() { return new Intl.DateTimeFormat("en-US", { timeZone:"Asia/Jakarta", weekday:"short" }).format(new Date()); }
@@ -44,19 +44,6 @@ async function getBars(ticker:string, since:string):Promise<Bar[]> {
     if(!quote) return [];
     return (quote.open ?? []).map((open:number|null,index:number) => ({ open:Number(open), high:Number(quote.high?.[index]), low:Number(quote.low?.[index]), close:Number(quote.close?.[index]) })).filter((bar:Bar) => Object.values(bar).every(Number.isFinite));
   } catch { return []; }
-}
-async function buildLifecycle(runId:string, priorRun:any, prior:any[], current:Candidate[]):Promise<Action[]> {
-  const currentByTicker = new Map(current.map((item) => [item.ticker,item]));
-  const actions:Action[] = [];
-  if(priorRun) for(const old of prior) {
-    const bars = await getBars(old.ticker,priorRun.week_of);
-    const next = currentByTicker.get(old.ticker);
-    const outcome = evaluatePosition(old, bars, next);
-    actions.push({ run_id:runId, prior_run_id:priorRun.id, ticker:old.ticker, action:outcome.action, previous_score:outcome.previousScore, current_score:next?Number(next.score):null, target_weight:outcome.targetWeight, theoretical_fill:outcome.theoreticalFill, entry_filled:outcome.entryFilled, target_reached:outcome.targetReached, invalidated:outcome.invalidated, reason:outcome.reason });
-  }
-  const oldTickers = new Set(prior.map((item) => item.ticker));
-  for(const item of current) if(!oldTickers.has(item.ticker)) actions.push({ run_id:runId, prior_run_id:priorRun?.id, ticker:item.ticker, action:"BUY", previous_score:null, current_score:Number(item.score), target_weight:Number(item.position_weight)||12.5, theoretical_fill:null, entry_filled:false, target_reached:false, invalidated:false, reason:isShortSetup(item)?"Optional V5 short qualifier. Confirm official BEI eligibility and borrow availability before entry.":priorRun?"New V5 qualifier; use the stated entry range.":"Initial V5 Weekly Pick; do not chase." });
-  return actions;
 }
 async function weeklyRecipients(supabase:any) {
   const configured=(process.env.JARVIS_EMAIL_TO || "iggerzefanya@gmail.com").split(",").map((email)=>email.trim().toLowerCase()).filter(Boolean);
@@ -149,14 +136,24 @@ export async function GET(request:NextRequest) {
       supabase.from("jarvis_weekly_actions").select("ticker,invalidated,target_reached,reason").eq("run_id",existing.id),
     ]);
     const actionState=new Map((currentActions || []).map((item:any)=>[item.ticker,item]));
+    const candidateTickers=new Set((watch||[]).map((item:any)=>item.ticker));
+    const carryRuns=[{id:existing.id,week_of:existing.week_of},...await recentRunsBefore(supabase,existing.week_of)];
+    const carried=await carriedPositions(supabase,carryRuns,candidateTickers);
+    // Monitor this week's candidates AND every position still held off the list,
+    // so a carried trade's stop is caught intraday exactly like a fresh pick's.
+    const monitor:Array<{plan:any;state:{entered?:boolean;targetReached?:boolean}}>=[
+      ...(watch||[]).map((item:any)=>({plan:item,state:{}})),
+      ...carried.map((item)=>({plan:item.plan,state:{entered:item.entryFilled,targetReached:item.targetReached}})),
+    ];
     const alerts:MarketAlert[]=[];
-    for(const item of watch || []) {
-      const bars=await getBars(item.ticker,existing.week_of);
+    for(const {plan,state:carryState} of monitor) {
+      const ticker=plan.ticker;
+      const bars=await getBars(ticker,existing.week_of);
       // Same window and same level maths as the Friday rollover (lib/weekly-lifecycle),
       // so the monitor and the rollover can never disagree on the same trade.
-      const triggers=positionTriggers(item,bars);
+      const triggers=positionTriggers(plan,bars,carryState);
       if(!triggers.entered) continue;
-      const state:any=actionState.get(item.ticker) || {};
+      const state:any=actionState.get(ticker) || {};
       const stopAlerted=String(state.reason || "").includes("[stop-alert:sent]");
       const targetAlerted=String(state.reason || "").includes("[target-alert:sent]");
       const sessionLow=triggers.sessionLow ?? 0;
@@ -166,16 +163,16 @@ export async function GET(request:NextRequest) {
       // relabel the same trade as a take-profit. A "cut" must stay "cut".
       if(state.invalidated || triggers.stopped) {
         if(triggers.stopped && !stopAlerted) {
-          if(!state.invalidated) await supabase.from("jarvis_weekly_actions").update({action:"EXIT",target_weight:0,entry_filled:true,invalidated:true,reason:"Price traded through the active stop level."}).eq("run_id",existing.id).eq("ticker",item.ticker);
-          alerts.push({ticker:item.ticker,action:"STOP / EXIT",sessionLow,sessionHigh,trigger:triggers.stopTrigger});
+          if(!state.invalidated) await supabase.from("jarvis_weekly_actions").update({action:"EXIT",target_weight:0,entry_filled:true,invalidated:true,reason:"Price traded through the active stop level."}).eq("run_id",existing.id).eq("ticker",ticker);
+          alerts.push({ticker,action:"STOP / EXIT",sessionLow,sessionHigh,trigger:triggers.stopTrigger});
         }
         continue;
       }
       // First target is a one-shot partial take-profit and is only evaluated
       // while the position is still open (skipped entirely after a stop-out above).
       if(triggers.targetHit && !state.target_reached && !targetAlerted) {
-        await supabase.from("jarvis_weekly_actions").update({action:"REDUCE",target_weight:Number(item.position_weight || 0)/2,entry_filled:true,target_reached:true,invalidated:false,reason:"First target reached; take profit and reduce exposure."}).eq("run_id",existing.id).eq("ticker",item.ticker);
-        alerts.push({ticker:item.ticker,action:"TAKE PROFIT",sessionLow,sessionHigh,trigger:triggers.targetTrigger});
+        await supabase.from("jarvis_weekly_actions").update({action:"REDUCE",target_weight:Number(plan.position_weight || 0)/2,entry_filled:true,target_reached:true,invalidated:false,reason:"First target reached; take profit and reduce exposure."}).eq("run_id",existing.id).eq("ticker",ticker);
+        alerts.push({ticker,action:"TAKE PROFIT",sessionLow,sessionHigh,trigger:triggers.targetTrigger});
       }
     }
     let email:any={sent:false,reason:"no_new_actions"};
@@ -223,7 +220,9 @@ export async function GET(request:NextRequest) {
   if(runError||!run) return NextResponse.json({error:"Unable to create weekly run."},{status:500});
   const candidates=selected.map((item,index)=>({run_id:run.id,rank:index+1,ticker:item.ticker.slice(0,12),setup:item.setup.slice(0,30),score:Number(item.score),signal_close:alignPrice(Number(item.close),"nearest"),planned_entry_low:alignPrice(Number(item.entryLow),"up"),planned_entry_high:alignPrice(Number(item.entryHigh),"down"),invalidation:alignPrice(Number(item.invalidation),"up"),hard_stop:alignPrice(Number(item.close)*(isShortSetup(item)?1.06:.94),"up"),target_one:alignPrice(Number(item.target),isShortSetup(item)?"up":"down"),risk_reward:Number(item.riskReward),position_size_idr:Math.min(1250000,75000/Math.max(.01,Math.abs(Number(item.close)-Number(item.invalidation))/Number(item.close))),position_weight:isShortSetup(item)?shortWeight(item,longs,regime):weight(item,regime),reasons:Array.isArray(item.reasons)?item.reasons.slice(0,4):[],caution:String(item.caution||"").slice(0,500)}));
   if(candidates.length) { const {error}=await supabase.from("jarvis_weekly_candidates").insert(candidates); if(error) return NextResponse.json({error:"Run created, but picks could not be saved."},{status:500}); }
-  const actions=await buildLifecycle(run.id,priorRun,priorCandidates||[],candidates);
+  const carryRuns=await recentRunsBefore(supabase,weekOf);
+  const carried=await carriedPositions(supabase,carryRuns,new Set([...(priorCandidates||[]).map((item:any)=>item.ticker),...candidates.map((item)=>item.ticker)]));
+  const actions=await buildLifecycle({runId:run.id,priorRun,prior:priorCandidates||[],current:candidates,carried,getBars});
   if(actions.length) { const {error}=await supabase.from("jarvis_weekly_actions").insert(actions); if(error) return NextResponse.json({error:"Run created, but actions could not be saved."},{status:500}); }
   let email;
   try { email=await sendDigest(weekOf,regime,candidates,actions,supabase,recipients); }
