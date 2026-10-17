@@ -11,7 +11,7 @@
 // ways. Keep all of the level maths and the action priority in one place so a
 // "cut" can never be relabelled as a "hit" again.
 
-export type PriceBar = { open: number; high: number; low: number; close: number };
+export type PriceBar = { date?: string; open: number; high: number; low: number; close: number };
 
 export type LifecycleActionName =
   | "BUY"
@@ -253,5 +253,97 @@ export function deriveStatus(outcome: {
   if (outcome.action === "EXIT" || outcome.action === "REPLACE") return "CLOSED";
   if (!outcome.entryFilled) return "AWAITING_ENTRY";
   return "OPEN";
+}
+
+/**
+ * A single realized (or still-open) trade for the track record.
+ *
+ * The plan is taken from the week a name was first selected; the trade runs
+ * until the stop, the first target, or the week the name leaves the picks.
+ * That keeps the record auditable: entry, exit, return and R-multiple all come
+ * from the same deterministic maths used everywhere else.
+ */
+export type TradeOutcome = {
+  ticker: string;
+  direction: "LONG" | "SHORT";
+  status: "NO_ENTRY" | "OPEN" | "CLOSED";
+  entered: boolean;
+  entryDate: string | null;
+  entryPrice: number | null;
+  stop: number;
+  target: number | null;
+  exitDate: string | null;
+  exitPrice: number | null;
+  exitReason: "STOP" | "TARGET" | "WEEK_END" | "NO_ENTRY";
+  returnPct: number | null;
+  rMultiple: number | null;
+};
+
+/**
+ * Resolve the realized outcome of one position given its plan and the daily bars
+ * spanning its holding window. Pure and deterministic: given the same bars it
+ * always returns the same trade, so a recorded result never silently changes.
+ */
+export function tradeOutcome(item: PriorPosition, bars: PriceBar[]): TradeOutcome {
+  const short = isShortSetup(item);
+  const stop = stopTrigger(item);
+  const target = targetTrigger(item);
+  const hasTarget = Number.isFinite(target);
+  const base = {
+    ticker: item.ticker,
+    direction: (short ? "SHORT" : "LONG") as "LONG" | "SHORT",
+    stop,
+    target: hasTarget ? target : null,
+  };
+  const { index, fill } = entryTouch(bars, item);
+  if (index < 0 || fill === null) {
+    return { ...base, status: "NO_ENTRY", entered: false, entryDate: null, entryPrice: null, exitDate: null, exitPrice: null, exitReason: "NO_ENTRY", returnPct: null, rMultiple: null };
+  }
+  const entry = fill;
+  const entryDate = bars[index].date ?? null;
+  const settle = (exitDate: string | null, exitPrice: number, exitReason: TradeOutcome["exitReason"], status: TradeOutcome["status"]): TradeOutcome => {
+    const returnPct = short ? ((entry - exitPrice) / entry) * 100 : ((exitPrice - entry) / entry) * 100;
+    const risk = short ? stop - entry : entry - stop;
+    const reward = short ? entry - exitPrice : exitPrice - entry;
+    return {
+      ...base, status, entered: true, entryDate, entryPrice: entry,
+      exitDate, exitPrice, exitReason, returnPct,
+      rMultiple: Number.isFinite(risk) && risk > 0 ? reward / risk : null,
+    };
+  };
+  for (let i = index; i < bars.length; i++) {
+    const bar = bars[i];
+    const stopHit = short ? bar.high >= stop : bar.low <= stop;
+    // A bar that touches both is booked as a stop so the record never flatters itself.
+    if (stopHit) return settle(bar.date ?? null, stop, "STOP", "CLOSED");
+    if (hasTarget && (short ? bar.low <= target : bar.high >= target)) {
+      return settle(bar.date ?? null, target, "TARGET", "CLOSED");
+    }
+  }
+  const last = bars[bars.length - 1];
+  return settle(last?.date ?? null, last?.close ?? entry, "WEEK_END", "OPEN");
+}
+
+/**
+ * Collapse the weeks a ticker was selected into contiguous holding streaks.
+ *
+ * A name that is picked, then picked again the next week, is one continuous
+ * position; a week where it is absent closes the trade. `closeIndex` is the run
+ * that ended the streak (exclusive), or null when the name is still selected in
+ * the latest run, i.e. the trade is still open.
+ */
+export function collapseStreaks(appearances: number[], runCount: number): Array<{ openIndex: number; closeIndex: number | null }> {
+  const sorted = [...appearances].sort((a, b) => a - b);
+  const streaks: Array<{ openIndex: number; closeIndex: number | null }> = [];
+  if (!sorted.length) return streaks;
+  let openIndex = sorted[0];
+  let last = sorted[0];
+  for (let i = 1; i <= sorted.length; i++) {
+    const current = sorted[i];
+    if (current !== undefined && current === last + 1) { last = current; continue; }
+    streaks.push({ openIndex, closeIndex: last + 1 < runCount ? last + 1 : null });
+    if (current !== undefined) { openIndex = current; last = current; }
+  }
+  return streaks;
 }
 
