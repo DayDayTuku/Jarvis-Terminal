@@ -264,7 +264,6 @@ export function simulateTrade(input: {
 
   let currentStop = stop;
   let scaledOut = false;
-  const scaledReturn = () => 0.5 * pctReturn(direction, entry, target) + 0.5 * pctReturn(direction, entry, currentStop);
 
   for (let i = entryIndex; i < bars.length; i++) {
     const bar = bars[i];
@@ -272,12 +271,20 @@ export function simulateTrade(input: {
     const targetHit = hasTarget && (short ? bar.low <= target : bar.high >= target);
 
     if (scaleOut) {
-      if (!scaledOut && targetHit) {
-        scaledOut = true;
-        currentStop = entry; // runner stop moves to break-even
-        continue;
+      if (!scaledOut) {
+        // The first target has not been reached, so this is a plain loss: bank
+        // nothing at the target, or the accounting would credit a move that
+        // never happened.
+        if (stopHit) return finish(bar.date ?? null, currentStop, "STOP", "CLOSED", pctReturn(direction, entry, currentStop));
+        if (targetHit) {
+          scaledOut = true;
+          currentStop = entry; // the runner's stop moves to break-even
+          continue;
+        }
+      } else if (stopHit) {
+        // Half was banked at the target; the runner exits at break-even.
+        return finish(bar.date ?? null, currentStop, "SCALE", "CLOSED", 0.5 * pctReturn(direction, entry, target) + 0.5 * pctReturn(direction, entry, currentStop));
       }
-      if (stopHit) return finish(bar.date ?? null, currentStop, "SCALE", "CLOSED", scaledReturn());
     } else {
       if (stopHit) return finish(bar.date ?? null, currentStop, "STOP", "CLOSED", pctReturn(direction, entry, currentStop));
       if (targetHit) return finish(bar.date ?? null, target, "TARGET", "CLOSED", pctReturn(direction, entry, target));

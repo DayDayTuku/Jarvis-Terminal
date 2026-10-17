@@ -61,6 +61,31 @@ test("scale-out banks half at the target and holds the rest at break-even", () =
   assert.ok((scaled.returnPct as number) < (plain.returnPct as number));
 });
 
+test("scale-out books a plain loss when the stop is hit before the target", () => {
+  const bars = [
+    bar("2026-01-05", 990, 1005, 985, 1000), // entry at 990
+    bar("2026-01-06", 995, 1000, 930, 940), // straight to the stop, target never touched
+  ];
+  const scaled = simulateTrade({ item, bars, direction: "LONG", scaleOut: true, maxHoldingDays: null });
+  const plain = simulateTrade({ item, bars, direction: "LONG", scaleOut: false, maxHoldingDays: null });
+  // If the target was never reached, scaling out cannot have banked it.
+  assert.equal(scaled.exitReason, "STOP");
+  assert.equal(round(scaled.returnPct, 4), round(plain.returnPct, 4));
+  assert.ok((scaled.returnPct as number) < 0, "a stop before the target is a loss");
+  assert.equal(round(scaled.rMultiple, 4), round(plain.rMultiple, 4));
+});
+
+test("scale-out does not invent a target when none is set", () => {
+  const noTarget: PriorPosition = { ...item, target_one: Number.POSITIVE_INFINITY as unknown as number };
+  const bars = [
+    bar("2026-01-05", 990, 1005, 985, 1000),
+    bar("2026-01-06", 995, 1000, 930, 940),
+  ];
+  const scaled = simulateTrade({ item: noTarget, bars, direction: "LONG", scaleOut: true, maxHoldingDays: null });
+  assert.equal(scaled.exitReason, "STOP");
+  assert.ok(Number.isFinite(scaled.returnPct as number));
+});
+
 test("a time stop closes a drifting position", () => {
   const bars = [
     bar("2026-01-05", 990, 1005, 985, 1000),
