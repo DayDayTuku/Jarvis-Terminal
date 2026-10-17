@@ -73,9 +73,10 @@ async function main(): Promise<void> {
     { label: "hold + 20bn + costs", policy: { holdThroughDrops: true, minTurnoverIdr: 20_000_000_000, costPct: 0.4 } },
     { label: "hold + index>200d + costs", policy: { holdThroughDrops: true, marketSma: 200, costPct: 0.4 } },
     { label: "room targets", policy: { plan: { ...DEFAULT_POLICY, targetMode: "room" } } },
-    { label: "minRR 2.0", policy: { minRiskReward: 2.0, costPct: 0.4 } },
-    { label: "minRR 2.0 + hold", policy: { minRiskReward: 2.0, holdThroughDrops: true, costPct: 0.4 } },
-    { label: "minRR 2.0 + hold + 20bn", policy: { minRiskReward: 2.0, holdThroughDrops: true, minTurnoverIdr: 20_000_000_000, costPct: 0.4 } },
+    // minRiskReward >= 2 is not a quality filter: in "rr" mode riskReward is a
+    // constant (1.7 for reversals, 2.0 otherwise), so it is exactly equivalent to
+    // excluding the reversal setup. Kept here so the equivalence stays visible.
+    { label: "no reversals + hold + costs", policy: { excludeSetups: ["reversal"], holdThroughDrops: true, costPct: 0.4 } },
   ];
 
   // The live model now uses the fitted score, so the baseline is the fitted
@@ -103,6 +104,21 @@ async function main(): Promise<void> {
   for (const entry of baseline.byScore) {
     const s = entry.stats;
     console.log(`  ${entry.bucket.padEnd(8)} n=${String(s.trades).padStart(3)}  win=${money(s.winRate, 0).padStart(3)}%  avg=${signed(s.avgReturn).padStart(8)}  avgR=${money(s.avgR).padStart(6)}`);
+  }
+
+  console.log("\nReversal trades by score bucket:");
+  const revBuckets = new Map<string, any[]>();
+  for (const trade of baseline.trades as any[]) {
+    if (trade.setup !== "reversal") continue;
+    const bucket = trade.score >= 90 ? "90+" : trade.score >= 85 ? "85-89" : trade.score >= 80 ? "80-84" : "<80";
+    revBuckets.set(bucket, [...(revBuckets.get(bucket) ?? []), trade]);
+  }
+  for (const bucket of ["90+", "85-89", "80-84", "<80"]) {
+    const list = revBuckets.get(bucket);
+    if (!list?.length) continue;
+    const wins = list.filter((t) => (t.returnPct ?? 0) > 0).length;
+    const avg = list.reduce((sum, t) => sum + (t.returnPct ?? 0), 0) / list.length;
+    console.log(`  ${bucket.padEnd(8)} n=${String(list.length).padStart(3)}  win=${money((wins / list.length) * 100, 0).padStart(3)}%  avg=${signed(avg).padStart(8)}`);
   }
 
   const fitted = runs.find((run) => run.label === "legacy score")?.result;
