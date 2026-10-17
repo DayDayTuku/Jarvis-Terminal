@@ -62,6 +62,8 @@ export type BacktestPolicy = {
   costPct?: number;
   /** Only open longs while the index closes above its N-day average (0 = off). */
   marketSma?: number;
+  /** Minimum average daily turnover in rupiah (overrides the shipped floor). */
+  minTurnoverIdr?: number;
 };
 
 export const DEFAULT_BACKTEST_POLICY: BacktestPolicy = {
@@ -427,7 +429,7 @@ export function collectSamples(input: {
       if (index < 20) continue;
       features.push(computeFeatures(ticker, bars, index, sectors.get(ticker)));
     }
-    const setups = classifyAll(features, { shortEligible, policy: policy.plan }).filter((setup) => setup.riskReward >= policy.minRiskReward);
+    const setups = classifyAll(features, { shortEligible, policy: policy.plan, minTurnoverIdr: policy.minTurnoverIdr }).filter((setup) => setup.riskReward >= policy.minRiskReward);
     for (const setup of setups) {
       const bars = (input.barsByTicker.get(setup.ticker) ?? []) as PriceBar[];
       const windowBars = bars.filter((bar) => bar.date && bar.date > scanDate);
@@ -470,7 +472,7 @@ export function runBacktest(input: BacktestInput): BacktestResult {
       if (index < 20) continue;
       features.push(computeFeatures(ticker, bars, index, sectors.get(ticker)));
     }
-    const classified = classifyAll(features, { shortEligible, policy: policy.plan }).filter((setup) => setup.riskReward >= policy.minRiskReward);
+    const classified = classifyAll(features, { shortEligible, policy: policy.plan, minTurnoverIdr: policy.minTurnoverIdr }).filter((setup) => setup.riskReward >= policy.minRiskReward);
     const scored = input.scoreWith
       ? classified.map((setup) => ({ ...setup, score: input.scoreWith!(setup) })).sort((a, b) => b.score - a.score)
       : classified;

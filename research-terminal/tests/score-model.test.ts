@@ -113,7 +113,7 @@ test("signalsOf reads the trained fields off a classified setup", () => {
     close: 1000,
     change: 0.5,
     volume: 500_000,
-    averageVolume: 300_000,
+    averageVolume: 10_000_000,
     relativeVolume: 1.5,
     rsi: 60,
     ema20: 980,

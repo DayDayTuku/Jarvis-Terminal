@@ -64,14 +64,14 @@ async function main(): Promise<void> {
 
   const variants: Array<{ label: string; policy: Partial<BacktestPolicy>; scoreWith?: (setup: Setup) => number }> = [
     { label: "baseline (live)", policy: {} },
+    { label: "liquid 10bn", policy: { minTurnoverIdr: 10_000_000_000 } },
+    { label: "liquid 20bn", policy: { minTurnoverIdr: 20_000_000_000 } },
     { label: "costs 0.4%", policy: { costPct: 0.4 } },
     { label: "hold to stop/target", policy: { holdThroughDrops: true } },
     { label: "hold + costs", policy: { holdThroughDrops: true, costPct: 0.4 } },
-    { label: "index>200d", policy: { marketSma: 200 } },
-    { label: "index>200d + costs", policy: { marketSma: 200, costPct: 0.4 } },
+    { label: "hold + 10bn + costs", policy: { holdThroughDrops: true, minTurnoverIdr: 10_000_000_000, costPct: 0.4 } },
+    { label: "hold + 20bn + costs", policy: { holdThroughDrops: true, minTurnoverIdr: 20_000_000_000, costPct: 0.4 } },
     { label: "hold + index>200d + costs", policy: { holdThroughDrops: true, marketSma: 200, costPct: 0.4 } },
-    { label: "hold + index>100d + costs", policy: { holdThroughDrops: true, marketSma: 100, costPct: 0.4 } },
-    { label: "target 1.5R", policy: { plan: { ...DEFAULT_POLICY, targetR: 1.5 }, minRiskReward: 1.4 } },
     { label: "room targets", policy: { plan: { ...DEFAULT_POLICY, targetMode: "room" } } },
     { label: "minRR 2.0", policy: { minRiskReward: 2.0 } },
   ];

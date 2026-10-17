@@ -77,6 +77,16 @@ export const DEFAULT_POLICY: PlanPolicy = {
   targetR: 2,
 };
 
+/**
+ * Minimum average daily turnover (close × average volume) in rupiah for a name to
+ * be tradeable. Share-count floors are not enough: 250k shares of a 1,000-rupiah
+ * stock is only 0.25bn IDR a day, far too thin to enter and exit without moving
+ * the price. IDR 10bn/day is a conservative institutional floor (roughly USD
+ * 600k of turnover) and lifts both the hit rate and the after-cost edge in the
+ * backtest. `ctx.minTurnoverIdr` overrides it so variants can be tested.
+ */
+export const MIN_TURNOVER_IDR = 10_000_000_000;
+
 export type Setup = {
   ticker: string;
   name: string;
@@ -195,7 +205,7 @@ export function planLevels(args: {
  * Ported verbatim from the screener; the only additions are the `atr` input and
  * the policy-driven plan.
  */
-export function classify(features: SetupFeatures, ctx: { shortEligible: Set<string>; policy?: PlanPolicy }): Setup | null {
+export function classify(features: SetupFeatures, ctx: { shortEligible: Set<string>; policy?: PlanPolicy; minTurnoverIdr?: number }): Setup | null {
   const policy = ctx.policy ?? DEFAULT_POLICY;
   const close = features.close;
   const change = features.change;
@@ -212,8 +222,7 @@ export function classify(features: SetupFeatures, ctx: { shortEligible: Set<stri
   const marketCap = features.marketCap;
 
   if (!close || !volume || close < 50 || volume < 100_000) return null;
-  const liquid = avgVolume === null || avgVolume >= 250_000;
-  if (!liquid) return null;
+  if (close * (avgVolume ?? volume) < (ctx.minTurnoverIdr ?? MIN_TURNOVER_IDR)) return null;
 
   const distance20 = ema20 ? (close / ema20 - 1) * 100 : null;
   const trend = ema20 !== null && ema50 !== null && close >= ema20 && ema20 >= ema50;
@@ -311,7 +320,7 @@ export function classify(features: SetupFeatures, ctx: { shortEligible: Set<stri
 }
 
 /** Classify a whole scan and sort by score, exactly like the screener does. */
-export function classifyAll(features: SetupFeatures[], ctx: { shortEligible: Set<string>; policy?: PlanPolicy }): Setup[] {
+export function classifyAll(features: SetupFeatures[], ctx: { shortEligible: Set<string>; policy?: PlanPolicy; minTurnoverIdr?: number }): Setup[] {
   return features
     .map((row) => classify(row, ctx))
     .filter((row): row is Setup => row !== null)
