@@ -10,7 +10,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
-    "test": "node --test --experimental-strip-types \"tests/**/*.test.ts\""
+    "test": "node --test --experimental-strip-types \"tests/**/*.test.ts\"",
+    "backtest": "node --experimental-strip-types scripts/backtest.ts"
   },
   "dependencies": {
     "leaflet": "^1.9.4",

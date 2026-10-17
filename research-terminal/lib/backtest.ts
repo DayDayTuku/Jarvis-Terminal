@@ -1,0 +1,435 @@
+// Offline backtest for the V5 weekly model.
+//
+// It answers the only question that matters before a rule change ships: *does
+// this variant actually make money, and better than the one that is live?*
+//
+// It reuses the exact classifier and selection rules from lib/setup-model and
+// the exact level maths from lib/weekly-lifecycle, so a green backtest is
+// evidence about the model we run, not about a lookalike.
+//
+// Two honest caveats:
+//   1. Indicators are recomputed from daily bars here, whereas the live scanner
+//      reads TradingView's values. They should agree closely but not exactly.
+//   2. TradingView's "Recommend.All" rating is not available offline, so a
+//      documented proxy is used. Momentum and short setups depend on it.
+// Treat the output as a way to compare *variants*, not as an absolute forecast.
+
+import {
+  alignPrice,
+  collapseStreaks,
+  stopTrigger,
+  targetTrigger,
+  type PriceBar,
+  type PriorPosition,
+} from "./weekly-lifecycle.ts";
+import {
+  classifyAll,
+  DEFAULT_POLICY,
+  pickLongs,
+  pickShort,
+  positionWeight,
+  regimeFor,
+  shortWeight,
+  type PlanPolicy,
+  type Setup,
+  type SetupFeatures,
+  type SetupKey,
+} from "./setup-model.ts";
+
+export type BacktestBar = { date: string; open: number; high: number; low: number; close: number; volume: number };
+
+export type BacktestPolicy = {
+  plan: PlanPolicy;
+  /** Minimum R:R a pick must show. The live rule is 1.7. */
+  minRiskReward: number;
+  /** Sell half at the first target, move the stop to break-even, run the rest. */
+  scaleOut: boolean;
+  /** Close a position after this many sessions if it has not resolved. */
+  maxHoldingDays: number | null;
+};
+
+export const DEFAULT_BACKTEST_POLICY: BacktestPolicy = {
+  plan: DEFAULT_POLICY,
+  minRiskReward: 1.7,
+  scaleOut: false,
+  maxHoldingDays: null,
+};
+
+export type BacktestExitReason = "STOP" | "TARGET" | "SCALE" | "TIME" | "WEEK_END" | "NO_ENTRY";
+
+export type BacktestTrade = {
+  weekOf: string;
+  ticker: string;
+  setup: SetupKey;
+  score: number;
+  weight: number;
+  direction: "LONG" | "SHORT";
+  status: "NO_ENTRY" | "OPEN" | "CLOSED";
+  entryDate: string | null;
+  entryPrice: number | null;
+  exitDate: string | null;
+  exitPrice: number | null;
+  exitReason: "STOP" | "TARGET" | "SCALE" | "TIME" | "DROPPED" | "OPEN" | "NO_ENTRY";
+  returnPct: number | null;
+  rMultiple: number | null;
+};
+
+export type BacktestStats = {
+  trades: number;
+  noEntry: number;
+  open: number;
+  wins: number;
+  losses: number;
+  winRate: number | null;
+  avgReturn: number | null;
+  avgR: number | null;
+  profitFactor: number | null;
+  best: number | null;
+  worst: number | null;
+};
+
+export type BacktestResult = {
+  policy: BacktestPolicy;
+  scanDates: string[];
+  trades: BacktestTrade[];
+  summary: BacktestStats;
+  bySetup: Array<{ setup: string; stats: BacktestStats }>;
+  byScore: Array<{ bucket: string; stats: BacktestStats }>;
+};
+
+const mean = (values: number[]): number => (values.length ? values.reduce((a, b) => a + b, 0) / values.length : 0);
+const clampUnit = (value: number): number => Math.max(-1, Math.min(1, value));
+
+// ---------------------------------------------------------------------------
+// Indicators (computed locally; the "recommendation" is an explicit proxy)
+// ---------------------------------------------------------------------------
+
+function sma(values: number[], index: number, length: number): number | null {
+  if (index + 1 < length) return null;
+  return mean(values.slice(index + 1 - length, index + 1));
+}
+
+function ema(values: number[], index: number, length: number): number | null {
+  if (index + 1 < length) return null;
+  let current = mean(values.slice(0, length));
+  const k = 2 / (length + 1);
+  for (let i = length; i <= index; i++) current = values[i] * k + current * (1 - k);
+  return current;
+}
+
+/** Wilder's RSI, computed from the start of the series up to `index`. */
+function rsi(bars: BacktestBar[], index: number, length = 14): number | null {
+  if (index < length) return null;
+  let avgGain = 0;
+  let avgLoss = 0;
+  for (let i = 1; i <= index; i++) {
+    const change = bars[i].close - bars[i - 1].close;
+    const up = change > 0 ? change : 0;
+    const down = change < 0 ? -change : 0;
+    if (i <= length) {
+      avgGain += up / length;
+      avgLoss += down / length;
+    } else {
+      avgGain = (avgGain * (length - 1) + up) / length;
+      avgLoss = (avgLoss * (length - 1) + down) / length;
+    }
+  }
+  if (avgLoss === 0) return 100;
+  return 100 - 100 / (1 + avgGain / avgLoss);
+}
+
+/** Wilder's ATR, computed from the start of the series up to `index`. */
+function atr(bars: BacktestBar[], index: number, length = 14): number | null {
+  if (index < length) return null;
+  const tr = (i: number) =>
+    Math.max(bars[i].high - bars[i].low, Math.abs(bars[i].high - bars[i - 1].close), Math.abs(bars[i].low - bars[i - 1].close));
+  let current = 0;
+  for (let i = 1; i <= index; i++) {
+    const value = tr(i);
+    current = i <= length ? current + value / length : (current * (length - 1) + value) / length;
+  }
+  return current;
+}
+
+/** Bounded proxy for TradingView's `Recommend.All` (not available offline). */
+function recommendationProxy(close: number, values: number[], index: number, rsiValue: number | null, ema20: number | null, ema50: number | null, sma200: number | null): number {
+  const signals: number[] = [];
+  if (ema20) signals.push(clampUnit((close / ema20 - 1) * 10));
+  if (ema50) signals.push(clampUnit((close / ema50 - 1) * 8));
+  if (sma200) signals.push(clampUnit((close / sma200 - 1) * 4));
+  if (rsiValue !== null) signals.push(clampUnit((rsiValue - 50) / 25));
+  const ema12 = ema(values, index, 12);
+  const ema26 = ema(values, index, 26);
+  if (ema12 !== null && ema26 !== null) signals.push(clampUnit((ema12 - ema26) / (close * 0.02)));
+  return signals.length ? mean(signals) : 0;
+}
+
+/** Build the model's feature row for one ticker as of a bar index. */
+export function computeFeatures(ticker: string, bars: BacktestBar[], index: number, sector?: string): SetupFeatures {
+  const closes = bars.map((bar) => bar.close);
+  const close = bars[index].close;
+  const volume = bars[index].volume;
+  const avgVolume = index >= 9 ? mean(bars.slice(index - 9, index + 1).map((bar) => bar.volume)) : null;
+  const relativeVolume = avgVolume && avgVolume > 0 ? volume / avgVolume : null;
+  const ema20 = ema(closes, index, 20);
+  const ema50 = ema(closes, index, 50);
+  const sma200 = sma(closes, index, 200);
+  const rsiValue = rsi(bars, index, 14);
+  const window1m = bars.slice(Math.max(0, index - 20), index + 1);
+  return {
+    ticker,
+    name: ticker,
+    sector,
+    close,
+    change: index >= 1 ? (close / bars[index - 1].close - 1) * 100 : null,
+    volume,
+    averageVolume: avgVolume,
+    relativeVolume,
+    rsi: rsiValue,
+    ema20,
+    ema50,
+    sma200,
+    high1m: window1m.length ? Math.max(...window1m.map((bar) => bar.high)) : null,
+    low1m: window1m.length ? Math.min(...window1m.map((bar) => bar.low)) : null,
+    recommendation: recommendationProxy(close, closes, index, rsiValue, ema20, ema50, sma200),
+    marketCap: null,
+    atr: atr(bars, index, 14),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Trade simulation
+// ---------------------------------------------------------------------------
+
+export type SimOutcome = {
+  ticker: string;
+  direction: "LONG" | "SHORT";
+  status: "NO_ENTRY" | "OPEN" | "CLOSED";
+  entryDate: string | null;
+  entryPrice: number | null;
+  exitDate: string | null;
+  exitPrice: number | null;
+  exitReason: BacktestExitReason;
+  returnPct: number | null;
+  rMultiple: number | null;
+};
+
+function pctReturn(direction: "LONG" | "SHORT", entry: number, exitPrice: number): number {
+  return direction === "SHORT" ? ((entry - exitPrice) / entry) * 100 : ((exitPrice - entry) / entry) * 100;
+}
+
+/**
+ * Resolve one position. With `scaleOut: false` and no `maxHoldingDays` this is
+ * byte-for-byte the same decision as `tradeOutcome` — a parity test locks that.
+ */
+export function simulateTrade(input: {
+  item: PriorPosition;
+  bars: PriceBar[];
+  direction: "LONG" | "SHORT";
+  scaleOut: boolean;
+  maxHoldingDays: number | null;
+}): SimOutcome {
+  const { item, bars, direction, scaleOut, maxHoldingDays } = input;
+  const short = direction === "SHORT";
+  const stop = stopTrigger(item);
+  const target = targetTrigger(item);
+  const hasTarget = Number.isFinite(target);
+
+  const entryIndex = bars.findIndex((bar) => bar.high >= Number(item.planned_entry_low) && bar.low <= Number(item.planned_entry_high));
+  if (entryIndex < 0) {
+    return { ticker: item.ticker, direction, status: "NO_ENTRY", entryDate: null, entryPrice: null, exitDate: null, exitPrice: null, exitReason: "NO_ENTRY", returnPct: null, rMultiple: null };
+  }
+  const entry = alignPrice(Math.min(Number(item.planned_entry_high), Math.max(Number(item.planned_entry_low), bars[entryIndex].open)), "nearest");
+  const entryDate = bars[entryIndex].date ?? null;
+  const risk = short ? stop - entry : entry - stop;
+
+  const finish = (exitDate: string | null, exitPrice: number, exitReason: BacktestExitReason, status: "OPEN" | "CLOSED", returnPct: number): SimOutcome => {
+    // R is derived from the realised return so a scale-out (half banked, half
+    // run) is scored on what was actually made, not on the runner's exit alone.
+    return {
+      ticker: item.ticker,
+      direction,
+      status,
+      entryDate,
+      entryPrice: entry,
+      exitDate,
+      exitPrice,
+      exitReason,
+      returnPct,
+      rMultiple: Number.isFinite(risk) && risk > 0 ? ((returnPct / 100) * entry) / risk : null,
+    };
+  };
+
+  let currentStop = stop;
+  let scaledOut = false;
+  const scaledReturn = () => 0.5 * pctReturn(direction, entry, target) + 0.5 * pctReturn(direction, entry, currentStop);
+
+  for (let i = entryIndex; i < bars.length; i++) {
+    const bar = bars[i];
+    const stopHit = short ? bar.high >= currentStop : bar.low <= currentStop;
+    const targetHit = hasTarget && (short ? bar.low <= target : bar.high >= target);
+
+    if (scaleOut) {
+      if (!scaledOut && targetHit) {
+        scaledOut = true;
+        currentStop = entry; // runner stop moves to break-even
+        continue;
+      }
+      if (stopHit) return finish(bar.date ?? null, currentStop, "SCALE", "CLOSED", scaledReturn());
+    } else {
+      if (stopHit) return finish(bar.date ?? null, currentStop, "STOP", "CLOSED", pctReturn(direction, entry, currentStop));
+      if (targetHit) return finish(bar.date ?? null, target, "TARGET", "CLOSED", pctReturn(direction, entry, target));
+    }
+
+    if (maxHoldingDays !== null && i - entryIndex >= maxHoldingDays) {
+      const returnPct = scaledOut ? 0.5 * pctReturn(direction, entry, target) + 0.5 * pctReturn(direction, entry, bar.close) : pctReturn(direction, entry, bar.close);
+      return finish(bar.date ?? null, bar.close, "TIME", "CLOSED", returnPct);
+    }
+  }
+
+  const last = bars[bars.length - 1];
+  const exitPrice = last?.close ?? entry;
+  const returnPct = scaledOut ? 0.5 * pctReturn(direction, entry, target) + 0.5 * pctReturn(direction, entry, exitPrice) : pctReturn(direction, entry, exitPrice);
+  return finish(last?.date ?? null, exitPrice, "WEEK_END", "OPEN", returnPct);
+}
+
+// ---------------------------------------------------------------------------
+// Replay
+// ---------------------------------------------------------------------------
+
+export type BacktestInput = {
+  /** ISO dates to scan, ascending. One per week is the natural choice. */
+  scanDates: string[];
+  barsByTicker: Map<string, BacktestBar[]>;
+  sectors?: Map<string, string>;
+  shortEligible?: Set<string>;
+  policy?: Partial<BacktestPolicy>;
+};
+
+export function stats(trades: BacktestTrade[]): BacktestStats {
+  const settled = trades.filter((trade) => trade.status === "CLOSED" && trade.returnPct !== null);
+  const wins = settled.filter((trade) => (trade.returnPct ?? 0) > 0);
+  const losses = settled.filter((trade) => (trade.returnPct ?? 0) <= 0);
+  const grossGain = wins.reduce((sum, trade) => sum + (trade.returnPct ?? 0), 0);
+  const grossLoss = Math.abs(losses.reduce((sum, trade) => sum + (trade.returnPct ?? 0), 0));
+  const rValues = settled.map((trade) => trade.rMultiple).filter((value): value is number => value !== null);
+  return {
+    trades: settled.length,
+    noEntry: trades.filter((trade) => trade.status === "NO_ENTRY").length,
+    open: trades.filter((trade) => trade.status === "OPEN").length,
+    wins: wins.length,
+    losses: losses.length,
+    winRate: settled.length ? (wins.length / settled.length) * 100 : null,
+    avgReturn: settled.length ? mean(settled.map((trade) => trade.returnPct as number)) : null,
+    avgR: rValues.length ? mean(rValues) : null,
+    profitFactor: grossLoss > 0 ? grossGain / grossLoss : null,
+    best: settled.length ? Math.max(...settled.map((trade) => trade.returnPct as number)) : null,
+    worst: settled.length ? Math.min(...settled.map((trade) => trade.returnPct as number)) : null,
+  };
+}
+
+const SCORE_BUCKETS: Array<{ label: string; test: (score: number) => boolean }> = [
+  { label: "90+", test: (score) => score >= 90 },
+  { label: "85-89", test: (score) => score >= 85 && score < 90 },
+  { label: "80-84", test: (score) => score >= 80 && score < 85 },
+  { label: "<80", test: (score) => score < 80 },
+];
+
+type Pick = { weekIndex: number; weekOf: string; setup: SetupKey; score: number; weight: number; direction: "LONG" | "SHORT"; item: PriorPosition };
+
+function toPosition(setup: Setup, direction: "LONG" | "SHORT", policy: BacktestPolicy): PriorPosition {
+  const short = direction === "SHORT";
+  const atr = setup.atr !== null && Number.isFinite(setup.atr) && setup.atr > 0 ? setup.atr : null;
+  // The mechanical hard stop is what actually caps risk, so an ATR policy has to
+  // move it too — otherwise the flat 6% always wins the "tighter stop" rule.
+  const hardStop = policy.plan.stopMode === "atr" && atr !== null
+    ? setup.close + (short ? 1 : -1) * atr * policy.plan.atrStopMult
+    : setup.close * (short ? 1.06 : 0.94);
+  return {
+    ticker: setup.ticker,
+    setup: setup.setup,
+    score: setup.score,
+    planned_entry_low: alignPrice(setup.entryLow, "up"),
+    planned_entry_high: alignPrice(setup.entryHigh, "down"),
+    invalidation: alignPrice(setup.invalidation, "up"),
+    hard_stop: alignPrice(hardStop, "up"),
+    target_one: alignPrice(setup.target, short ? "up" : "down"),
+  };
+}
+
+export function runBacktest(input: BacktestInput): BacktestResult {
+  const policy: BacktestPolicy = { ...DEFAULT_BACKTEST_POLICY, ...input.policy, plan: input.policy?.plan ?? DEFAULT_POLICY };
+  const shortEligible = input.shortEligible ?? new Set<string>();
+  const sectors = input.sectors ?? new Map<string, string>();
+  const scanDates = [...input.scanDates].sort();
+  const runCount = scanDates.length;
+
+  const picksByTicker = new Map<string, Pick[]>();
+
+  scanDates.forEach((scanDate, weekIndex) => {
+    const features: SetupFeatures[] = [];
+    for (const [ticker, bars] of input.barsByTicker) {
+      let index = -1;
+      for (let i = bars.length - 1; i >= 0; i--) {
+        if (bars[i].date <= scanDate) { index = i; break; }
+      }
+      if (index < 20) continue;
+      features.push(computeFeatures(ticker, bars, index, sectors.get(ticker)));
+    }
+    const setups = classifyAll(features, { shortEligible, policy: policy.plan }).filter((setup) => setup.riskReward >= policy.minRiskReward);
+    const regime = regimeFor(setups);
+    const longs = pickLongs(setups, regime);
+    const shorts = pickShort(setups).filter((setup) => shortWeight(setup, longs, regime) >= 3);
+
+    const push = (setup: Setup, direction: "LONG" | "SHORT", weight: number) => {
+      const list = picksByTicker.get(setup.ticker) ?? [];
+      list.push({ weekIndex, weekOf: scanDate, setup: setup.setup, score: setup.score, weight, direction, item: toPosition(setup, direction, policy) });
+      picksByTicker.set(setup.ticker, list);
+    };
+    for (const setup of longs) push(setup, "LONG", positionWeight(setup, regime));
+    for (const setup of shorts) push(setup, "SHORT", shortWeight(setup, longs, regime));  });
+
+  const trades: BacktestTrade[] = [];
+  for (const [ticker, picks] of picksByTicker) {
+    const bars = (input.barsByTicker.get(ticker) ?? []) as PriceBar[];
+    const sorted = [...picks].sort((a, b) => a.weekIndex - b.weekIndex);
+    for (const streak of collapseStreaks(sorted.map((pick) => pick.weekIndex), runCount)) {
+      const plan = sorted.find((pick) => pick.weekIndex === streak.openIndex);
+      if (!plan) continue;
+      const openWeekOf = scanDates[streak.openIndex];
+      const closeWeekOf = streak.closeIndex !== null ? scanDates[streak.closeIndex] : null;
+      const windowBars = bars.filter((bar) => bar.date && bar.date > openWeekOf && (closeWeekOf === null || bar.date < closeWeekOf));
+      const outcome = simulateTrade({ item: plan.item, bars: windowBars, direction: plan.direction, scaleOut: policy.scaleOut, maxHoldingDays: policy.maxHoldingDays });
+      const exitReason: BacktestTrade["exitReason"] =
+        outcome.exitReason === "WEEK_END" ? (closeWeekOf === null ? "OPEN" : "DROPPED") : (outcome.exitReason as BacktestTrade["exitReason"]);
+      const status = outcome.status === "OPEN" && closeWeekOf !== null ? "CLOSED" : outcome.status;
+      trades.push({
+        weekOf: openWeekOf,
+        ticker,
+        setup: plan.setup,
+        score: plan.score,
+        weight: plan.weight,
+        direction: plan.direction,
+        status,
+        entryDate: outcome.entryDate,
+        entryPrice: outcome.entryPrice,
+        exitDate: outcome.exitDate,
+        exitPrice: outcome.exitPrice,
+        exitReason,
+        returnPct: outcome.returnPct,
+        rMultiple: outcome.rMultiple,
+      });
+    }
+  }
+
+  trades.sort((a, b) => (a.weekOf < b.weekOf ? 1 : a.weekOf > b.weekOf ? -1 : a.ticker.localeCompare(b.ticker)));
+  const setups = [...new Set(trades.map((trade) => trade.setup))].sort();
+  return {
+    policy,
+    scanDates,
+    trades,
+    summary: stats(trades),
+    bySetup: setups.map((setup) => ({ setup, stats: stats(trades.filter((trade) => trade.setup === setup)) })),
+    byScore: SCORE_BUCKETS.map((bucket) => ({ bucket: bucket.label, stats: stats(trades.filter((trade) => bucket.test(trade.score))) })),
+  };
+}
