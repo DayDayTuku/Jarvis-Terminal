@@ -31,10 +31,12 @@ import {
   regimeFor,
   shortWeight,
   type PlanPolicy,
+  type Regime,
   type Setup,
   type SetupFeatures,
   type SetupKey,
 } from "./setup-model.ts";
+import { signalsOf, type ScoreSignals } from "./score-model.ts";
 
 export type BacktestBar = { date: string; open: number; high: number; low: number; close: number; volume: number };
 
@@ -304,6 +306,10 @@ export type BacktestInput = {
   sectors?: Map<string, string>;
   shortEligible?: Set<string>;
   policy?: Partial<BacktestPolicy>;
+  /** Replace each setup's score before selection (e.g. with the fitted score). */
+  scoreWith?: (setup: Setup) => number;
+  /** Override the per-regime score gates, for a differently-scaled score. */
+  thresholds?: { minimum?: Partial<Record<Regime, number>>; maximum?: Partial<Record<Regime, number>> };
 };
 
 export function stats(trades: BacktestTrade[]): BacktestStats {
@@ -337,13 +343,13 @@ const SCORE_BUCKETS: Array<{ label: string; test: (score: number) => boolean }> 
 
 type Pick = { weekIndex: number; weekOf: string; setup: SetupKey; score: number; weight: number; direction: "LONG" | "SHORT"; item: PriorPosition };
 
-function toPosition(setup: Setup, direction: "LONG" | "SHORT", policy: BacktestPolicy): PriorPosition {
+export function setupToPosition(setup: Setup, direction: "LONG" | "SHORT", plan: PlanPolicy): PriorPosition {
   const short = direction === "SHORT";
   const atr = setup.atr !== null && Number.isFinite(setup.atr) && setup.atr > 0 ? setup.atr : null;
   // The mechanical hard stop is what actually caps risk, so an ATR policy has to
   // move it too — otherwise the flat 6% always wins the "tighter stop" rule.
-  const hardStop = policy.plan.stopMode === "atr" && atr !== null
-    ? setup.close + (short ? 1 : -1) * atr * policy.plan.atrStopMult
+  const hardStop = plan.stopMode === "atr" && atr !== null
+    ? setup.close + (short ? 1 : -1) * atr * plan.atrStopMult
     : setup.close * (short ? 1.06 : 0.94);
   return {
     ticker: setup.ticker,
@@ -355,6 +361,55 @@ function toPosition(setup: Setup, direction: "LONG" | "SHORT", policy: BacktestP
     hard_stop: alignPrice(hardStop, "up"),
     target_one: alignPrice(setup.target, short ? "up" : "down"),
   };
+}
+
+/** Resolve the ticker's bar index at or before `date` (the last closed session). */
+function indexAsOf(bars: BacktestBar[], date: string): number {
+  for (let i = bars.length - 1; i >= 0; i--) if (bars[i].date <= date) return i;
+  return -1;
+}
+
+/**
+ * Label every classified candidate with the R it would have produced under the
+ * shipped plan, so a score can be fitted. Selection is deliberately ignored:
+ * labels come from all candidates that clear the R:R gate, which is exactly the
+ * population the score is asked to rank.
+ */
+export type ScoreSample = { date: string; setup: SetupKey; signals: ScoreSignals; r: number; legacyScore: number };
+
+export function collectSamples(input: {
+  scanDates: string[];
+  barsByTicker: Map<string, BacktestBar[]>;
+  sectors?: Map<string, string>;
+  shortEligible?: Set<string>;
+  policy?: Partial<BacktestPolicy>;
+  horizonDays?: number;
+}): ScoreSample[] {
+  const policy: BacktestPolicy = { ...DEFAULT_BACKTEST_POLICY, ...input.policy, plan: input.policy?.plan ?? DEFAULT_POLICY };
+  const shortEligible = input.shortEligible ?? new Set<string>();
+  const sectors = input.sectors ?? new Map<string, string>();
+  const horizon = input.horizonDays ?? 20;
+  const samples: ScoreSample[] = [];
+
+  for (const scanDate of [...input.scanDates].sort()) {
+    const features: SetupFeatures[] = [];
+    for (const [ticker, bars] of input.barsByTicker) {
+      const index = indexAsOf(bars, scanDate);
+      if (index < 20) continue;
+      features.push(computeFeatures(ticker, bars, index, sectors.get(ticker)));
+    }
+    const setups = classifyAll(features, { shortEligible, policy: policy.plan }).filter((setup) => setup.riskReward >= policy.minRiskReward);
+    for (const setup of setups) {
+      const bars = (input.barsByTicker.get(setup.ticker) ?? []) as PriceBar[];
+      const windowBars = bars.filter((bar) => bar.date && bar.date > scanDate);
+      if (!windowBars.length) continue;
+      const direction: "LONG" | "SHORT" = setup.setup.startsWith("short_") ? "SHORT" : "LONG";
+      const outcome = simulateTrade({ item: setupToPosition(setup, direction, policy.plan), bars: windowBars, direction, scaleOut: false, maxHoldingDays: horizon });
+      if (outcome.rMultiple === null) continue;
+      samples.push({ date: scanDate, setup: setup.setup, signals: signalsOf(setup), r: outcome.rMultiple, legacyScore: setup.legacyScore });
+    }
+  }
+  return samples;
 }
 
 export function runBacktest(input: BacktestInput): BacktestResult {
@@ -376,14 +431,17 @@ export function runBacktest(input: BacktestInput): BacktestResult {
       if (index < 20) continue;
       features.push(computeFeatures(ticker, bars, index, sectors.get(ticker)));
     }
-    const setups = classifyAll(features, { shortEligible, policy: policy.plan }).filter((setup) => setup.riskReward >= policy.minRiskReward);
+    const classified = classifyAll(features, { shortEligible, policy: policy.plan }).filter((setup) => setup.riskReward >= policy.minRiskReward);
+    const setups = input.scoreWith
+      ? classified.map((setup) => ({ ...setup, score: input.scoreWith!(setup) })).sort((a, b) => b.score - a.score)
+      : classified;
     const regime = regimeFor(setups);
-    const longs = pickLongs(setups, regime);
+    const longs = pickLongs(setups, regime, input.thresholds);
     const shorts = pickShort(setups).filter((setup) => shortWeight(setup, longs, regime) >= 3);
 
     const push = (setup: Setup, direction: "LONG" | "SHORT", weight: number) => {
       const list = picksByTicker.get(setup.ticker) ?? [];
-      list.push({ weekIndex, weekOf: scanDate, setup: setup.setup, score: setup.score, weight, direction, item: toPosition(setup, direction, policy) });
+      list.push({ weekIndex, weekOf: scanDate, setup: setup.setup, score: setup.score, weight, direction, item: setupToPosition(setup, direction, policy.plan) });
       picksByTicker.set(setup.ticker, list);
     };
     for (const setup of longs) push(setup, "LONG", positionWeight(setup, regime));

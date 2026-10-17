@@ -16,10 +16,20 @@
 
 // Self-contained on purpose: the offline tests load this file directly under
 // Node's type-stripping loader, which does not resolve extensionless imports.
+import { scoreSignals } from "./score-model.ts";
+
 // `isShortSetup` is the same one-liner as in lib/weekly-lifecycle.
 export function isShortSetup(item: { setup?: string } | null | undefined): boolean {
   return String(item?.setup || "").toLowerCase().startsWith("short_");
 }
+
+/**
+ * When true, a setup's `score` is the fitted model's prediction (lib/score-model)
+ * instead of the legacy additive heuristic; `legacyScore` keeps the old value for
+ * comparison. Flipped on only once the backtest shows the fitted score ranks
+ * out-of-sample returns better than the heuristic.
+ */
+export const USE_FITTED_SCORE = true;
 
 export type SetupKey = "breakout" | "pullback" | "momentum" | "reversal" | "short_breakdown";
 export type Regime = "RISK ON" | "EMERGING" | "NEUTRAL" | "RISK OFF";
@@ -69,7 +79,6 @@ export type Setup = {
   name: string;
   sector: string;
   setup: SetupKey;
-  score: number;
   close: number;
   change: number | null;
   volume: number | null;
@@ -79,6 +88,13 @@ export type Setup = {
   atr: number | null;
   distance20: number | null;
   trend: boolean;
+  aboveLongTrend: boolean;
+  nearHigh: boolean;
+  nearLow: boolean;
+  /** The active score (fitted when enabled, otherwise the legacy heuristic). */
+  score: number;
+  /** The original hand-tuned score, kept so it can still be compared. */
+  legacyScore: number;
   reasons: string[];
   caution: string;
   entryLow: number;
@@ -228,14 +244,22 @@ export function classify(features: SetupFeatures, ctx: { shortEligible: Set<stri
     atr: features.atr,
     distance20,
     trend,
+    aboveLongTrend,
+    nearHigh,
+    nearLow,
   };
 
+  // The signals are exactly what lib/score-model was trained on.
+  const signals = (setup: SetupKey) => ({ relativeVolume, rsi, distance20, change, trend, aboveLongTrend, nearHigh, nearLow, setup });
+  const activeScore = (setup: SetupKey, heuristic: number) => (USE_FITTED_SCORE ? scoreSignals(signals(setup)) : clamp(heuristic));
+
   if (shortBreakdown) {
-    const score = clamp(58 + Math.min(14, ((relativeVolume ?? 1) - 1) * 18) + 10 + 8 + Math.min(10, Math.abs(recommendation ?? 0) * 20));
+    const heuristic = clamp(58 + Math.min(14, ((relativeVolume ?? 1) - 1) * 18) + 10 + 8 + Math.min(10, Math.abs(recommendation ?? 0) * 20));
     return {
       ...base,
       setup: "short_breakdown",
-      score,
+      score: activeScore("short_breakdown", heuristic),
+      legacyScore: heuristic,
       reasons: ["Price is breaking toward its 1-month low", "The 20-day trend is below the 50-day trend", "Volume and broader technical readings confirm weakness"],
       caution: "Short only when the ticker is on the official BEI list and borrow is available. A move above resistance invalidates the trade.",
       ...planLevels({ close, ema20, low1m, high1m, atr: features.atr, setup: "short_breakdown", policy }),
@@ -271,10 +295,12 @@ export function classify(features: SetupFeatures, ctx: { shortEligible: Set<stri
     return null;
   }
 
+  const heuristic = clamp(score);
   return {
     ...base,
     setup,
-    score: clamp(score),
+    score: activeScore(setup, heuristic),
+    legacyScore: heuristic,
     reasons,
     caution,
     ...planLevels({ close, ema20, low1m, high1m, atr: features.atr, setup, policy }),
@@ -324,11 +350,20 @@ export function positionWeight(item: { setup: string; score: number }, regime: R
   return Math.max(5, Math.round((base * multiplier) / 2.5) * 2.5);
 }
 
+/** Per-regime score gates. Overridable so the backtest can retune them for a
+ *  new score scale without disturbing the shipped defaults. */
+export const REGIME_MINIMUM: Record<Regime, number> = { "RISK ON": 75, EMERGING: 80, NEUTRAL: 85, "RISK OFF": 101 };
+export const REGIME_MAXIMUM: Record<Regime, number> = { "RISK ON": 5, EMERGING: 3, NEUTRAL: 1, "RISK OFF": 0 };
+
 /** The week's long picks: score gate by regime, sector cap of two. */
-export function pickLongs<T extends ScoredSetup>(setups: T[], regime: Regime): T[] {
+export function pickLongs<T extends ScoredSetup>(
+  setups: T[],
+  regime: Regime,
+  thresholds?: { minimum?: Partial<Record<Regime, number>>; maximum?: Partial<Record<Regime, number>> },
+): T[] {
   if (regime === "RISK OFF") return [];
-  const minimum = regime === "RISK ON" ? 75 : regime === "EMERGING" ? 80 : 85;
-  const maximum = regime === "RISK ON" ? 5 : regime === "EMERGING" ? 3 : 1;
+  const minimum = thresholds?.minimum?.[regime] ?? REGIME_MINIMUM[regime];
+  const maximum = thresholds?.maximum?.[regime] ?? REGIME_MAXIMUM[regime];
   const sectors = new Map<string, number>();
   return [...setups]
     .filter((item) => !isShortSetup(item))
@@ -368,9 +403,12 @@ export function shortWeight(
 export type WeeklySelection = { regime: Regime; longs: Setup[]; shorts: Setup[] };
 
 /** Everything the week needs: the regime, the longs and the optional short. */
-export function selectWeek(setups: Setup[]): WeeklySelection {
+export function selectWeek(
+  setups: Setup[],
+  thresholds?: { minimum?: Partial<Record<Regime, number>>; maximum?: Partial<Record<Regime, number>> },
+): WeeklySelection {
   const regime = regimeFor(setups);
-  const longs = pickLongs(setups, regime);
+  const longs = pickLongs(setups, regime, thresholds);
   const shorts = regime === "RISK OFF" ? [] : pickShort(setups);
   return { regime, longs, shorts };
 }

@@ -43,7 +43,10 @@ test("classify: a breakout scores and plans exactly as before", () => {
   const setup = classify(base, { shortEligible });
   assert.ok(setup);
   assert.equal(setup.setup, "breakout");
-  assert.equal(setup.score, 87); // 58 + 9 + 12 + 8
+  // The active score is the fitted percentile; the legacy heuristic is preserved
+  // separately so the old behaviour is still pinned by a test.
+  assert.equal(setup.legacyScore, 87); // 58 + 9 + 12 + 8
+  assert.ok(setup.score >= 0 && setup.score <= 100);
   assert.equal(setup.entryLow, 990);
   assert.equal(setup.entryHigh, 1010);
   assert.equal(setup.invalidation, 940); // close * 0.94
