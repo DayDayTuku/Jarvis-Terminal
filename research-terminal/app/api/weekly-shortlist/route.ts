@@ -7,6 +7,7 @@ import {
   type PriceBar,
 } from "@/lib/weekly-lifecycle";
 import { buildLifecycle, carriedPositions, recentRunsBefore } from "@/lib/weekly-positions";
+import { loadMacroExposure } from "@/lib/macro-risk";
 
 function isAdmin(user: { app_metadata?: Record<string, unknown> } | null) {
   return user?.app_metadata?.role === "admin";
@@ -71,10 +72,10 @@ export async function GET(){
   if(!user)return NextResponse.json({error:"Unauthorized"},{status:401});
   const{data:run,error}=await supabase.from("jarvis_weekly_runs").select("*").order("week_of",{ascending:false}).limit(1).maybeSingle();
   if(error)return NextResponse.json({error:"Weekly tracking is unavailable."},{status:503});
-  if(!run)return NextResponse.json({run:null,candidates:[],reviews:[],actions:[],canLock:isAdmin(user)&&mayLockNow()});
+  if(!run)return NextResponse.json({run:null,candidates:[],reviews:[],actions:[],canLock:isAdmin(user)&&mayLockNow(),macro:await loadMacroExposure(fridayOfCurrentWeek())});
   const[{data:candidates},{data:reviews},{data:actions}]=await Promise.all([supabase.from("jarvis_weekly_candidates").select("*").eq("run_id",run.id).order("rank"),supabase.from("jarvis_weekly_reviews").select("*").eq("run_id",run.id).eq("user_id",user.id),supabase.from("jarvis_weekly_actions").select("*").eq("run_id",run.id).order("created_at")]);
   const actionsWithStatus=(actions??[]).map((action:LifecycleAction)=>({...action,status:deriveStatus({action:action.action,entryFilled:Boolean(action.entry_filled),targetReached:Boolean(action.target_reached),invalidated:Boolean(action.invalidated)})}));
-  return NextResponse.json({run,candidates:candidates??[],reviews:reviews??[],actions:actionsWithStatus,canLock:isAdmin(user)&&mayLockNow(),currentWeek:fridayOfCurrentWeek()});
+  return NextResponse.json({run,candidates:candidates??[],reviews:reviews??[],actions:actionsWithStatus,canLock:isAdmin(user)&&mayLockNow(),currentWeek:fridayOfCurrentWeek(),macro:await loadMacroExposure(fridayOfCurrentWeek())});
 }
 
 export async function POST(request:NextRequest){
@@ -85,11 +86,15 @@ export async function POST(request:NextRequest){
   const{data:existing}=await supabase.from("jarvis_weekly_runs").select("id").eq("week_of",weekOf).maybeSingle(); if(existing)return NextResponse.json({ok:true,alreadyLocked:true});
   const{data:priorRun}=await supabase.from("jarvis_weekly_runs").select("*").lt("week_of",weekOf).order("week_of",{ascending:false}).limit(1).maybeSingle();
   const{data:priorCandidates}=priorRun?await supabase.from("jarvis_weekly_candidates").select("*").eq("run_id",priorRun.id).order("rank"):{data:[]};
-  const marketRegime=String(body?.marketRegime??"UNKNOWN").slice(0,40);
+  // The server owns the macro size, so a stale client can never lock an
+  // unscaled book: the incoming weights are trimmed here, after validation.
+  const macro=await loadMacroExposure(weekOf);
+  const macroLabel=macro.exposure<1?" · MACRO "+Math.round(macro.exposure*100)+"% ("+macro.flags.join(", ")+")":"";
+  const marketRegime=(String(body?.marketRegime??"UNKNOWN").slice(0,40)+macroLabel);
   const{data:run,error:runError}=await supabase.from("jarvis_weekly_runs").insert({week_of:weekOf,snapshot_kind:"forward",methodology_version:"v5",status:"locked",market_regime:marketRegime,note:rows.length?"V5 Weekly Picks with lifecycle actions.":"No qualified setup this week."}).select().single();
   if(runError||!run)return NextResponse.json({error:"Unable to lock weekly run."},{status:500});
   let candidates:EmailCandidate[]=[];
-  if(rows.length){candidates=rows.map((item:any,index:number)=>({run_id:run.id,rank:index+1,ticker:String(item.ticker).slice(0,12),setup:String(item.setup).slice(0,30),score:Number(item.score),signal_close:Number(item.close),planned_entry_low:Number(item.entryLow),planned_entry_high:Number(item.entryHigh),invalidation:Number(item.invalidation),hard_stop:isShortSetup(item)?Number(item.close)*1.06:Number(item.close)*.94,target_one:Number(item.target),risk_reward:Number(item.riskReward),position_size_idr:Math.min(1250000,75000/Math.max(.01,Math.abs(Number(item.close)-Number(item.invalidation))/Number(item.close))),position_weight:Number.isFinite(Number(item.positionWeight))?Math.max(0,Math.min(100,Number(item.positionWeight))):12.5,reasons:Array.isArray(item.reasons)?item.reasons.slice(0,4):[],caution:String(item.caution??"").slice(0,500)})); const{error}=await supabase.from("jarvis_weekly_candidates").insert(candidates); if(error)return NextResponse.json({error:"Run locked, but candidates could not be saved."},{status:500});}
+  if(rows.length){candidates=rows.map((item:any,index:number)=>({run_id:run.id,rank:index+1,ticker:String(item.ticker).slice(0,12),setup:String(item.setup).slice(0,30),score:Number(item.score),signal_close:Number(item.close),planned_entry_low:Number(item.entryLow),planned_entry_high:Number(item.entryHigh),invalidation:Number(item.invalidation),hard_stop:isShortSetup(item)?Number(item.close)*1.06:Number(item.close)*.94,target_one:Number(item.target),risk_reward:Number(item.riskReward),position_size_idr:Math.min(1250000,75000/Math.max(.01,Math.abs(Number(item.close)-Number(item.invalidation))/Number(item.close))),position_weight:(Number.isFinite(Number(item.positionWeight))?Math.max(0,Math.min(100,Number(item.positionWeight))):12.5)*macro.exposure,reasons:Array.isArray(item.reasons)?item.reasons.slice(0,4):[],caution:String(item.caution??"").slice(0,500)})); const{error}=await supabase.from("jarvis_weekly_candidates").insert(candidates); if(error)return NextResponse.json({error:"Run locked, but candidates could not be saved."},{status:500});}
   const carryRuns=await recentRunsBefore(supabase,weekOf);
   const carried=await carriedPositions(supabase,carryRuns,new Set([...(priorCandidates??[]).map((item:any)=>item.ticker),...candidates.map((item)=>item.ticker)]));
   const actions=await buildLifecycle({runId:run.id,priorRun,prior:priorCandidates??[],current:candidates,carried,getBars});

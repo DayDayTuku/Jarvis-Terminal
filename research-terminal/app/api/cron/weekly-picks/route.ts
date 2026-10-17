@@ -9,6 +9,7 @@ import {
 } from "@/lib/weekly-lifecycle";
 import { buildLifecycle, carriedPositions, recentRunsBefore } from "@/lib/weekly-positions";
 import { pickLongs as pick, pickShort, positionWeight as weight, regimeFor, shortWeight } from "@/lib/setup-model";
+import { loadMacroExposure } from "@/lib/macro-risk";
 
 export const maxDuration = 60;
 
@@ -213,19 +214,23 @@ export async function GET(request:NextRequest) {
   const longs=pick(setups,regime);
   const shorts=pickShort(setups).filter((item)=>shortWeight(item,longs,regime)>=3);
   const selected=[...longs,...shorts];
-  if(dryRun) return NextResponse.json({ok:true,dryRun:true,weekOf,regime,picks:selected.map((item)=>item.ticker)});
+  // Macro / regional overlay: trim NEW risk when the external backdrop is
+  // hostile. Held positions are not resized. Fails open to full size on bad data.
+  const macro=await loadMacroExposure(weekOf);
+  const macroLabel=macro.exposure<1?" · MACRO "+Math.round(macro.exposure*100)+"% ("+macro.flags.join(", ")+")":"";
+  if(dryRun) return NextResponse.json({ok:true,dryRun:true,weekOf,regime,macro,picks:selected.map((item)=>item.ticker)});
   const {data:priorRun}=await supabase.from("jarvis_weekly_runs").select("*").lt("week_of",weekOf).order("week_of",{ascending:false}).limit(1).maybeSingle();
   const {data:priorCandidates}=priorRun?await supabase.from("jarvis_weekly_candidates").select("*").eq("run_id",priorRun.id).order("rank"):{data:[]};
-  const {data:run,error:runError}=await supabase.from("jarvis_weekly_runs").insert({week_of:weekOf,snapshot_kind:"forward",methodology_version:"v5",status:"locked",market_regime:"V5 "+regime+(shorts.length?" · OPTIONAL SHORT":""),note:selected.length?"Automated Friday Weekly Picks with lifecycle actions and an optional risk-capped short overlay.":"No qualified setup this week."}).select().single();
+  const {data:run,error:runError}=await supabase.from("jarvis_weekly_runs").insert({week_of:weekOf,snapshot_kind:"forward",methodology_version:"v5",status:"locked",market_regime:"V5 "+regime+(shorts.length?" · OPTIONAL SHORT":"")+macroLabel,note:selected.length?"Automated Friday Weekly Picks with lifecycle actions and an optional risk-capped short overlay.":"No qualified setup this week."}).select().single();
   if(runError||!run) return NextResponse.json({error:"Unable to create weekly run."},{status:500});
-  const candidates=selected.map((item,index)=>({run_id:run.id,rank:index+1,ticker:item.ticker.slice(0,12),setup:item.setup.slice(0,30),score:Number(item.score),signal_close:alignPrice(Number(item.close),"nearest"),planned_entry_low:alignPrice(Number(item.entryLow),"up"),planned_entry_high:alignPrice(Number(item.entryHigh),"down"),invalidation:alignPrice(Number(item.invalidation),"up"),hard_stop:alignPrice(Number(item.close)*(isShortSetup(item)?1.06:.94),"up"),target_one:alignPrice(Number(item.target),isShortSetup(item)?"up":"down"),risk_reward:Number(item.riskReward),position_size_idr:Math.min(1250000,75000/Math.max(.01,Math.abs(Number(item.close)-Number(item.invalidation))/Number(item.close))),position_weight:isShortSetup(item)?shortWeight(item,longs,regime):weight(item,regime),reasons:Array.isArray(item.reasons)?item.reasons.slice(0,4):[],caution:String(item.caution||"").slice(0,500)}));
+  const candidates=selected.map((item,index)=>({run_id:run.id,rank:index+1,ticker:item.ticker.slice(0,12),setup:item.setup.slice(0,30),score:Number(item.score),signal_close:alignPrice(Number(item.close),"nearest"),planned_entry_low:alignPrice(Number(item.entryLow),"up"),planned_entry_high:alignPrice(Number(item.entryHigh),"down"),invalidation:alignPrice(Number(item.invalidation),"up"),hard_stop:alignPrice(Number(item.close)*(isShortSetup(item)?1.06:.94),"up"),target_one:alignPrice(Number(item.target),isShortSetup(item)?"up":"down"),risk_reward:Number(item.riskReward),position_size_idr:Math.min(1250000,75000/Math.max(.01,Math.abs(Number(item.close)-Number(item.invalidation))/Number(item.close))),position_weight:(isShortSetup(item)?shortWeight(item,longs,regime):weight(item,regime))*macro.exposure,reasons:Array.isArray(item.reasons)?item.reasons.slice(0,4):[],caution:String(item.caution||"").slice(0,500)}));
   if(candidates.length) { const {error}=await supabase.from("jarvis_weekly_candidates").insert(candidates); if(error) return NextResponse.json({error:"Run created, but picks could not be saved."},{status:500}); }
   const carryRuns=await recentRunsBefore(supabase,weekOf);
   const carried=await carriedPositions(supabase,carryRuns,new Set([...(priorCandidates||[]).map((item:any)=>item.ticker),...candidates.map((item)=>item.ticker)]));
   const actions=await buildLifecycle({runId:run.id,priorRun,prior:priorCandidates||[],current:candidates,carried,getBars});
   if(actions.length) { const {error}=await supabase.from("jarvis_weekly_actions").insert(actions); if(error) return NextResponse.json({error:"Run created, but actions could not be saved."},{status:500}); }
   let email;
-  try { email=await sendDigest(weekOf,regime,candidates,actions,supabase,recipients); }
+  try { email=await sendDigest(weekOf,regime+macroLabel,candidates,actions,supabase,recipients); }
   catch(error) { console.error("Weekly Picks email failed", error); return NextResponse.json({error:"Weekly Picks email failed.",detail:error instanceof Error?error.message:"unknown"},{status:502}); }
   const baseNote=selected.length?"Automated Friday Weekly Picks with lifecycle actions and an optional risk-capped short overlay.":"No qualified setup this week.";
   const marker=email.sent?"[email:sent]":"[email:failed:"+String(email.reason || email.failures?.[0]?.status || "unknown")+"]";

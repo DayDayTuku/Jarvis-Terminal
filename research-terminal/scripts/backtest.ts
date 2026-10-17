@@ -9,6 +9,7 @@
 // to choose between variants, not as a promise of future returns.
 
 import { runBacktest, macroReadFor, type BacktestPolicy, type BacktestResult, type BacktestBar, type MacroRead } from "../lib/backtest.ts";
+import { MACRO_SYMBOLS, macroExposure, type MacroBar } from "../lib/macro-risk.ts";
 import { DEFAULT_POLICY, type Setup } from "../lib/setup-model.ts";
 import { loadUniverse, fetchBars, pool } from "./yahoo.ts";
 
@@ -33,17 +34,19 @@ const signed = (value: number | null, digits = 2) => (value === null ? "—" : `
 
 // Macro / regional series that feed the exposure overlay. USD/IDR leads local
 // risk appetite; ^VIX and the regional indices carry the global read.
-const MACRO_SYMBOLS = ["IDR=X", "^VIX", "^JKSE", "^HSI", "^KS11", "^N225", "^STI", "^GSPC", "DX-Y.NYB", "^TNX", "CL=F", "GC=F", "EEM"];
+// Broader set fetched only for the diagnostic screen; the shipped overlay uses
+// the narrower MACRO_SYMBOLS from lib/macro-risk.
+const SCAN_SYMBOLS = ["IDR=X", "^VIX", "^JKSE", "^HSI", "^KS11", "^N225", "^STI", "^GSPC", "DX-Y.NYB", "^TNX", "CL=F", "GC=F", "EEM"];
 const IDR = "IDR=X";
 const VIX = "^VIX";
 const REGION = ["^HSI", "^KS11", "^N225", "^STI"];
 
 async function loadMacro(from: string): Promise<Map<string, BacktestBar[]>> {
   const out = new Map<string, BacktestBar[]>();
-  await pool(MACRO_SYMBOLS, 4, async (symbol) => {
+  await pool(SCAN_SYMBOLS, 4, async (symbol) => {
     out.set(symbol, await fetchBars(symbol, from));
   });
-  console.error(`Macro series: ${[...out].filter(([, bars]) => bars.length).length}/${MACRO_SYMBOLS.length} loaded.`);
+  console.error(`Macro series: ${[...out].filter(([, bars]) => bars.length).length}/${SCAN_SYMBOLS.length} loaded.`);
   return out;
 }
 
@@ -72,19 +75,6 @@ const indexSoft = (read: MacroRead): number => {
 };
 const riskFlags = (read: MacroRead): number =>
   [idrWeak(read), vixHigh(read), regionSoft(read), indexSoft(read)].filter((value) => value < 1).length;
-
-// The four reads that separated trade outcomes in BOTH halves of the sample:
-// rupiah below its 50-day average, VIX rising, Jakarta index down 20 days, and
-// oil rising. Each is a genuine risk-off tell for the Indonesian tape.
-const RISK_READS: Array<(read: MacroRead) => boolean> = [
-  (read) => { const value = read.distFromSma(IDR, 50); return value !== null && value > 0; },
-  (read) => { const value = read.change(VIX, 5); return value !== null && value > 0; },
-  (read) => { const value = read.change("^JKSE", 20); return value !== null && value < 0; },
-  (read) => { const value = read.change("CL=F", 20); return value !== null && value > 0; },
-];
-const riskScore = (read: MacroRead): number => RISK_READS.filter((flag) => flag(read)).length;
-/** Linear exposure cut by how many risk reads are lit (0 → full, 4 → flat). */
-const gradedScale = (read: MacroRead): number => [1, 0.75, 0.5, 0.25, 0][riskScore(read)] ?? 1;
 
 function row(label: string, result: BacktestResult): string {
   const s = result.summary;
@@ -116,6 +106,10 @@ async function main(): Promise<void> {
 
   const macroFrom = new Date(Date.now() - args.years * 365 * 86_400_000).toISOString().slice(0, 10);
   const macroBars = await loadMacro(macroFrom);
+  // The shipped overlay (lib/macro-risk) reads the same series; run it through
+  // the same function so the backtest cannot drift from the live model.
+  const macroSeries = new Map<string, MacroBar[]>(MACRO_SYMBOLS.map((symbol) => [symbol, (macroBars.get(symbol) ?? []).map((bar) => ({ date: bar.date, close: bar.close }))]));
+  const shippedExposure = (read: MacroRead): number => macroExposure(macroSeries, read.date).exposure;
 
   // A modest short list; flip this on with the BEI-eligible list to include shorts.
   const shortEligible = new Set<string>();
@@ -132,13 +126,9 @@ async function main(): Promise<void> {
     // "always 50%" row is the null: if a signal cannot beat plain deleveraging it
     // is not a timing signal at all.
     { label: "macro: idr 20d → 50%", policy: { holdThroughDrops: true, costPct: 0.4, macro: idrScale(20) } },
-    { label: "macro: idr>sma50 → 50%", policy: { holdThroughDrops: true, costPct: 0.4, macro: (read) => (RISK_READS[0](read) ? 0.5 : 1) } },
-    { label: "macro: 4-signal ≥2 → 50%", policy: { holdThroughDrops: true, costPct: 0.4, macro: (read) => (riskScore(read) >= 2 ? 0.5 : 1) } },
-    { label: "macro: 4-signal ≥2 → 0%", policy: { holdThroughDrops: true, costPct: 0.4, macro: (read) => (riskScore(read) >= 2 ? 0 : 1) } },
-    { label: "macro: 4-signal ≥3 → 0%", policy: { holdThroughDrops: true, costPct: 0.4, macro: (read) => (riskScore(read) >= 3 ? 0 : 1) } },
-    { label: "macro: 4-signal graded", policy: { holdThroughDrops: true, costPct: 0.4, macro: gradedScale } },
+    { label: "macro: shipped graded", policy: { holdThroughDrops: true, costPct: 0.4, macro: shippedExposure } },
+    { label: "macro: shipped graded → 0%", policy: { holdThroughDrops: true, costPct: 0.4, macro: (read) => (shippedExposure(read) < 1 ? 0 : 1) } },
     { label: "control: always 50%", policy: { holdThroughDrops: true, costPct: 0.4, macro: () => 0.5 } },
-    { label: "macro: vix≥22 → 0%", policy: { holdThroughDrops: true, costPct: 0.4, macro: (read) => (vixHigh(read) < 1 ? 0 : 1) } },
     { label: "macro: jkse<200d → 0%", policy: { holdThroughDrops: true, costPct: 0.4, macro: (read) => (indexSoft(read) < 1 ? 0 : 1) } },
   ];
 
