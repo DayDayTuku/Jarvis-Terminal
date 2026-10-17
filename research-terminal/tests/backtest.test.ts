@@ -134,7 +134,7 @@ function series(dates: string[], close: (index: number) => number, volumeAt: (in
 
 test("computeFeatures reads a trend, a range and ATR from raw bars", () => {
   const dates = businessDays(260);
-  const bars = series(dates, (index) => 1000 + index * 2, () => 10_000_000);
+  const bars = series(dates, (index) => 1000 + index * 2, () => 20_000_000);
   const features = computeFeatures("AAAA", bars, bars.length - 1, "Tech");
   assert.ok(features.ema20 !== null && features.ema50 !== null && features.sma200 !== null);
   assert.ok((features.ema20 as number) >= (features.ema50 as number) && (features.ema50 as number) >= (features.sma200 as number));
@@ -153,7 +153,7 @@ test("runBacktest replays a weekly scan end to end and is deterministic", () => 
       series(
         dates,
         (index) => 1000 + offset * 40 + 90 * Math.sin(index / 22 + offset) + index * 1.2,
-        (index) => 10_000_000 * (index % 5 === 0 ? 2.4 : 1),
+        (index) => 20_000_000 * (index % 5 === 0 ? 2.4 : 1),
       ),
     );
   });
@@ -184,7 +184,7 @@ test("hold-through-drops never reports a weekly DROPPED exit", () => {
       series(
         dates,
         (index) => 1000 + offset * 40 + 90 * Math.sin(index / 22 + offset) + index * 1.2,
-        (index) => 10_000_000 * (index % 5 === 0 ? 2.4 : 1),
+        (index) => 20_000_000 * (index % 5 === 0 ? 2.4 : 1),
       ),
     );
   });
@@ -201,7 +201,7 @@ test("a market filter that is never open produces no trades", () => {
   const tickers = ["AAAA", "BBBB"];
   const barsByTicker = new Map<string, BacktestBar[]>();
   tickers.forEach((ticker, offset) => {
-    barsByTicker.set(ticker, series(dates, (index) => 1000 + offset * 40 + 60 * Math.sin(index / 18 + offset), () => 10_000_000));
+    barsByTicker.set(ticker, series(dates, (index) => 1000 + offset * 40 + 60 * Math.sin(index / 18 + offset), () => 20_000_000));
   });
   // A market that only ever falls is never above its own average.
   const marketBars: BacktestBar[] = dates.map((date, index) => ({
@@ -210,7 +210,7 @@ test("a market filter that is never open produces no trades", () => {
     high: 6000 - index,
     low: 6000 - index,
     close: 6000 - index,
-    volume: 10_000_000,
+    volume: 20_000_000,
   }));
   const scanDates = dates.filter((_, index) => index % 5 === 4 && index > 60);
   const sectors = new Map(tickers.map((ticker) => [ticker, "Tech"]));

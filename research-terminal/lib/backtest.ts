@@ -25,6 +25,7 @@ import {
 import {
   classifyAll,
   DEFAULT_POLICY,
+  EXCLUDED_SETUPS,
   pickLongs,
   pickShort,
   positionWeight,
@@ -104,6 +105,12 @@ export type BacktestStats = {
   profitFactor: number | null;
   best: number | null;
   worst: number | null;
+  /** Mean of the worst 5% of settled trades — the left tail that hurts. */
+  tail: number | null;
+  /** Standard deviation of per-trade returns. */
+  stdev: number | null;
+  /** Worst peak-to-trough of the trade-sequenced equity curve, in percent. */
+  maxDrawdown: number | null;
 };
 
 export type BacktestResult = {
@@ -350,6 +357,42 @@ export function stats(trades: BacktestTrade[]): BacktestStats {
   const grossGain = wins.reduce((sum, trade) => sum + (trade.returnPct ?? 0), 0);
   const grossLoss = Math.abs(losses.reduce((sum, trade) => sum + (trade.returnPct ?? 0), 0));
   const rValues = settled.map((trade) => trade.rMultiple).filter((value): value is number => value !== null);
+  const returns = settled.map((trade) => trade.returnPct as number);
+
+  // Left tail: the average of the worst 5% of trades. This is the number a
+  // defensive mandate actually cares about, not the average.
+  const sorted = [...returns].sort((a, b) => a - b);
+  const tailCount = Math.max(1, Math.round(sorted.length * 0.05));
+  const tail = sorted.length ? mean(sorted.slice(0, tailCount)) : null;
+  const average = returns.length ? mean(returns) : 0;
+  const stdev = returns.length > 1 ? Math.sqrt(mean(returns.map((value) => (value - average) ** 2))) : null;
+
+  // Portfolio drawdown: group settled trades into the week their exit landed,
+  // weight each return by its position weight, and compound the weekly returns.
+  // (A serial equal-weight curve massively overstates drawdown for a portfolio
+  // that runs several small positions at once.)
+  const mondayOf = (date: string | null): string => {
+    if (!date) return "";
+    const day = new Date(`${date}T00:00:00Z`);
+    day.setUTCDate(day.getUTCDate() - ((day.getUTCDay() + 6) % 7));
+    return day.toISOString().slice(0, 10);
+  };
+  const weekly = new Map<string, number>();
+  for (const trade of settled) {
+    const week = mondayOf(trade.exitDate);
+    const contribution = (trade.weight / 100) * (trade.returnPct as number);
+    weekly.set(week, (weekly.get(week) ?? 0) + contribution);
+  }
+  let equity = 1;
+  let peak = 1;
+  let drawdown = 0;
+  for (const week of [...weekly.keys()].sort()) {
+    equity *= 1 + (weekly.get(week) as number) / 100;
+    peak = Math.max(peak, equity);
+    drawdown = Math.min(drawdown, equity / peak - 1);
+  }
+  const maxDrawdown = weekly.size > 1 ? drawdown * 100 : null;
+
   return {
     trades: settled.length,
     noEntry: trades.filter((trade) => trade.status === "NO_ENTRY").length,
@@ -357,11 +400,14 @@ export function stats(trades: BacktestTrade[]): BacktestStats {
     wins: wins.length,
     losses: losses.length,
     winRate: settled.length ? (wins.length / settled.length) * 100 : null,
-    avgReturn: settled.length ? mean(settled.map((trade) => trade.returnPct as number)) : null,
+    avgReturn: settled.length ? average : null,
     avgR: rValues.length ? mean(rValues) : null,
     profitFactor: grossLoss > 0 ? grossGain / grossLoss : null,
-    best: settled.length ? Math.max(...settled.map((trade) => trade.returnPct as number)) : null,
-    worst: settled.length ? Math.min(...settled.map((trade) => trade.returnPct as number)) : null,
+    best: settled.length ? Math.max(...returns) : null,
+    worst: settled.length ? Math.min(...returns) : null,
+    tail,
+    stdev,
+    maxDrawdown,
   };
 }
 
@@ -476,13 +522,13 @@ export function runBacktest(input: BacktestInput): BacktestResult {
     const scored = input.scoreWith
       ? classified.map((setup) => ({ ...setup, score: input.scoreWith!(setup) })).sort((a, b) => b.score - a.score)
       : classified;
-    // The regime is a read on the whole market, so it is computed before any
-    // setup is excluded.
-    const setups = policy.excludeSetups?.length ? scored.filter((setup) => !policy.excludeSetups!.includes(setup.setup)) : scored;
-    const regime = regimeFor(setups);
+    // The regime is read on the same tradeable set the selection uses, so a
+    // setup we would never trade cannot inflate the breadth read.
+    const excluded = new Set(policy.excludeSetups ?? [...EXCLUDED_SETUPS]);
+    const regime = regimeFor(scored, excluded);
     const tradeThisWeek = (!policy.regimes || policy.regimes.includes(regime)) && marketOpen(scanDate);
-    const longs = tradeThisWeek ? pickLongs(setups, regime, input.thresholds) : [];
-    const shorts = tradeThisWeek ? pickShort(setups).filter((setup) => shortWeight(setup, longs, regime) >= 3) : [];
+    const longs = tradeThisWeek ? pickLongs(scored, regime, input.thresholds, excluded) : [];
+    const shorts = tradeThisWeek ? pickShort(scored).filter((setup) => shortWeight(setup, longs, regime) >= 3) : [];
 
     const push = (setup: Setup, direction: "LONG" | "SHORT", weight: number) => {
       const list = picksByTicker.get(setup.ticker) ?? [];

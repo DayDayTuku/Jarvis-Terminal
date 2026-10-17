@@ -34,20 +34,19 @@ const signed = (value: number | null, digits = 2) => (value === null ? "—" : `
 function row(label: string, result: BacktestResult): string {
   const s = result.summary;
   return [
-    label.padEnd(24),
+    label.padEnd(26),
     String(s.trades).padStart(6),
-    String(s.noEntry).padStart(7),
-    money(s.winRate, 0).padStart(8),
+    money(s.winRate, 0).padStart(6),
     signed(s.avgReturn).padStart(10),
-    money(s.avgR).padStart(8),
-    money(s.profitFactor).padStart(8),
+    money(s.profitFactor).padStart(6),
+    signed(s.tail).padStart(9),
+    signed(s.maxDrawdown).padStart(9),
     signed(s.worst).padStart(9),
-    signed(s.best).padStart(9),
   ].join(" ");
 }
 
 function header(): string {
-  return ["VARIANT".padEnd(24), "TRADES".padStart(6), "NOENTRY".padStart(7), "WIN%".padStart(8), "AVG RET".padStart(10), "AVG R".padStart(8), "PF".padStart(8), "WORST".padStart(9), "BEST".padStart(9)].join(" ");
+  return ["VARIANT".padEnd(26), "TRADES".padStart(6), "WIN%".padStart(6), "AVG RET".padStart(10), "PF".padStart(6), "TAIL 5%".padStart(9), "MAX DD".padStart(9), "WORST".padStart(9)].join(" ");
 }
 
 async function main(): Promise<void> {
@@ -64,19 +63,16 @@ async function main(): Promise<void> {
 
   const variants: Array<{ label: string; policy: Partial<BacktestPolicy>; scoreWith?: (setup: Setup) => number }> = [
     { label: "baseline (live)", policy: {} },
+    { label: "with reversals", policy: { excludeSetups: [] } },
     { label: "liquid 10bn", policy: { minTurnoverIdr: 10_000_000_000 } },
-    { label: "liquid 20bn", policy: { minTurnoverIdr: 20_000_000_000 } },
     { label: "costs 0.4%", policy: { costPct: 0.4 } },
-    { label: "hold to stop/target", policy: { holdThroughDrops: true } },
     { label: "hold + costs", policy: { holdThroughDrops: true, costPct: 0.4 } },
-    { label: "hold + 10bn + costs", policy: { holdThroughDrops: true, minTurnoverIdr: 10_000_000_000, costPct: 0.4 } },
-    { label: "hold + 20bn + costs", policy: { holdThroughDrops: true, minTurnoverIdr: 20_000_000_000, costPct: 0.4 } },
+    { label: "hold + with reversals + costs", policy: { holdThroughDrops: true, excludeSetups: [], costPct: 0.4 } },
     { label: "hold + index>200d + costs", policy: { holdThroughDrops: true, marketSma: 200, costPct: 0.4 } },
     { label: "room targets", policy: { plan: { ...DEFAULT_POLICY, targetMode: "room" } } },
-    // minRiskReward >= 2 is not a quality filter: in "rr" mode riskReward is a
-    // constant (1.7 for reversals, 2.0 otherwise), so it is exactly equivalent to
-    // excluding the reversal setup. Kept here so the equivalence stays visible.
-    { label: "no reversals + hold + costs", policy: { excludeSetups: ["reversal"], holdThroughDrops: true, costPct: 0.4 } },
+    { label: "room + costs", policy: { plan: { ...DEFAULT_POLICY, targetMode: "room" }, costPct: 0.4 } },
+    { label: "room + hold + costs", policy: { holdThroughDrops: true, plan: { ...DEFAULT_POLICY, targetMode: "room" }, costPct: 0.4 } },
+    { label: "atr stops + hold + costs", policy: { holdThroughDrops: true, plan: { ...DEFAULT_POLICY, stopMode: "atr" }, costPct: 0.4 } },
   ];
 
   // The live model now uses the fitted score, so the baseline is the fitted

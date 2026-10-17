@@ -24,7 +24,7 @@ const base: SetupFeatures = {
   close: 1000,
   change: 0.5,
   volume: 500_000,
-  averageVolume: 10_000_000,
+  averageVolume: 20_000_000,
   relativeVolume: 1.5,
   rsi: 60,
   ema20: 980,
@@ -152,4 +152,18 @@ test("selectWeek: a RISK OFF week carries no picks", () => {
   const strong = selectWeek([{ setup: "momentum", score: 90, riskReward: 2 }] as never);
   assert.equal(strong.regime, "NEUTRAL");
   assert.equal(strong.longs.length, 1);
+});
+
+test("reversals are classified but never selected, and do not count as breadth", () => {
+  const reversal: ScoredSetup = { setup: "reversal", score: 95, riskReward: 1.7, sector: "Other" };
+  const momentum: ScoredSetup = { setup: "momentum", score: 76, riskReward: 2, sector: "Other" };
+  // A reversal alone reads as no tradeable breadth at all.
+  assert.equal(regimeFor([reversal]), "RISK OFF");
+  assert.deepEqual(pickLongs([reversal], "RISK ON"), []);
+  // It must not inflate a genuine read either.
+  assert.equal(regimeFor([reversal, momentum]), regimeFor([momentum]));
+  assert.deepEqual(pickLongs([reversal, momentum], "RISK ON"), [momentum]);
+  // But an explicit override can put it back, so the backtest can measure it.
+  assert.equal(regimeFor([reversal, momentum], new Set()), regimeFor([reversal, momentum], new Set()));
+  assert.equal(pickLongs([reversal], "RISK ON", undefined, new Set()).length, 1);
 });

@@ -81,11 +81,12 @@ export const DEFAULT_POLICY: PlanPolicy = {
  * Minimum average daily turnover (close × average volume) in rupiah for a name to
  * be tradeable. Share-count floors are not enough: 250k shares of a 1,000-rupiah
  * stock is only 0.25bn IDR a day, far too thin to enter and exit without moving
- * the price. IDR 10bn/day is a conservative institutional floor (roughly USD
- * 600k of turnover) and lifts both the hit rate and the after-cost edge in the
- * backtest. `ctx.minTurnoverIdr` overrides it so variants can be tested.
+ * the price. IDR 20bn/day is a conservative institutional floor (roughly USD
+ * 1.2m of turnover); it lowers both the left tail and the portfolio drawdown
+ * versus a 10bn floor with no loss of return. `ctx.minTurnoverIdr` overrides it
+ * so variants can be tested.
  */
-export const MIN_TURNOVER_IDR = 10_000_000_000;
+export const MIN_TURNOVER_IDR = 20_000_000_000;
 
 export type Setup = {
   ticker: string;
@@ -336,8 +337,8 @@ export function classifyAll(features: SetupFeatures[], ctx: { shortEligible: Set
 export type ScoredSetup = { setup: string; score: number; riskReward: number; sector?: string };
 
 /** Market regime read from the breadth of the current scan. */
-export function regimeFor(setups: ScoredSetup[]): Regime {
-  const valid = setups.filter((item) => !isShortSetup(item) && item.riskReward >= 1.7);
+export function regimeFor(setups: ScoredSetup[], excluded: ReadonlySet<string> = EXCLUDED_SETUPS): Regime {
+  const valid = setups.filter((item) => !isShortSetup(item) && item.riskReward >= 1.7 && !excluded.has(item.setup.toLowerCase()));
   const broad = valid.filter((item) => item.score >= 75).length;
   const strong = valid.filter((item) => item.score >= 85).length;
   return broad >= 5 ? "RISK ON" : broad >= 3 ? "EMERGING" : strong ? "NEUTRAL" : "RISK OFF";
@@ -351,6 +352,17 @@ export function regimeFor(setups: ScoredSetup[]): Regime {
  * identical here (flagged for the backtest) rather than changed silently.
  */
 export const CORE_SETUPS: ReadonlySet<string> = new Set(["pullback"]);
+
+/**
+ * Setups the model deliberately does NOT trade. `reversal` is a counter-trend
+ * entry whose returns are strongly regime-dependent (it was the best cohort in
+ * one half of the backtest and the worst in the other) and whose losses cluster,
+ * so it is the biggest single source of drawdown. Dropping it raises the
+ * risk-adjusted result in BOTH halves and shrinks the portfolio drawdown. It is
+ * still classified and shown in the screener; it is only excluded from selection.
+ * Overridable so the backtest can measure the difference.
+ */
+export const EXCLUDED_SETUPS: ReadonlySet<string> = new Set(["reversal"]);
 
 export function positionKind(item: { setup: string; score: number }): SetupKind {
   return item.score >= 85 && CORE_SETUPS.has(item.setup.toLowerCase()) ? "CORE" : "TACTICAL";
@@ -372,13 +384,14 @@ export function pickLongs<T extends ScoredSetup>(
   setups: T[],
   regime: Regime,
   thresholds?: { minimum?: Partial<Record<Regime, number>>; maximum?: Partial<Record<Regime, number>> },
+  excluded: ReadonlySet<string> = EXCLUDED_SETUPS,
 ): T[] {
   if (regime === "RISK OFF") return [];
   const minimum = thresholds?.minimum?.[regime] ?? REGIME_MINIMUM[regime];
   const maximum = thresholds?.maximum?.[regime] ?? REGIME_MAXIMUM[regime];
   const sectors = new Map<string, number>();
   return [...setups]
-    .filter((item) => !isShortSetup(item))
+    .filter((item) => !isShortSetup(item) && !excluded.has(item.setup.toLowerCase()))
     .sort((a, b) => b.score - a.score || b.riskReward - a.riskReward)
     .filter((item) => item.score >= minimum && item.riskReward >= 1.7)
     .filter((item) => {
