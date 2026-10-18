@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "../../../utils/supabase/server";
-import { tradeOutcome, collapseStreaks, type PriceBar, type PriorPosition } from "@/lib/weekly-lifecycle";
+import { tradeOutcome, collapseStreaks, weightOr, type PriceBar, type PriorPosition } from "@/lib/weekly-lifecycle";
 
 export const maxDuration = 60;
 
@@ -127,7 +127,7 @@ export async function GET() {
       ticker: streak.ticker,
       setup: streak.plan.setup,
       score: streak.plan.score,
-      weight: Number(streak.plan.position_weight) || 12.5,
+      weight: weightOr(streak.plan.position_weight),
       direction: outcome.direction,
       status,
       entryDate: outcome.entryDate,

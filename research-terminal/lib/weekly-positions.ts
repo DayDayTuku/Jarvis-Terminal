@@ -15,6 +15,7 @@
 import {
   evaluatePosition,
   isShortSetup,
+  weightOr,
   type LifecycleActionName,
   type LifecycleOutcome,
   type PriceBar,
@@ -116,8 +117,9 @@ export async function carriedPositions(
       if (!plan) return null;
       return {
         // Preserve the weight the position currently holds (a REDUCE halves it)
-        // rather than resetting to the original full weight.
-        plan: { ...plan, position_weight: Number(row.target_weight) || Number(plan.position_weight), score: row.current_score ?? plan.score } as PriorPosition,
+        // rather than resetting to the original full weight. A live 0% (macro
+        // stand-aside) must stay 0 and not fall back to the plan's full weight.
+        plan: { ...plan, position_weight: weightOr(row.target_weight, weightOr(plan.position_weight)), score: row.current_score ?? plan.score } as PriorPosition,
         entryFilled: true,
         targetReached: Boolean(row.target_reached),
       };
@@ -166,7 +168,7 @@ export async function buildLifecycle(args: {
       action: "BUY",
       previous_score: null,
       current_score: Number(item.score),
-      target_weight: Number(item.position_weight) || 12.5,
+      target_weight: weightOr(item.position_weight),
       theoretical_fill: null,
       entry_filled: false,
       target_reached: false,

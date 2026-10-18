@@ -13,6 +13,7 @@ import {
   stopTrigger,
   targetTrigger,
   tradeOutcome,
+  weightOr,
   type PriceBar,
   type PriorPosition,
 } from "../lib/weekly-lifecycle.ts";
@@ -237,4 +238,26 @@ test("positionTriggers reports the same window the rollover uses", () => {
   assert.equal(triggers.sessionHigh, 1030);
   assert.equal(triggers.stopTrigger, 935);
   assert.equal(triggers.targetTrigger, 1080);
+});
+
+test("weightOr keeps a deliberate 0% and only defaults a missing weight", () => {
+  assert.equal(weightOr(0), 0);
+  assert.equal(weightOr(12.5), 12.5);
+  assert.equal(weightOr(7), 7);
+  assert.equal(weightOr(null), 12.5);
+  assert.equal(weightOr(undefined), 12.5);
+  assert.equal(weightOr(Number.NaN), 12.5);
+  assert.equal(weightOr(0, 9), 0);
+  assert.equal(weightOr(undefined, 9), 9);
+});
+
+test("a 0% stand-aside week never resurrects a full-size position", () => {
+  // Fresh re-entry after a stop, but the week is standing aside (0%).
+  const stopped = [bar("2026-10-12", 990, 1005, 975, 1000), bar("2026-10-13", 1000, 1005, 930, 935)];
+  assert.equal(evaluatePosition(long, stopped, { ticker: "AAAA", score: 80, position_weight: 0 }).targetWeight, 0);
+  // A held 0% position keeps its 0% on HOLD and on REDUCE.
+  const filled = [bar("2026-10-12", 990, 1005, 975, 1000)];
+  assert.equal(evaluatePosition({ ...long, position_weight: 0 }, filled, { ticker: "AAAA", score: 69 }).targetWeight, 0);
+  assert.equal(evaluatePosition({ ...long, position_weight: 0 }, filled, { ticker: "AAAA", score: 60 }).targetWeight, 0);
+  assert.equal(evaluatePosition({ ...long, position_weight: 0 }, filled).targetWeight, 0);
 });

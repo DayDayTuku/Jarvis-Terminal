@@ -38,3 +38,16 @@ test("buildLifecycle books a BUY for a genuinely new pick", async () => {
   assert.equal(rows[0].current_score, 80);
   assert.equal(rows[0].prior_run_id, "r1");
 });
+
+test("buildLifecycle keeps a 0% stand-aside BUY at 0% (never the legacy 12.5)", async () => {
+  const rows = await buildLifecycle({ runId: "r2", priorRun, prior: [], current: [{ ticker: "BBBB", score: 80, position_weight: 0 }], carried: [], getBars: calm });
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].action, "BUY");
+  assert.equal(rows[0].target_weight, 0);
+});
+
+test("buildLifecycle still defaults a genuinely missing weight", async () => {
+  const rows = await buildLifecycle({ runId: "r2", priorRun, prior: [], current: [{ ticker: "BBBB", score: 80 }], carried: [], getBars: calm });
+  assert.equal(rows[0].action, "BUY");
+  assert.equal(rows[0].target_weight, 12.5);
+});

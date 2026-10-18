@@ -56,6 +56,19 @@ export type LifecycleOutcome = {
   invalidated: boolean;
 };
 
+/**
+ * A position weight in percent. The legacy default only applies when the value
+ * is genuinely absent or not a number: a model that deliberately sized a week to
+ * 0% (a macro stand-aside) must stay at 0, because `0 || 12.5` would otherwise
+ * resurrect a position the risk overlay had stood down.
+ */
+export const DEFAULT_POSITION_WEIGHT = 12.5;
+export function weightOr(value: number | null | undefined, fallback = DEFAULT_POSITION_WEIGHT): number {
+  if (value === null || value === undefined) return fallback;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
 export function isShortSetup(item: { setup?: string } | null | undefined): boolean {
   return String(item?.setup || "").toLowerCase().startsWith("short_");
 }
@@ -145,7 +158,7 @@ export function evaluatePosition(
   const hasTarget = Number.isFinite(target);
   const invalidated = entryFilled && active.some((bar) => (short ? bar.high >= stop : bar.low <= stop));
   const targetReached = (state.targetReached ?? false) || (entryFilled && hasTarget && active.some((bar) => (short ? bar.low <= target : bar.high >= target)));
-  const baseWeight = Number(prior.position_weight) || 12.5;
+  const baseWeight = weightOr(prior.position_weight);
   const previousScore = Number(prior.score);
 
   if (!entryFilled && !next) {
@@ -159,7 +172,7 @@ export function evaluatePosition(
     // The old position was closed. A fresh weekly selection is a new entry, not
     // a continuation, so it must read as NEW rather than as a lingering EXIT.
     return {
-      action: "BUY", targetWeight: Number(next.position_weight) || 12.5, previousScore: null,
+      action: "BUY", targetWeight: weightOr(next.position_weight), previousScore: null,
       theoreticalFill: fill, entryFilled, targetReached, invalidated,
       reason: "The prior position was stopped out; this is a fresh entry from the new weekly selection.",
     };
