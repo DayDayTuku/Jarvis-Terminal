@@ -1,17 +1,24 @@
 /**
  * Risk map: one source of truth for the "where is the world fragile" layer.
  *
- * Two layers, deliberately separated:
+ * Three layers, deliberately separated:
  *  1. STRATEGIC  - curated, hand-maintained. The chokepoints and conflict zones
  *                  that reliably move markets. Always available, never depends
  *                  on an upstream feed.
  *  2. HAZARDS    - live, free and keyless (GDACS: earthquakes, cyclones,
  *                  floods, volcanoes, droughts, wildfires) with real lat/long.
+ *  3. NATURAL    - Indonesia-first: BMKG felt earthquakes plus NASA FIRMS
+ *                  karhutla hotspots clustered into cells. See
+ *                  lib/natural-hazards.ts.
  *
  * Live geocoded *armed-conflict* event data (UCDP / ACLED) is intentionally not
  * wired here: UCDP is unreachable from our egress and ACLED needs a registered
  * key. When a key exists this module is the single place to add it.
  */
+
+import { fetchIndonesiaQuakes, fetchKarhutla, type FireCell, type KarhutlaRead, type QuakeRead } from "./natural-hazards.ts";
+
+export type { FireCell, KarhutlaRead };
 
 export type StrategicKind = "CHOKEPOINT" | "CONFLICT";
 
@@ -28,10 +35,20 @@ export type StrategicPoint = {
 
 export type HazardAlert = "Green" | "Orange" | "Red";
 
+/** Which feed a hazard came from, so the UI can label provenance. */
+export type HazardSource = "GDACS" | "BMKG" | "FIRMS";
+
+/** GLOBAL = worldwide feed, INDONESIA = archipelago-first read. */
+export type HazardScope = "GLOBAL" | "INDONESIA";
+
+/** Filter and legend families used by the map. */
+export type HazardFamily = "QUAKE" | "FIRE" | "STORM" | "FLOOD" | "VOLCANO" | "DROUGHT";
+
 export type HazardPoint = {
   id: string;
   type: string;
   label: string;
+  family: HazardFamily;
   name: string;
   country: string;
   lat: number;
@@ -41,6 +58,10 @@ export type HazardPoint = {
   severityText: string;
   date: string;
   url: string;
+  source: HazardSource;
+  scope: HazardScope;
+  /** Hotspot count for aggregated fire cells only. */
+  count?: number;
 };
 
 export type RiskMapData = {
@@ -49,6 +70,9 @@ export type RiskMapData = {
   freshness: string | null;
   strategic: StrategicPoint[];
   hazards: HazardPoint[];
+  /** Karhutla hotspots, already clustered into 1-degree cells. */
+  fires: FireCell[];
+  karhutla: KarhutlaRead | null;
   failures: string[];
 };
 
@@ -65,6 +89,36 @@ const HAZARD_LABELS: Record<string, string> = {
 
 export function hazardLabel(type: string) {
   return HAZARD_LABELS[type] ?? type;
+}
+
+export const HAZARD_FAMILIES: HazardFamily[] = ["QUAKE", "FIRE", "STORM", "FLOOD", "VOLCANO", "DROUGHT"];
+
+const HAZARD_FAMILY_BY_TYPE: Record<string, HazardFamily> = {
+  EQ: "QUAKE",
+  FIRE: "FIRE",
+  WF: "FIRE",
+  TC: "STORM",
+  FL: "FLOOD",
+  VO: "VOLCANO",
+  DR: "DROUGHT",
+};
+
+export function hazardFamily(type: string): HazardFamily {
+  return HAZARD_FAMILY_BY_TYPE[type.toUpperCase()] ?? "QUAKE";
+}
+
+/** Magnitude buckets for BMKG felt earthquakes. */
+export function quakeAlert(magnitude: number): HazardAlert {
+  if (magnitude >= 6) return "Red";
+  if (magnitude >= 5) return "Orange";
+  return "Green";
+}
+
+/** Cluster intensity buckets for karhutla fire cells. */
+export function fireAlert(cell: FireCell): HazardAlert {
+  if (cell.count >= 100 || cell.maxFrp >= 100) return "Red";
+  if (cell.count >= 20 || cell.maxFrp >= 40) return "Orange";
+  return "Green";
 }
 
 export function normalizeAlert(value: unknown): HazardAlert {
@@ -310,6 +364,7 @@ export function normalizeGdacs(payload: unknown): HazardPoint[] {
       id: `${type}-${String(props.eventid ?? "")}-${String(props.episodeid ?? "")}`,
       type,
       label: hazardLabel(type),
+      family: hazardFamily(type),
       name: String(props.name || props.description || hazardLabel(type)),
       country: String(props.country ?? ""),
       lat: pointLat,
@@ -319,6 +374,8 @@ export function normalizeGdacs(payload: unknown): HazardPoint[] {
       severityText: String(severityData?.severitytext ?? ""),
       date: String(props.fromdate ?? props.datemodified ?? ""),
       url: typeof report === "string" ? report : "",
+      source: "GDACS",
+      scope: "GLOBAL",
     });
   }
   return points.sort(hazardSort).slice(0, 400);
@@ -330,6 +387,29 @@ export function hazardFreshness(hazards: HazardPoint[]): string | null {
     if (!point.date) return latest;
     return !latest || point.date > latest ? point.date : latest;
   }, null);
+}
+
+/**
+ * Defensive read of a `/api/risk-map` body.
+ *
+ * The route is served with a public cache and `stale-while-revalidate`, so a
+ * client can still hold a body produced *before* a layer existed (the fires
+ * layer was added last). Coercing once on receipt keeps one stale response from
+ * taking down the whole section.
+ */
+export function coerceRiskMapData(payload: unknown): RiskMapData {
+  const raw = (payload ?? {}) as Partial<RiskMapData>;
+  const array = <T,>(value: unknown): T[] => (Array.isArray(value) ? (value as T[]) : []);
+  return {
+    status: raw.status === "live" ? "live" : "stale",
+    source: typeof raw.source === "string" ? raw.source : "RISK FEED",
+    freshness: typeof raw.freshness === "string" ? raw.freshness : null,
+    strategic: array<StrategicPoint>(raw.strategic).length ? array<StrategicPoint>(raw.strategic) : STRATEGIC_POINTS,
+    hazards: array<HazardPoint>(raw.hazards),
+    fires: array<FireCell>(raw.fires),
+    karhutla: raw.karhutla ?? null,
+    failures: array<string>(raw.failures),
+  };
 }
 
 /**
@@ -368,25 +448,74 @@ export function dedupeHazards(points: HazardPoint[]): HazardPoint[] {
   return [...unique.values()].sort(hazardSort).slice(0, MAX_HAZARD_POINTS);
 }
 
+/** Map a BMKG felt earthquake onto the shared hazard shape. */
+export function quakeToHazard(read: QuakeRead): HazardPoint {
+  const parts = [`M ${read.magnitude}`];
+  if (read.depthKm !== null) parts.push(`${read.depthKm} km deep`);
+  if (read.felt) parts.push(`felt ${read.felt}`);
+  return {
+    id: read.id,
+    type: "EQ",
+    label: "Earthquake",
+    family: "QUAKE",
+    name: read.region,
+    country: "Indonesia",
+    lat: read.lat,
+    lng: read.lng,
+    alert: quakeAlert(read.magnitude),
+    severity: read.magnitude,
+    severityText: parts.join(" · "),
+    date: read.date,
+    url: read.url,
+    source: "BMKG",
+    scope: "INDONESIA",
+  };
+}
+
+/** Run one feed, recording a failure note instead of throwing. */
+async function settle<T>(run: () => Promise<T>, note: (message: string) => void): Promise<T | null> {
+  try {
+    return await run();
+  } catch (error) {
+    note(error instanceof Error ? error.message : "unavailable");
+    return null;
+  }
+}
+
 /**
- * Build the full map payload. The strategic layer always returns; the hazard
- * layer fails open with an explicit failure note so the map is never blank.
+ * Build the full map payload. The strategic layer always returns; every live
+ * feed fails open with an explicit failure note, so the map is never blank.
  */
 export async function loadRiskMap(): Promise<RiskMapData> {
   const failures: string[] = [];
-  const collected: HazardPoint[] = [];
-  const settled = await Promise.allSettled(HAZARD_TYPES.map((type) => fetchHazardType(type)));
-  settled.forEach((result, index) => {
-    if (result.status === "fulfilled") collected.push(...result.value);
-    else failures.push(`${HAZARD_TYPES[index]}: ${result.reason instanceof Error ? result.reason.message : "unavailable"}`);
+  const [gdacsSettled, quakes, karhutla] = await Promise.all([
+    Promise.allSettled(HAZARD_TYPES.map((type) => fetchHazardType(type))),
+    settle(fetchIndonesiaQuakes, (message) => failures.push(`BMKG: ${message}`)),
+    settle(fetchKarhutla, (message) => failures.push(`FIRMS: ${message}`)),
+  ]);
+
+  const gdacs: HazardPoint[] = [];
+  gdacsSettled.forEach((result, index) => {
+    if (result.status === "fulfilled") gdacs.push(...result.value);
+    else failures.push(`GDACS ${HAZARD_TYPES[index]}: ${result.reason instanceof Error ? result.reason.message : "unavailable"}`);
   });
-  const hazards = dedupeHazards(collected);
+
+  const hazards = dedupeHazards([...(quakes ?? []).map(quakeToHazard), ...gdacs]);
+  const fires = karhutla?.cells ?? [];
+  const freshness =
+    [hazardFreshness(hazards), karhutla?.latest ?? null]
+      .filter((value): value is string => Boolean(value))
+      .sort()
+      .pop() ?? null;
+
   return {
-    status: hazards.length ? "live" : "stale",
-    source: "GDACS HAZARD FEED · CURATED STRATEGIC LAYER",
-    freshness: hazardFreshness(hazards),
+    status: hazards.length || fires.length ? "live" : "stale",
+    source: "GDACS · BMKG · NASA FIRMS · CURATED STRATEGIC LAYER",
+    freshness,
     strategic: STRATEGIC_POINTS,
     hazards,
+    fires,
+    karhutla: karhutla ?? null,
     failures,
   };
 }

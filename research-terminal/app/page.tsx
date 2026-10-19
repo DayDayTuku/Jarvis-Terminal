@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import StockSearch from '../components/StockSearch';
 import StockDetailModal from '../components/StockDetailModal';
 import NewsIntelligence from '../components/NewsIntelligence';
@@ -51,13 +51,34 @@ const fallbackYield = [4.41, 4.29, 4.12, 4.03, 4.06, 4.18, 4.36];
 const fallbackTrail: RegimePoint[] = Array.from({ length: 36 }, (_, index) => { const date = new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth() - (35 - index), 1)); return { date: date.toISOString().slice(0,10), growth: 1.1 - index * .045 + Math.sin(index * .7) * .3, inflation: -.7 + index * .04 + Math.cos(index * .5) * .34 }; });
 
 const gprBars = [25,29,27,34,31,38,41,37,46,43,52,49,55,61,57,64];
-const navigation: Array<{ label: Section; icon: string }> = [
-  { label: 'OVERVIEW', icon: '⌂' }, { label: 'MACRO', icon: '∿' }, { label: 'MARKETS', icon: '◇' },
-  { label: 'NEWS', icon: '◫' }, { label: 'QUANT LAB', icon: 'Σ' },
-  { label: 'PORTFOLIO', icon: '◈' },
-  { label: 'RISK MAP', icon: '⌖' },
-  { label: 'RESEARCH PAPERS', icon: '▤' }, { label: 'SEASONALITY', icon: '▦' }, { label: 'MARKET PARTICIPANT', icon: '≋' },
-];
+type NavGroup = 'MONITOR' | 'DECIDE' | 'RESEARCH';
+const navigation = [
+  { label: 'OVERVIEW', icon: '⌂', group: 'MONITOR' },
+  { label: 'MACRO', icon: '∿', group: 'MONITOR' },
+  { label: 'MARKETS', icon: '◇', group: 'MONITOR' },
+  { label: 'NEWS', icon: '◫', group: 'MONITOR' },
+  { label: 'QUANT LAB', icon: 'Σ', group: 'DECIDE' },
+  { label: 'PORTFOLIO', icon: '◈', group: 'DECIDE' },
+  { label: 'RISK MAP', icon: '⌖', group: 'DECIDE' },
+  { label: 'RESEARCH PAPERS', icon: '▤', group: 'RESEARCH' },
+  { label: 'SEASONALITY', icon: '▦', group: 'RESEARCH' },
+  { label: 'MARKET PARTICIPANT', icon: '≋', group: 'RESEARCH' },
+] as const satisfies ReadonlyArray<{ label: Section; icon: string; group: NavGroup }>;
+const navDesc: Record<(typeof navigation)[number]['label'], string> = {
+  OVERVIEW: 'What needs attention now',
+  MACRO: 'Growth, inflation, curve',
+  MARKETS: 'Daily & weekly performance',
+  NEWS: 'Ranked by decision impact',
+  'QUANT LAB': 'Cross-asset & IDX signals',
+  PORTFOLIO: 'Exposure and stress',
+  'RISK MAP': 'Chokepoints, conflict, hazards',
+  'RESEARCH PAPERS': 'Institutional library',
+  SEASONALITY: 'Monthly return tendencies',
+  'MARKET PARTICIPANT': 'CFTC positioning',
+};
+const navBadge = (label: Section) => (label === 'QUANT LAB' ? 'SETUPS · BETA' : label === 'NEWS' || label === 'PORTFOLIO' ? `${label} · BETA` : label);
+/** Number-key shortcut for a nav slot: 1..9, then 0 for the tenth. */
+const navShortcut = (index: number) => (index === 9 ? '0' : String(index + 1));
 
 function sectionSlug(section: Section) {
   return section.toLowerCase().replace(/\s+/g, "-");
@@ -70,6 +91,7 @@ function sectionFromHash(): Section {
 
 export default function Home() {
   const [active, setActive] = useState<Section>('OVERVIEW');
+  const navRefs = useRef<Record<string, HTMLButtonElement | null>>({});
   const [now, setNow] = useState<Date | null>(null);
   const [range, setRange] = useState<'6M' | '1Y' | '3Y'>('1Y');
   const [heatPeriod, setHeatPeriod] = useState<'1D' | '1W'>('1D');
@@ -77,6 +99,14 @@ export default function Home() {
   const [seasonTicker, setSeasonTicker] = useState('BUMI'); const [seasonality, setSeasonality] = useState<SeasonalityData|null>(null);
   const [cot, setCot] = useState<CotData|null>(null); const [cotAsset, setCotAsset] = useState('USD');
   const [notesOpen, setNotesOpen] = useState(false); const [settingsOpen, setSettingsOpen] = useState(false); const [feedbackOpen, setFeedbackOpen] = useState(false);
+  const modalOpenRef = useRef(false);
+  // Keep the global shortcut handler aware of overlays without re-binding it every render.
+  useEffect(() => { modalOpenRef.current = notesOpen || settingsOpen || feedbackOpen; }, [notesOpen, settingsOpen, feedbackOpen]);
+  // On the mobile bottom bar, keep the active section scrolled into view.
+  useEffect(() => {
+    if (!window.matchMedia('(max-width: 720px)').matches) return;
+    navRefs.current[active]?.scrollIntoView({ block: 'nearest', inline: 'center', behavior: 'smooth' });
+  }, [active]);
   const [scheme, setScheme] = useState<Scheme>('default'); const [note, setNote] = useState('');
   const [savedNote, setSavedNote] = useState('Watch the next Core PCE print. A second upside surprise would strengthen the higher-for-longer rates case.');
   const [fred, setFred] = useState<FredData | null>(null); const [markets, setMarkets] = useState<MarketData | null>(null); const [gdelt, setGdelt] = useState<GdeltData | null>(null); const [calendar, setCalendar] = useState<CalendarData | null>(null);
@@ -89,7 +119,15 @@ export default function Home() {
       if (calendarResult.status === 'fulfilled') setCalendar(calendarResult.value as CalendarData);
       if (cotResult.status === 'fulfilled') setCot(cotResult.value as CotData);
     });
-    const onKey = (event: KeyboardEvent) => { if ((event.target as HTMLElement).matches('textarea,input')) return; if (event.key.toLowerCase() === 'n') setNotesOpen(true); if (event.key.toLowerCase() === 's') setSettingsOpen(true); if (event.key === 'Escape') { setNotesOpen(false); setSettingsOpen(false); } };
+    const onKey = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (target?.closest('textarea, input, select, [contenteditable="true"]')) return;
+      if (event.key === 'Escape') { setNotesOpen(false); setSettingsOpen(false); setFeedbackOpen(false); return; }
+      if (event.metaKey || event.ctrlKey || event.altKey) return;
+      const key = event.key.toLowerCase();
+      if (key === 'n') { setNotesOpen(true); return; }
+      if (key === 's') { setSettingsOpen(true); return; }
+    };
     window.addEventListener('keydown', onKey); return () => window.removeEventListener('keydown', onKey);
   }, []);
 
@@ -119,6 +157,20 @@ export default function Home() {
     setActive(section);
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
+
+  // Number keys jump between sections: 1..9 for the first nine slots, 0 for the tenth.
+  // Declared after changeSection so the closure is past its initialiser.
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (modalOpenRef.current) return;
+      if (!/^[0-9]$/.test(event.key) || event.metaKey || event.ctrlKey || event.altKey) return;
+      if ((event.target as HTMLElement | null)?.closest('textarea, input, select, [contenteditable="true"]')) return;
+      const item = navigation[event.key === '0' ? 9 : Number(event.key) - 1];
+      if (item) changeSection(item.label);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
   const wibDay = now?.toLocaleDateString("en-US", { weekday: "short", timeZone: "Asia/Jakarta" }).toUpperCase() ?? "—";
   const wibDate = now?.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Jakarta" }).toUpperCase() ?? "LOADING";
   const wibTime = now?.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "Asia/Jakarta" }) ?? "—";
@@ -281,7 +333,26 @@ export default function Home() {
       <aside className="side-nav">
         <div className="side-brand" aria-label="Jarvis"><img src="/jarvis-logo.png" alt="" /></div>
         <nav aria-label="Research sections">
-          {navigation.map((item) => <button key={item.label} aria-label={item.label} data-label={item.label === 'QUANT LAB' ? 'SETUPS · BETA' : ['NEWS','PORTFOLIO'].includes(item.label) ? `${item.label} · BETA` : item.label} title={item.label === 'QUANT LAB' ? 'SETUPS · BETA' : ['NEWS','PORTFOLIO'].includes(item.label) ? `${item.label} · BETA` : item.label} onClick={() => changeSection(item.label)} aria-current={active === item.label ? 'page' : undefined} className={active === item.label ? 'active' : ''}><span aria-hidden="true">{item.icon}</span></button>)}
+          {navigation.map((item, index) => {
+            const badge = navBadge(item.label);
+            const startsGroup = index === 0 || navigation[index - 1].group !== item.group;
+            return (
+              <Fragment key={item.label}>
+                {index > 0 && startsGroup && <span className="side-sep" aria-hidden="true" />}
+                <button
+                  ref={(node) => { navRefs.current[item.label] = node; }}
+                  aria-label={item.label}
+                  data-label={badge}
+                  data-desc={navDesc[item.label]}
+                  data-key={navShortcut(index)}
+                  title={badge}
+                  onClick={() => changeSection(item.label)}
+                  aria-current={active === item.label ? 'page' : undefined}
+                  className={active === item.label ? 'active' : ''}
+                ><span aria-hidden="true">{item.icon}</span></button>
+              </Fragment>
+            );
+          })}
         </nav>
         <div className="side-tools"><button aria-label="Notes" data-label="NOTES" title="Notes" onClick={() => setNotesOpen(true)}><span aria-hidden="true">✎</span></button><button aria-label="Settings" data-label="SETTINGS" title="Settings" onClick={() => setSettingsOpen(true)}><span aria-hidden="true">⚙</span></button></div>
         <button className="sidebar-feedback" aria-label="Send feedback" data-label="FEEDBACK" title="Send feedback" onClick={() => setFeedbackOpen(true)}><span aria-hidden="true">?</span></button>

@@ -3,13 +3,51 @@ import assert from "node:assert/strict";
 import {
   MAX_HAZARD_POINTS,
   STRATEGIC_POINTS,
+  coerceRiskMapData,
   dedupeHazards,
+  fireAlert,
+  hazardFamily,
   hazardFreshness,
   hazardLabel,
   normalizeAlert,
   normalizeGdacs,
+  quakeAlert,
+  quakeToHazard,
+  type FireCell,
   type HazardPoint,
 } from "../lib/risk-map.ts";
+
+/** Minimal valid hazard pin; tests override only what they assert. */
+const hazardPoint = (overrides: Partial<HazardPoint> = {}): HazardPoint => ({
+  id: "x",
+  type: "EQ",
+  label: "Earthquake",
+  family: "QUAKE",
+  name: "n",
+  country: "",
+  lat: 0,
+  lng: 0,
+  alert: "Green",
+  severity: null,
+  severityText: "",
+  date: "2026-10-01T00:00:00",
+  url: "",
+  source: "GDACS",
+  scope: "GLOBAL",
+  ...overrides,
+});
+
+const fireCell = (overrides: Partial<FireCell> = {}): FireCell => ({
+  id: "fire-0:100",
+  lat: 0,
+  lng: 100,
+  count: 1,
+  maxFrp: 1,
+  totalFrp: 1,
+  region: "SUMATRA",
+  date: "2026-10-01",
+  ...overrides,
+});
 
 const gdacsFeature = (overrides: Record<string, unknown> = {}) => ({
   type: "Feature",
@@ -102,44 +140,21 @@ test("hazardLabel: known codes get names, unknown codes pass through", () => {
 });
 
 test("hazardFreshness: returns the latest date or null", () => {
-  const base: HazardPoint = {
-    id: "x",
-    type: "EQ",
-    label: "Earthquake",
-    name: "n",
-    country: "",
-    lat: 0,
-    lng: 0,
-    alert: "Green",
-    severity: null,
-    severityText: "",
-    date: "2026-10-01T00:00:00",
-    url: "",
-  };
   assert.equal(hazardFreshness([]), null);
   assert.equal(
-    hazardFreshness([base, { ...base, id: "y", date: "2026-10-09T00:00:00" }, { ...base, id: "z", date: "2026-09-20T00:00:00" }]),
+    hazardFreshness([
+      hazardPoint(),
+      hazardPoint({ id: "y", date: "2026-10-09T00:00:00" }),
+      hazardPoint({ id: "z", date: "2026-09-20T00:00:00" }),
+    ]),
     "2026-10-09T00:00:00",
   );
 });
 
 test("dedupeHazards: collapses repeated event features to one pin", () => {
-  const base: HazardPoint = {
-    id: "TC-100-7",
-    type: "TC",
-    label: "Tropical cyclone",
-    name: "Cyclone",
-    country: "",
-    lat: 10,
-    lng: 100,
-    alert: "Red",
-    severity: null,
-    severityText: "",
-    date: "2026-10-10T00:00:00",
-    url: "",
-  };
+  const base = hazardPoint({ id: "TC-100-7", type: "TC", label: "Tropical cyclone", name: "Cyclone", lat: 10, lng: 100, alert: "Red", date: "2026-10-10T00:00:00" });
   // GDACS returns one feature per track point; same id, different coordinates.
-  const repeated = [base, { ...base, lat: 11 }, { ...base, lat: 12 }, { ...base, id: "EQ-9-1", type: "EQ", alert: "Green" }];
+  const repeated = [base, { ...base, lat: 11 }, { ...base, lat: 12 }, hazardPoint({ id: "EQ-9-1" })];
   const deduped = dedupeHazards(repeated);
   assert.equal(deduped.length, 2);
   assert.deepEqual(
@@ -151,21 +166,98 @@ test("dedupeHazards: collapses repeated event features to one pin", () => {
 });
 
 test("dedupeHazards: caps the layer", () => {
-  const many: HazardPoint[] = Array.from({ length: MAX_HAZARD_POINTS + 25 }, (_, index) => ({
-    id: `EQ-${index}-1`,
-    type: "EQ",
-    label: "Earthquake",
-    name: "q",
-    country: "",
-    lat: 0,
-    lng: 0,
-    alert: "Green",
-    severity: null,
-    severityText: "",
-    date: "2026-01-01T00:00:00",
-    url: "",
-  }));
+  const many: HazardPoint[] = Array.from({ length: MAX_HAZARD_POINTS + 25 }, (_, index) => hazardPoint({ id: `EQ-${index}-1` }));
   assert.equal(dedupeHazards(many).length, MAX_HAZARD_POINTS);
+});
+
+test("normalizeGdacs: tags each point with family, source and scope", () => {
+  const [point] = normalizeGdacs({ features: [gdacsFeature({ eventtype: "WF" })] });
+  assert.equal(point.family, "FIRE");
+  assert.equal(point.source, "GDACS");
+  assert.equal(point.scope, "GLOBAL");
+});
+
+test("hazardFamily: maps GDACS codes and defaults unknown codes to QUAKE", () => {
+  assert.equal(hazardFamily("EQ"), "QUAKE");
+  assert.equal(hazardFamily("TC"), "STORM");
+  assert.equal(hazardFamily("FL"), "FLOOD");
+  assert.equal(hazardFamily("VO"), "VOLCANO");
+  assert.equal(hazardFamily("DR"), "DROUGHT");
+  assert.equal(hazardFamily("WF"), "FIRE");
+  assert.equal(hazardFamily("fire"), "FIRE");
+  assert.equal(hazardFamily("ZZ"), "QUAKE");
+});
+
+test("quakeAlert: buckets BMKG magnitude into alert levels", () => {
+  assert.equal(quakeAlert(4.9), "Green");
+  assert.equal(quakeAlert(5), "Orange");
+  assert.equal(quakeAlert(5.9), "Orange");
+  assert.equal(quakeAlert(6), "Red");
+});
+
+test("fireAlert: escalates on hotspot count or peak FRP", () => {
+  assert.equal(fireAlert(fireCell({ count: 3, maxFrp: 5 })), "Green");
+  assert.equal(fireAlert(fireCell({ count: 20, maxFrp: 5 })), "Orange");
+  assert.equal(fireAlert(fireCell({ count: 3, maxFrp: 40 })), "Orange");
+  assert.equal(fireAlert(fireCell({ count: 100, maxFrp: 5 })), "Red");
+  assert.equal(fireAlert(fireCell({ count: 3, maxFrp: 100 })), "Red");
+});
+
+test("quakeToHazard: maps a BMKG read onto the shared hazard shape", () => {
+  const hazard = quakeToHazard({
+    id: "bmkg-1",
+    magnitude: 5.4,
+    depthKm: 12,
+    region: "Laut Banda",
+    felt: "III Ambon",
+    lat: -4.1,
+    lng: 130.2,
+    date: "2026-10-18T06:00:00+07:00",
+    url: "https://www.bmkg.go.id/gempabumi/gempabumi-dirasakan.bmkg",
+  });
+  assert.equal(hazard.id, "bmkg-1");
+  assert.equal(hazard.type, "EQ");
+  assert.equal(hazard.family, "QUAKE");
+  assert.equal(hazard.source, "BMKG");
+  assert.equal(hazard.scope, "INDONESIA");
+  assert.equal(hazard.country, "Indonesia");
+  assert.equal(hazard.alert, "Orange");
+  assert.equal(hazard.severity, 5.4);
+  assert.equal(hazard.severityText, "M 5.4 · 12 km deep · felt III Ambon");
+});
+
+test("quakeToHazard: omits missing depth and felt detail", () => {
+  const hazard = quakeToHazard({ id: "bmkg-2", magnitude: 6.2, depthKm: null, region: "Laut", felt: "", lat: 0, lng: 120, date: "", url: "" });
+  assert.equal(hazard.alert, "Red");
+  assert.equal(hazard.severityText, "M 6.2");
+});
+
+test("coerceRiskMapData: tolerates a stale payload from before a layer existed", () => {
+  // A body cached before the fires/karhutla layer shipped has neither field.
+  const legacy = coerceRiskMapData({
+    status: "live",
+    source: "GDACS",
+    freshness: "2026-10-15T00:00:00",
+    strategic: [{ id: "a", kind: "CONFLICT", name: "n", region: "r", lat: 1, lng: 2, note: "x", exposure: ["Brent"] }],
+    hazards: [hazardPoint()],
+    failures: ["BMKG: timeout"],
+  });
+  assert.equal(legacy.fires.length, 0);
+  assert.equal(legacy.karhutla, null);
+  assert.equal(legacy.hazards.length, 1);
+  assert.equal(legacy.strategic.length, 1);
+  assert.deepEqual(legacy.failures, ["BMKG: timeout"]);
+});
+
+test("coerceRiskMapData: survives junk without throwing", () => {
+  for (const input of [null, undefined, {}, "nope", 42, { fires: "lots", karhutla: "yes" }]) {
+    const data = coerceRiskMapData(input);
+    assert.ok(Array.isArray(data.hazards));
+    assert.ok(Array.isArray(data.fires));
+    assert.equal(data.status, "stale");
+  }
+  // With no strategic layer in the body, the curated layer is shown instead of nothing.
+  assert.ok(coerceRiskMapData({}).strategic.length > 0);
 });
 
 test("STRATEGIC_POINTS: ids unique, coordinates valid, exposure present", () => {
