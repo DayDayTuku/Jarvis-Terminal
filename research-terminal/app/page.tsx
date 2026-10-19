@@ -10,10 +10,11 @@ import FeedbackModal from '../components/FeedbackModal';
 import FeedbackInbox from '../components/FeedbackInbox';
 import ResearchPapers from '../components/ResearchPapers';
 import SettingsLogout from '../components/SettingsLogout';
+import RiskMap from '../components/RiskMap';
 
 
 type Scheme = 'default' | 'deuteranopia' | 'protanopia' | 'tritanopia';
-type Section = 'OVERVIEW' | 'MACRO' | 'MARKETS' | 'NEWS' | 'QUANT LAB' | 'PORTFOLIO' | 'GPR INDEX' | 'RESEARCH PAPERS' | 'SEASONALITY' | 'MARKET PARTICIPANT';
+type Section = 'OVERVIEW' | 'MACRO' | 'MARKETS' | 'NEWS' | 'QUANT LAB' | 'PORTFOLIO' | 'RISK MAP' | 'GPR INDEX' | 'RESEARCH PAPERS' | 'SEASONALITY' | 'MARKET PARTICIPANT';
 type RegimePoint = { date: string; growth: number; inflation: number };
 type FredData = { status: string; freshness: string; indicators: Array<{ name: string; actual: number; mean: number; z: number; unit: string }>; yields: Array<{ maturity: string; value: number }>; regime: RegimePoint[] };
 type Constituent = { ticker: string; price: number; daily: number | null; weekly: number | null };
@@ -54,6 +55,7 @@ const navigation: Array<{ label: Section; icon: string }> = [
   { label: 'OVERVIEW', icon: '⌂' }, { label: 'MACRO', icon: '∿' }, { label: 'MARKETS', icon: '◇' },
   { label: 'NEWS', icon: '◫' }, { label: 'QUANT LAB', icon: 'Σ' },
   { label: 'PORTFOLIO', icon: '◈' },
+  { label: 'RISK MAP', icon: '⌖' },
   { label: 'RESEARCH PAPERS', icon: '▤' }, { label: 'SEASONALITY', icon: '▦' }, { label: 'MARKET PARTICIPANT', icon: '≋' },
 ];
 
@@ -355,6 +357,8 @@ export default function Home() {
 
         {active === 'PORTFOLIO' && <PortfolioStressLab />}
 
+        {active === 'RISK MAP' && <RiskMap />}
+
         {active === 'GPR INDEX' && <section className="dashboard-grid risk-grid">
           <article className="panel gpr-panel"><PanelHead index="01" title="GEOPOLITICAL RISK COMPOSITE"><span className="model-badge">FORMULA V1</span></PanelHead><div className="gpr-summary"><div className="gpr-score"><span>CURRENT COMPOSITE</span><strong>{gdelt ? '—' : '64.2'}</strong><b>{gdelt ? 'PARTIAL INPUT' : 'ILLUSTRATIVE'}</b></div><div className="gpr-formula"><span>COMPOSITE FORMULA</span><strong><b>60%</b> GOLDSTEIN EVENT SEVERITY <i>+</i> <b>40%</b> KEYWORD FREQUENCY</strong><small>Composite is withheld until both inputs are live and normalized on the same baseline.</small></div><div className="gpr-moves"><span>EVENT SEVERITY <b>{gdelt ? 'PENDING' : '68.8'}</b></span><span>KEYWORD FREQ. <b>{gdelt ? `${gdelt.frequencyScore.toFixed(1)} LIVE` : '57.3'}</b></span><span>FRESHNESS <b>{gdelt ? formatDate(gdelt.freshness) : 'DEMO'}</b></span></div></div><div className="gpr-chart"><div className="threshold-line"><span>ELEVATED 60</span></div>{gprBars.map((height,index) => <i key={index} className={index > 12 ? 'alert' : ''} style={{height:`${height}%`}} />)}</div><div className="regional-risk"><span>REGIONAL KEYWORD FREQUENCY</span>{(gdelt?.regions ?? [{region:'SEA',score:56.1},{region:'CHINA',score:71.4},{region:'US',score:62}]).map((region) => <div key={region.region}><b>{region.region}</b><i><em style={{width:`${region.score}%`}} /></i><strong>{region.score.toFixed(1)}</strong></div>)}</div><PanelFoot left={gdelt ? 'GDELT KEYWORD FREQUENCY LIVE · GOLDSTEIN EVENT FEED PENDING' : 'VALUES REMAIN ILLUSTRATIVE'} right="60 / 40 WEIGHTING" /></article>
           <article className="panel methodology-panel"><PanelHead index="02" title="METHOD NOTES" /><div><h3>Why 60 / 40?</h3><p>Event severity receives more weight so a sharp escalation moves the index faster than a gradual rise in coverage. Frequency still captures slower risk build-ups.</p><h3>What the score is not</h3><p>It is a directional research signal. GDELT classification noise and reporting density prevent it from being an academic-grade measure.</p><h3>Regional scope</h3><p>Southeast Asia and China are primary. The United States is included as global macro context.</p></div></article>
@@ -521,4 +525,4 @@ function countryCode(country:string){const value=country.toLowerCase();return va
 function monthName(month:number){return ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'][month-1]}
 function compact(value:number){const absolute=Math.abs(value);const sign=value<0?'-':'';return absolute>=1_000_000?`${sign}${(absolute/1_000_000).toFixed(1)}M`:absolute>=1_000?`${sign}${(absolute/1_000).toFixed(1)}K`:`${Math.round(value)}`}
 function titleCase(value:string){return value.toLowerCase().replace(/\b\w/g,(x)=>x.toUpperCase())}
-function sectionDescription(section:Section){return ({OVERVIEW:'The readings that need attention before the next research session.',MACRO:'Live FRED signals for growth, inflation and the Treasury curve.',MARKETS:'Daily and weekly market performance with the IDX watchlist.',NEWS:'Beta · IDX, macro, and commodity coverage ranked by decision impact.','QUANT LAB':'Beta · Transparent cross-asset and IDX breadth signals.',PORTFOLIO:'Beta · Personal factor exposure, concentration, and scenario stress testing.', 'GPR INDEX':'Auditable geopolitical risk inputs, weights and regional scores.','RESEARCH PAPERS':'Institutional research library with admin-managed publication.',SEASONALITY:'Historical monthly return tendencies across selected IDX names and the benchmark.','MARKET PARTICIPANT':'Weekly CFTC positioning by trader category for major futures markets.'})[section]}
+function sectionDescription(section:Section){return ({OVERVIEW:'The readings that need attention before the next research session.',MACRO:'Live FRED signals for growth, inflation and the Treasury curve.',MARKETS:'Daily and weekly market performance with the IDX watchlist.',NEWS:'Beta · IDX, macro, and commodity coverage ranked by decision impact.','QUANT LAB':'Beta · Transparent cross-asset and IDX breadth signals.',PORTFOLIO:'Beta · Personal factor exposure, concentration, and scenario stress testing.','RISK MAP':'Where the world is fragile: market-moving chokepoints, active conflict zones and live hazard pins.', 'GPR INDEX':'Auditable geopolitical risk inputs, weights and regional scores.','RESEARCH PAPERS':'Institutional research library with admin-managed publication.',SEASONALITY:'Historical monthly return tendencies across selected IDX names and the benchmark.','MARKET PARTICIPANT':'Weekly CFTC positioning by trader category for major futures markets.'})[section]}
