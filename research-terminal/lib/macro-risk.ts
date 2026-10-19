@@ -18,6 +18,8 @@
 // -2.4% (B). Reads that did NOT hold in both halves (DXY, US 10y, S&P, HSI, EEM,
 // gold, ^JKSE below its 200-day) were deliberately left out.
 
+import { YAHOO_HEADERS } from "./yahoo.ts";
+
 export type MacroBar = { date: string; close: number };
 export type MacroExposure = { exposure: number; flags: string[] };
 
@@ -95,7 +97,7 @@ export async function yahooDaily(symbol: string, since: string): Promise<MacroBa
   try {
     const period1 = Math.floor(Date.parse(`${since}T00:00:00Z`) / 1000);
     const url = `https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?period1=${period1}&period2=${Math.floor(Date.now() / 1000) + 86_400}&interval=1d`;
-    const response = await fetch(url, { cache: "no-store" });
+    const response = await fetch(url, { headers: YAHOO_HEADERS, cache: "no-store" });
     if (!response.ok) return [];
     const json: any = await response.json();
     const result = json?.chart?.result?.[0];

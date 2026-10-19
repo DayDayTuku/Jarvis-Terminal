@@ -10,6 +10,7 @@ import {
 import { buildLifecycle, carriedPositions, recentRunsBefore } from "@/lib/weekly-positions";
 import { pickLongs as pick, pickShort, positionWeight as weight, regimeFor, shortWeight } from "@/lib/setup-model";
 import { loadMacroExposure } from "@/lib/macro-risk";
+import { YAHOO_HEADERS } from "@/lib/yahoo";
 
 export const maxDuration = 60;
 
@@ -38,7 +39,7 @@ async function getBars(ticker:string, since:string):Promise<Bar[]> {
   try {
     const period1 = Math.floor(new Date(since + "T00:00:00+07:00").getTime()/1000);
     const url = "https://query2.finance.yahoo.com/v8/finance/chart/" + encodeURIComponent(ticker) + ".JK?period1=" + period1 + "&period2=" + (Math.floor(Date.now()/1000)+86400) + "&interval=1d";
-    const response = await fetch(url,{cache:"no-store"});
+    const response = await fetch(url,{headers:YAHOO_HEADERS,cache:"no-store"});
     if(!response.ok) return [];
     const json:any = await response.json();
     const quote = json?.chart?.result?.[0]?.indicators?.quote?.[0];

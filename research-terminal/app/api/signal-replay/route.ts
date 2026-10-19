@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
+import { YAHOO_HEADERS } from "@/lib/yahoo";
+
 type ChartResult = {
   timestamp?: number[];
   indicators: {
@@ -90,7 +92,7 @@ async function fetchChart(symbol: string): Promise<Point[]> {
   for (const host of ["https://query1.finance.yahoo.com", "https://query2.finance.yahoo.com"]) {
     try {
       const response = await fetch(host + path, {
-        headers: { accept: "application/json", "user-agent": "Mozilla/5.0 Jarvis-Research-Terminal" },
+        headers: YAHOO_HEADERS,
         signal: AbortSignal.timeout(9000),
         next: { revalidate: 3600 },
       });

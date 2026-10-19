@@ -8,6 +8,7 @@ import {
 } from "@/lib/weekly-lifecycle";
 import { buildLifecycle, carriedPositions, recentRunsBefore } from "@/lib/weekly-positions";
 import { loadMacroExposure } from "@/lib/macro-risk";
+import { YAHOO_HEADERS } from "@/lib/yahoo";
 
 function isAdmin(user: { app_metadata?: Record<string, unknown> } | null) {
   return user?.app_metadata?.role === "admin";
@@ -47,7 +48,7 @@ type LifecycleAction = {
 async function getBars(ticker:string, since:string):Promise<PriceBar[]> {
   try {
     const period1=Math.floor(new Date(`${since}T00:00:00+07:00`).getTime()/1000);
-    const response=await fetch(`https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}.JK?period1=${period1}&period2=${Math.floor(Date.now()/1000)+86400}&interval=1d`,{cache:"no-store"});
+    const response=await fetch(`https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}.JK?period1=${period1}&period2=${Math.floor(Date.now()/1000)+86400}&interval=1d`,{headers:YAHOO_HEADERS,cache:"no-store"});
     if(!response.ok) return [];
     const json:any=await response.json();
     const quote=json?.chart?.result?.[0]?.indicators?.quote?.[0];

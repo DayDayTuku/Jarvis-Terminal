@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { IDX_UNIVERSE } from "@/lib/idx-universe";
+import { YAHOO_HEADERS } from "@/lib/yahoo";
 
 type InputPosition = { ticker?: string; value?: number };
 type Point = { date: string; value: number };
@@ -26,7 +27,7 @@ async function fetchSeries(symbol: string): Promise<Series> {
   for (const host of ["https://query2.finance.yahoo.com", "https://query1.finance.yahoo.com"]) {
     try {
       const response = await fetch(host + path, {
-        headers: { accept: "application/json", "user-agent": "Mozilla/5.0 Jarvis-Research-Terminal" },
+        headers: YAHOO_HEADERS,
         signal: AbortSignal.timeout(9000),
         next: { revalidate: 900 },
       });
