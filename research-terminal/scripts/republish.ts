@@ -21,6 +21,7 @@ import {
   type Regime,
 } from "../lib/setup-model.ts";
 import { loadMacroExposure } from "../lib/macro-risk.ts";
+import { guardLock } from "../lib/lock-guard.ts";
 
 const COLUMNS = [
   "name", "description", "close", "change", "volume", "average_volume_10d_calc",
@@ -95,11 +96,13 @@ const longs = pickLongs(setups, regime);
 const shorts = pickShort(setups).filter((item) => shortWeight(item, longs, regime) >= 3);
 const selected = [...longs, ...shorts];
 const macro = await loadMacroExposure(week);
+// A scan that did not see the session cannot be republished either: hold the week.
+const lock = guardLock(regime, macro.exposure, macro.indexChangePct);
 
 const rows = selected.map((item: Setup, index: number) => {
   const modelWeight = isShortSetup(item) ? shortWeight(item, longs, regime) : positionWeight(item, regime);
-  const weight = modelWeight * macro.exposure;
-  const sizeIdr = Math.min(1_250_000, 75_000 / Math.max(0.01, Math.abs(item.close - item.invalidation) / item.close)) * macro.exposure;
+  const weight = modelWeight * lock.exposure;
+  const sizeIdr = Math.min(1_250_000, 75_000 / Math.max(0.01, Math.abs(item.close - item.invalidation) / item.close)) * lock.exposure;
   return {
     rank: index + 1,
     ticker: item.ticker,
@@ -117,14 +120,15 @@ const rows = selected.map((item: Setup, index: number) => {
   };
 });
 
-const exposurePct = Math.round(macro.exposure * 100);
-const label = `V5 ${regime} · MACRO ${exposurePct}%${macro.flags.length ? ` (${macro.flags.join(", ")})` : ""}`;
+const exposurePct = Math.round(lock.exposure * 100);
+const label = `V5 ${lock.regime} · MACRO ${exposurePct}%${macro.flags.length ? ` (${macro.flags.join(", ")})` : ""}${lock.suffix}`;
 
 if (asJson) {
-  console.log(JSON.stringify({ week, regime, macro, exposurePct, label, picks: rows }, null, 2));
+  console.log(JSON.stringify({ week, regime: lock.regime, scannedRegime: regime, macro, exposurePct, label, picks: rows }, null, 2));
 } else {
   console.log(`\nWeekly Picks republish · week of ${week}`);
-  console.log(`Regime: ${regime}   Macro exposure: ${exposurePct}%   Reads lit: ${macro.flags.length ? macro.flags.join(", ") : "none"}`);
+  console.log(`Regime: ${lock.regime}${lock.stale ? ` (scan read ${regime}, stale)` : ""}   Macro exposure: ${exposurePct}%   Reads lit: ${macro.flags.length ? macro.flags.join(", ") : "none"}`);
+  if (lock.stale) console.log(`Guard: the scan does not describe this session, so the week is held at 0% deployed.`);
   console.log(`Universe scanned: ${IDX_UNIVERSE.length}   Qualified setups: ${setups.length}`);
   console.log("");
   console.log("RANK  TICKER   SIDE   SETUP          SCORE  ENTRY RANGE          STOP       TARGET     R:R   WEIGHT(raw→now)   SIZE(IDR)");

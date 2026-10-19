@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { BASE_EXPOSURE, EXPOSURE_STEPS, macroExposure, macroFlags, type MacroBar } from "../lib/macro-risk.ts";
+import { BASE_EXPOSURE, EXPOSURE_STEPS, indexSessionMove, macroExposure, macroFlags, type MacroBar } from "../lib/macro-risk.ts";
 
 const day = (index: number) => new Date(Date.UTC(2025, 0, 1) + index * 86_400_000).toISOString().slice(0, 10);
 const bars = (values: number[]): MacroBar[] => values.map((close, index) => ({ date: day(index), close }));
@@ -64,4 +64,14 @@ test("macroExposure: missing data fails open rather than standing down", () => {
   // A series too short to measure its window is likewise left unlit.
   const short = new Map<string, MacroBar[]>([["IDR=X", rising(10, 15000)]]);
   assert.deepEqual(macroFlags(short, "2026-01-01"), []);
+});
+
+test("macroExposure: reports the index's own move for the session it is read on", () => {
+  // The real 2026-10-16 tape: ^JKSE 5863.78 -> 5185.10 in one session.
+  const crash = new Map<string, MacroBar[]>([["^JKSE", bars([6000, 5864, 5185])]]);
+  const read = macroExposure(crash, day(2), 1);
+  assert.equal(Math.round((read.indexChangePct ?? 0) * 10) / 10, -11.6);
+  // Missing or single-point series leave the session move unknown, not zero.
+  assert.equal(macroExposure(new Map(), "2026-01-01", 1).indexChangePct, null);
+  assert.equal(indexSessionMove(bars([6000]), day(0)), null);
 });

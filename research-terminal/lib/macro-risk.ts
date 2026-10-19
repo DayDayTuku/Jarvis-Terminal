@@ -21,10 +21,18 @@
 import { YAHOO_HEADERS } from "./yahoo.ts";
 
 export type MacroBar = { date: string; close: number };
-export type MacroExposure = { exposure: number; flags: string[] };
+/**
+ * `indexChangePct` is the local index's move on the week-of session itself. It is
+ * not a sizing read: the lock uses it to tell whether the scan it is holding
+ * actually describes the session being locked (see lib/lock-guard.ts).
+ */
+export type MacroExposure = { exposure: number; flags: string[]; indexChangePct: number | null };
 
 /** Symbols fetched for the overlay, in the order their flags are reported. */
 export const MACRO_SYMBOLS = ["IDR=X", "^VIX", "^JKSE", "CL=F"] as const;
+
+/** The local index, used both as a sizing read and as the session reference. */
+export const LOCAL_INDEX = "^JKSE";
 
 /**
  * Default fraction of full size the book is allowed to run at. Going full size
@@ -75,18 +83,24 @@ export function macroFlags(series: Map<string, MacroBar[]>, date: string): strin
   if (idr && aboveSma(idr.bars, idr.index, 50)) flags.push("IDR weak");
   const vix = at("^VIX");
   if (vix && (changePct(vix.bars, vix.index, 5) ?? 0) > 0) flags.push("VIX up");
-  const jkse = at("^JKSE");
+  const jkse = at(LOCAL_INDEX);
   if (jkse && (changePct(jkse.bars, jkse.index, 20) ?? 0) < 0) flags.push("JKSE down");
   const oil = at("CL=F");
   if (oil && (changePct(oil.bars, oil.index, 20) ?? 0) > 0) flags.push("oil up");
   return flags;
 }
 
+/** The local index's move on the session dated `date`, or null when unknown. */
+export function indexSessionMove(bars: MacroBar[], date: string): number | null {
+  const index = indexAsOf(bars, date);
+  return index >= 1 ? changePct(bars, index, 1) : null;
+}
+
 /** Gross-exposure multiplier for the week's new picks, with its reasons. */
 export function macroExposure(series: Map<string, MacroBar[]>, date: string, base = BASE_EXPOSURE): MacroExposure {
   const flags = macroFlags(series, date);
   const step = EXPOSURE_STEPS[Math.min(flags.length, EXPOSURE_STEPS.length - 1)];
-  return { exposure: base * step, flags };
+  return { exposure: base * step, flags, indexChangePct: indexSessionMove(series.get(LOCAL_INDEX) ?? [], date) };
 }
 
 /**
