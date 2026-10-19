@@ -96,6 +96,8 @@ export default function QuantLab({
   const marketTone = !breadth.length ? "Market context unavailable" : positive / breadth.length >= .65 ? "Broad market support is constructive" : positive / breadth.length <= .35 ? "Market breadth is weak—reduce position size" : "Market breadth is mixed—stay selective";
   const regime = fred?.regime.at(-1);
   const macroTone = !regime ? "Macro filter unavailable" : regime.inflation > .75 ? "Inflation pressure is elevated" : regime.growth < -.75 ? "Growth backdrop is soft" : "Macro backdrop is not at an extreme";
+  // An outage must never read as "no trade today": those are different facts.
+  const unavailable = data?.status === "unavailable";
 
   return (
     <section style={{ display: "grid", gap: 12 }}>
@@ -112,7 +114,7 @@ export default function QuantLab({
         <div className="quant-summary" style={{ display: "grid", gridTemplateColumns: "repeat(3,minmax(0,1fr))", borderBottom: "1px solid var(--line)" }}>
           <div style={{ padding: 13 }}><span style={{ color: "#657284", fontSize: 7 }}>MARKET CHECK</span><strong style={{ display: "block", marginTop: 5, fontSize: 10 }}>{marketTone}</strong></div>
           <div style={{ padding: 13, borderLeft: "1px solid var(--line)" }}><span style={{ color: "#657284", fontSize: 7 }}>MACRO GUARDRAIL</span><strong style={{ display: "block", marginTop: 5, fontSize: 10 }}>{macroTone}</strong></div>
-          <div style={{ padding: 13, borderLeft: "1px solid var(--line)" }}><span style={{ color: "#657284", fontSize: 7 }}>DATA COVERAGE</span><strong style={{ display: "block", marginTop: 5, fontSize: 10 }}>{data ? `${data.scanned}/${data.universe} stocks · closing data` : "Checking universe…"}</strong></div>
+          <div style={{ padding: 13, borderLeft: "1px solid var(--line)" }}><span style={{ color: "#657284", fontSize: 7 }}>DATA COVERAGE</span><strong style={{ display: "block", marginTop: 5, fontSize: 10 }}>{!data ? "Checking universe…" : unavailable ? "Scanner unavailable" : `${data.scanned}/${data.universe} stocks · closing data`}</strong></div>
         </div>
 
         <div className="setup-steps">
@@ -136,7 +138,8 @@ export default function QuantLab({
         </div>
 
         {loading && <div style={{ minHeight: 330, display: "grid", placeContent: "center", color: "#778596", fontSize: 9 }}>SCANNING CLOSING PRICE, TREND, MOMENTUM, AND VOLUME…</div>}
-        {!loading && !visible.length && <div style={{ minHeight: 330, display: "grid", placeContent: "center", justifyItems: "center", gap: 9, padding: 30, textAlign: "center" }}><strong style={{ fontSize: 12 }}>No qualified setups right now</strong><span style={{ color: "#778596", font: "400 10px var(--font-geist-sans)" }}>{data?.message ?? "That is a valid result—do not force a trade."}</span></div>}
+        {!loading && unavailable && <div style={{ minHeight: 330, display: "grid", placeContent: "center", justifyItems: "center", gap: 9, padding: 30, textAlign: "center" }}><strong style={{ fontSize: 12, color: "#ff9840" }}>Setup scanner unavailable</strong><span style={{ color: "#778596", font: "400 10px var(--font-geist-sans)" }}>{data?.message ?? "The screening feed did not respond, so no candidate list is shown rather than a stale one."}</span><span style={{ color: "#778596", font: "400 10px var(--font-geist-sans)" }}>This is a data outage, not a signal to wait. Try REFRESH SCAN, then fall back to the last published weekly picks.</span></div>}
+        {!loading && !unavailable && !visible.length && <div style={{ minHeight: 330, display: "grid", placeContent: "center", justifyItems: "center", gap: 9, padding: 30, textAlign: "center" }}><strong style={{ fontSize: 12 }}>No qualified setups right now</strong><span style={{ color: "#778596", font: "400 10px var(--font-geist-sans)" }}>{data?.message ?? "That is a valid result—do not force a trade."}</span></div>}
         {!loading && visible.length > 0 && (
           <div className="quant-grid" style={{ display: "grid", gridTemplateColumns: "minmax(330px,.9fr) minmax(360px,1.1fr)" }}>
             <div style={{ maxHeight: 610, overflowY: "auto", borderRight: "1px solid var(--line)" }}>
@@ -223,7 +226,7 @@ function SimpleReplay() {
       <label style={{ display: "grid", gap: 5, color: "#657284", fontSize: 7 }}>CHECK THE NEXT RETURN OF<select value={target} onChange={(e) => setTarget(e.target.value)}>{replayTargets.map(([v,l]) => <option key={v} value={v}>{l}</option>)}</select></label>
     </div>
     <div style={{ minHeight: 118, padding: 16 }}>
-      {loading ? <span style={{ color: "#778596", fontSize: 9 }}>CHECKING HISTORY…</span> : result && data && data.integrity.rating !== "HIDDEN" ? <div>
+      {loading ? <span style={{ color: "#778596", fontSize: 9 }}>CHECKING HISTORY…</span> : !data ? <span style={{ color: "#ff9840", fontSize: 9 }}>Historical market data unavailable. Nothing is shown rather than a partial history.</span> : result && data.integrity.rating !== "HIDDEN" ? <div>
         <strong style={{ display: "block", font: "600 16px/1.4 var(--font-geist-sans)" }}>Across {result.signal.observations} similar episodes, {Math.round((result.signal.winRate ?? 0) * 100)}% produced a positive 20-session return.</strong>
         <p style={{ color: "#8793a3", font: "400 11px/1.55 var(--font-geist-sans)" }}>Median return was {returnPct(result.signal.median)}, versus a normal baseline of {returnPct(result.baseline.median)}. Historical edge: {returnPct(result.edgeMedian)}. Sample quality: {data.integrity.rating.toLowerCase()}.</p>
       </div> : <span style={{ color: "#778596", fontSize: 9 }}>Not enough reliable historical episodes for this combination.</span>}
