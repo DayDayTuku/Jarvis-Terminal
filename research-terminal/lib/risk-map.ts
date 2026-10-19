@@ -7,8 +7,9 @@
  *                  on an upstream feed.
  *  2. HAZARDS    - live, free and keyless (GDACS: earthquakes, cyclones,
  *                  floods, volcanoes, droughts, wildfires) with real lat/long.
- *  3. NATURAL    - Indonesia-first: BMKG felt earthquakes plus NASA FIRMS
- *                  karhutla hotspots clustered into cells. See
+ *  3. NATURAL    - worldwide: NASA FIRMS fire hotspots clustered into cells,
+ *                  with the Indonesian karhutla picture and BMKG felt
+ *                  earthquakes derived from the same reads. See
  *                  lib/natural-hazards.ts.
  *
  * Live geocoded *armed-conflict* event data (UCDP / ACLED) is intentionally not
@@ -16,9 +17,9 @@
  * key. When a key exists this module is the single place to add it.
  */
 
-import { fetchIndonesiaQuakes, fetchKarhutla, type FireCell, type KarhutlaRead, type QuakeRead } from "./natural-hazards.ts";
+import { fetchIndonesiaQuakes, fetchWildfire, type FireCell, type FireRegion, type QuakeRead, type WildfireRead } from "./natural-hazards.ts";
 
-export type { FireCell, KarhutlaRead };
+export type { FireCell, FireRegion, WildfireRead };
 
 export type StrategicKind = "CHOKEPOINT" | "CONFLICT";
 
@@ -70,9 +71,8 @@ export type RiskMapData = {
   freshness: string | null;
   strategic: StrategicPoint[];
   hazards: HazardPoint[];
-  /** Karhutla hotspots, already clustered into 1-degree cells. */
-  fires: FireCell[];
-  karhutla: KarhutlaRead | null;
+  /** World wildfire hotspots clustered into cells, plus regional aggregates. */
+  wildfire: WildfireRead | null;
   failures: string[];
 };
 
@@ -114,7 +114,7 @@ export function quakeAlert(magnitude: number): HazardAlert {
   return "Green";
 }
 
-/** Cluster intensity buckets for karhutla fire cells. */
+/** Cluster intensity buckets for wildfire cells. */
 export function fireAlert(cell: FireCell): HazardAlert {
   if (cell.count >= 100 || cell.maxFrp >= 100) return "Red";
   if (cell.count >= 20 || cell.maxFrp >= 40) return "Orange";
@@ -393,21 +393,37 @@ export function hazardFreshness(hazards: HazardPoint[]): string | null {
  * Defensive read of a `/api/risk-map` body.
  *
  * The route is served with a public cache and `stale-while-revalidate`, so a
- * client can still hold a body produced *before* a layer existed (the fires
- * layer was added last). Coercing once on receipt keeps one stale response from
- * taking down the whole section.
+ * client can still hold a body produced before a layer changed shape. Coercing
+ * once on receipt keeps one stale response from taking down the whole section.
  */
+export function coerceWildfire(value: unknown): WildfireRead | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const raw = value as Partial<WildfireRead>;
+  const list = (entry: unknown): FireRegion[] => (Array.isArray(entry) ? (entry as FireRegion[]) : []);
+  const count = (entry: unknown) => (Number.isFinite(Number(entry)) ? Number(entry) : 0);
+  return {
+    total: count(raw.total),
+    cells: Array.isArray(raw.cells) ? (raw.cells as FireCell[]) : [],
+    regions: list(raw.regions),
+    indonesiaTotal: count(raw.indonesiaTotal),
+    indonesiaRegions: list(raw.indonesiaRegions),
+    latest: typeof raw.latest === "string" ? raw.latest : null,
+    truncated: raw.truncated === true,
+  };
+}
+
 export function coerceRiskMapData(payload: unknown): RiskMapData {
-  const raw = (payload ?? {}) as Partial<RiskMapData>;
+  const raw = (payload ?? {}) as Record<string, unknown>;
   const array = <T,>(value: unknown): T[] => (Array.isArray(value) ? (value as T[]) : []);
+  const strategic = array<StrategicPoint>(raw.strategic);
   return {
     status: raw.status === "live" ? "live" : "stale",
     source: typeof raw.source === "string" ? raw.source : "RISK FEED",
     freshness: typeof raw.freshness === "string" ? raw.freshness : null,
-    strategic: array<StrategicPoint>(raw.strategic).length ? array<StrategicPoint>(raw.strategic) : STRATEGIC_POINTS,
+    strategic: strategic.length ? strategic : STRATEGIC_POINTS,
     hazards: array<HazardPoint>(raw.hazards),
-    fires: array<FireCell>(raw.fires),
-    karhutla: raw.karhutla ?? null,
+    // Accept the pre-global `karhutla` key so a stale cached body still shows fires.
+    wildfire: coerceWildfire(raw.wildfire ?? raw.karhutla),
     failures: array<string>(raw.failures),
   };
 }
@@ -488,10 +504,10 @@ async function settle<T>(run: () => Promise<T>, note: (message: string) => void)
  */
 export async function loadRiskMap(): Promise<RiskMapData> {
   const failures: string[] = [];
-  const [gdacsSettled, quakes, karhutla] = await Promise.all([
+  const [gdacsSettled, quakes, wildfire] = await Promise.all([
     Promise.allSettled(HAZARD_TYPES.map((type) => fetchHazardType(type))),
     settle(fetchIndonesiaQuakes, (message) => failures.push(`BMKG: ${message}`)),
-    settle(fetchKarhutla, (message) => failures.push(`FIRMS: ${message}`)),
+    settle(fetchWildfire, (message) => failures.push(`FIRMS: ${message}`)),
   ]);
 
   const gdacs: HazardPoint[] = [];
@@ -501,21 +517,19 @@ export async function loadRiskMap(): Promise<RiskMapData> {
   });
 
   const hazards = dedupeHazards([...(quakes ?? []).map(quakeToHazard), ...gdacs]);
-  const fires = karhutla?.cells ?? [];
   const freshness =
-    [hazardFreshness(hazards), karhutla?.latest ?? null]
+    [hazardFreshness(hazards), wildfire?.latest ?? null]
       .filter((value): value is string => Boolean(value))
       .sort()
       .pop() ?? null;
 
   return {
-    status: hazards.length || fires.length ? "live" : "stale",
+    status: hazards.length || (wildfire?.cells.length ?? 0) ? "live" : "stale",
     source: "GDACS · BMKG · NASA FIRMS · CURATED STRATEGIC LAYER",
     freshness,
     strategic: STRATEGIC_POINTS,
     hazards,
-    fires,
-    karhutla: karhutla ?? null,
+    wildfire: wildfire ?? null,
     failures,
   };
 }

@@ -7,6 +7,7 @@ import {
   coerceRiskMapData,
   fireAlert,
   type FireCell,
+  type FireRegion,
   type HazardFamily,
   type HazardPoint,
   type RiskMapData,
@@ -37,10 +38,11 @@ const ALERT_FILL: Record<HazardPoint["alert"], number> = { Green: 0.16, Orange: 
 
 type FamilyFilter = "ALL" | HazardFamily;
 const FAMILY_FILTERS: FamilyFilter[] = ["ALL", ...HAZARD_FAMILIES];
-type PanelTab = "GEOPOLITICAL" | "INDONESIA";
+type PanelTab = "GEOPOLITICAL" | "NATURAL";
+type RegionScope = "WORLD" | "INDONESIA";
 
-/** Default view: Asia-Pacific, so the archipelago and the Gulf are both in frame. */
-const HOME: { center: [number, number]; zoom: number } = { center: [10, 80], zoom: 2.5 };
+/** Default view: the whole world, so no single region is privileged. */
+const HOME: { center: [number, number]; zoom: number } = { center: [20, 30], zoom: 2 };
 
 function escapeHtml(value: string) {
   return value.replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[char] ?? char));
@@ -71,9 +73,28 @@ function hazardPopup(point: HazardPoint) {
 
 function firePopup(cell: FireCell) {
   const color = FAMILY_COLOR.FIRE;
-  return `<div class="risk-popup"><span style="color:${color}">KARHUTLA · NASA FIRMS</span><strong>${cell.count.toLocaleString('en-US')} hotspots · ${escapeHtml(
-    cell.region,
+  const where = cell.indonesiaRegion ? `${cell.indonesiaRegion} · ${cell.region}` : cell.region;
+  return `<div class="risk-popup"><span style="color:${color}">WILDFIRE · NASA FIRMS</span><strong>${cell.count.toLocaleString('en-US')} hotspots · ${escapeHtml(
+    where,
   )}</strong><p>Peak ${cell.maxFrp} MW · ${cell.totalFrp.toLocaleString('en-US')} MW total${cell.date ? ` · ${escapeHtml(cell.date)}` : ""}</p><div class="risk-popup-tags"><i>1° cell</i><i>24h VIIRS</i></div></div>`;
+}
+
+/** Region bars, shared by the world and Indonesia wildfire blocks. */
+function RegionBars({ regions, onSelect }: { regions: FireRegion[]; onSelect: (name: string) => void }) {
+  const peak = regions[0]?.count || 1;
+  return (
+    <>
+      {regions.map((region) => (
+        <button key={region.name} className="risk-region" onClick={() => onSelect(region.name)}>
+          <strong>{region.name}</strong>
+          <span className="risk-region-bar">
+            <i style={{ width: `${Math.max(4, Math.round((region.count / peak) * 100))}%`, background: FAMILY_COLOR.FIRE }} />
+          </span>
+          <b>{region.count.toLocaleString("en-US")}</b>
+        </button>
+      ))}
+    </>
+  );
 }
 
 export default function RiskMap() {
@@ -124,7 +145,7 @@ export default function RiskMap() {
           boxZoom: true,
           keyboard: true,
           zoomSnap: 0.5,
-          minZoom: 2,
+          minZoom: 1,
           maxZoom: 8,
           worldCopyJump: true,
         }).setView(HOME.center, HOME.zoom);
@@ -181,8 +202,8 @@ export default function RiskMap() {
       }
 
       if (showNatural) {
-        // Karhutla cells first so hazard pins sit on top of the fire footprint.
-        data.fires
+        // Wildfire cells first so hazard pins sit on top of the fire footprint.
+        (data.wildfire?.cells ?? [])
           .filter(() => family === "ALL" || family === "FIRE")
           .forEach((cell) => {
             const color = FAMILY_COLOR.FIRE;
@@ -219,13 +240,15 @@ export default function RiskMap() {
   const counts = useMemo(() => {
     const strategic = data?.strategic ?? [];
     const hazards = (data?.hazards ?? []).filter((point) => family === "ALL" || point.family === family);
-    const fires = family === "ALL" || family === "FIRE" ? (data?.fires ?? []).length : 0;
+    const fires = family === "ALL" || family === "FIRE" ? (data?.wildfire?.cells ?? []).length : 0;
     return {
       chokepoint: strategic.filter((point) => point.kind === "CHOKEPOINT").length,
       conflict: strategic.filter((point) => point.kind === "CONFLICT").length,
       hazards: hazards.length,
       fires,
-      hotspots: data?.karhutla?.total ?? 0,
+      hotspots: data?.wildfire?.total ?? 0,
+      indonesiaHotspots: data?.wildfire?.indonesiaTotal ?? 0,
+      truncated: data?.wildfire?.truncated === true,
     };
   }, [data, family]);
 
@@ -237,8 +260,8 @@ export default function RiskMap() {
     markersRef.current[point.id]?.openPopup();
   };
 
-  const focusRegion = (name: string) => {
-    const cells = (data?.fires ?? []).filter((cell) => cell.region === name);
+  const focusRegion = (name: string, scope: RegionScope) => {
+    const cells = (data?.wildfire?.cells ?? []).filter((cell) => (scope === "INDONESIA" ? cell.indonesiaRegion : cell.region) === name);
     if (!cells.length) return;
     const total = cells.reduce((sum, cell) => sum + cell.count, 0) || 1;
     const lat = cells.reduce((sum, cell) => sum + cell.lat * cell.count, 0) / total;
@@ -288,7 +311,7 @@ export default function RiskMap() {
           <div
             ref={containerRef}
             className="risk-map-canvas"
-            aria-label="Global risk map: geopolitical chokepoints and conflict zones, Indonesian karhutla hotspots, and live natural hazards"
+            aria-label="Global risk map: geopolitical chokepoints and conflict zones, worldwide wildfire hotspots with the Indonesian karhutla detail, and live natural hazards"
           />
           <div className="risk-map-legend">
             <span className="risk-legend-head">GEOPOLITICAL</span>
@@ -322,20 +345,24 @@ export default function RiskMap() {
         </div>
         <footer className="panel-foot">
           <span>DRAG TO PAN · SCROLL OR PINCH TO ZOOM · GDACS · BMKG · NASA FIRMS</span>
-          <span>{data?.freshness ? `${counts.hotspots.toLocaleString("en-US")} KARHUTLA HOTSPOTS · THROUGH ${data.freshness.slice(0, 10)}` : statusNote}</span>
+          <span>
+            {data?.freshness
+              ? `${counts.hotspots.toLocaleString("en-US")} WILDFIRE HOTSPOTS${counts.truncated ? " · TOP CELLS SHOWN" : ""} · THROUGH ${data.freshness.slice(0, 10)}`
+              : statusNote}
+          </span>
         </footer>
       </article>
 
       <article className="panel risk-list-panel">
         <header className="panel-head">
           <div className="risk-tabs">
-            {(["GEOPOLITICAL", "INDONESIA"] as PanelTab[]).map((option) => (
+            {(["GEOPOLITICAL", "NATURAL"] as PanelTab[]).map((option) => (
               <button key={option} className={tab === option ? "active" : ""} onClick={() => setTab(option)}>
                 {option}
               </button>
             ))}
           </div>
-          <span className="head-note">{tab === "GEOPOLITICAL" ? `${counts.conflict} CONFLICT · ${counts.chokepoint} CHOKEPOINT` : "ARCHIPELAGO WATCH"}</span>
+          <span className="head-note">{tab === "GEOPOLITICAL" ? `${counts.conflict} CONFLICT · ${counts.chokepoint} CHOKEPOINT` : "WORLD + ARCHIPELAGO WATCH"}</span>
         </header>
 
         {tab === "GEOPOLITICAL" ? (
@@ -362,26 +389,28 @@ export default function RiskMap() {
               <div className="risk-block-head">
                 <span>
                   <i className="risk-sw" style={{ background: FAMILY_COLOR.FIRE }} />
-                  KARHUTLA · HOTSPOT WATCH
+                  WORLD WILDFIRE WATCH · NASA FIRMS
                 </span>
-                <b>{(data?.karhutla?.total ?? 0).toLocaleString("en-US")}</b>
+                <b>{(data?.wildfire?.total ?? 0).toLocaleString("en-US")}</b>
               </div>
               <p className="risk-block-note">
-                NASA FIRMS satellite detections over Indonesia and its haze footprint, clustered into 1° cells. Palm, timber and peat fires, and the haze that
-                travels with them.
+                Satellite hotspot detections worldwide, clustered into 1° cells and ranked by density. This is where the planet is burning hardest right now.
               </p>
-              {(data?.karhutla?.regions ?? []).map((region) => {
-                const peak = data?.karhutla?.regions[0]?.count || 1;
-                return (
-                  <button key={region.name} className="risk-region" onClick={() => focusRegion(region.name)}>
-                    <strong>{region.name}</strong>
-                    <span className="risk-region-bar">
-                      <i style={{ width: `${Math.max(4, Math.round((region.count / peak) * 100))}%`, background: FAMILY_COLOR.FIRE }} />
-                    </span>
-                    <b>{region.count.toLocaleString("en-US")}</b>
-                  </button>
-                );
-              })}
+              <RegionBars regions={data?.wildfire?.regions ?? []} onSelect={(name) => focusRegion(name, "WORLD")} />
+            </div>
+
+            <div className="risk-block">
+              <div className="risk-block-head">
+                <span>
+                  <i className="risk-sw" style={{ background: FAMILY_COLOR.FIRE }} />
+                  KARHUTLA · INDONESIA
+                </span>
+                <b>{counts.indonesiaHotspots.toLocaleString("en-US")}</b>
+              </div>
+              <p className="risk-block-note">
+                The archipelago subset of the same feed: palm, timber and peat fires, and the haze that travels with them.
+              </p>
+              <RegionBars regions={data?.wildfire?.indonesiaRegions ?? []} onSelect={(name) => focusRegion(name, "INDONESIA")} />
             </div>
 
             <div className="risk-block">

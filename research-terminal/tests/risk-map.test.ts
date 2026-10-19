@@ -4,6 +4,7 @@ import {
   MAX_HAZARD_POINTS,
   STRATEGIC_POINTS,
   coerceRiskMapData,
+  coerceWildfire,
   dedupeHazards,
   fireAlert,
   hazardFamily,
@@ -44,7 +45,8 @@ const fireCell = (overrides: Partial<FireCell> = {}): FireCell => ({
   count: 1,
   maxFrp: 1,
   totalFrp: 1,
-  region: "SUMATRA",
+  region: "SOUTHEAST ASIA",
+  indonesiaRegion: null,
   date: "2026-10-01",
   ...overrides,
 });
@@ -233,7 +235,7 @@ test("quakeToHazard: omits missing depth and felt detail", () => {
 });
 
 test("coerceRiskMapData: tolerates a stale payload from before a layer existed", () => {
-  // A body cached before the fires/karhutla layer shipped has neither field.
+  // A body cached before the wildfire layer shipped has no wildfire field.
   const legacy = coerceRiskMapData({
     status: "live",
     source: "GDACS",
@@ -242,18 +244,48 @@ test("coerceRiskMapData: tolerates a stale payload from before a layer existed",
     hazards: [hazardPoint()],
     failures: ["BMKG: timeout"],
   });
-  assert.equal(legacy.fires.length, 0);
-  assert.equal(legacy.karhutla, null);
+  assert.equal(legacy.wildfire, null);
   assert.equal(legacy.hazards.length, 1);
   assert.equal(legacy.strategic.length, 1);
   assert.deepEqual(legacy.failures, ["BMKG: timeout"]);
+});
+
+test("coerceRiskMapData: keeps fires from a body cached before the global rename", () => {
+  // The pre-global shape carried a `karhutla` read and a separate `fires` array.
+  const stale = coerceRiskMapData({
+    status: "live",
+    hazards: [],
+    karhutla: { total: 7, cells: [fireCell()], regions: [{ name: "SUMATRA", count: 7, frp: 10 }], latest: "2026-10-18", truncated: false },
+  });
+  assert.equal(stale.wildfire?.total, 7);
+  assert.equal(stale.wildfire?.cells.length, 1);
+  assert.equal(stale.wildfire?.indonesiaTotal, 0);
+  assert.deepEqual(stale.wildfire?.indonesiaRegions, []);
+});
+
+test("coerceWildfire: normalises a partial read and rejects junk", () => {
+  for (const input of [null, undefined, "yes", 42, []]) assert.equal(coerceWildfire(input), null);
+  const read = coerceWildfire({
+    total: 12,
+    cells: [fireCell()],
+    regions: [{ name: "AFRICA", count: 9, frp: 4 }],
+    latest: "2026-10-19",
+    truncated: true,
+  });
+  assert.ok(read);
+  assert.equal(read!.total, 12);
+  assert.equal(read!.cells.length, 1);
+  assert.equal(read!.indonesiaTotal, 0);
+  assert.deepEqual(read!.indonesiaRegions, []);
+  assert.equal(read!.latest, "2026-10-19");
+  assert.equal(read!.truncated, true);
 });
 
 test("coerceRiskMapData: survives junk without throwing", () => {
   for (const input of [null, undefined, {}, "nope", 42, { fires: "lots", karhutla: "yes" }]) {
     const data = coerceRiskMapData(input);
     assert.ok(Array.isArray(data.hazards));
-    assert.ok(Array.isArray(data.fires));
+    assert.equal(data.wildfire, null);
     assert.equal(data.status, "stale");
   }
   // With no strategic layer in the body, the curated layer is shown instead of nothing.
