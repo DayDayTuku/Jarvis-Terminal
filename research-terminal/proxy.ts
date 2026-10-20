@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createServerClient } from '@supabase/ssr';
+import { createServerClient, type CookieOptions } from '@supabase/ssr';
 
 // Static files the access page and PWA need before a session exists.
 const PUBLIC_ASSETS = new Set([
@@ -13,28 +13,53 @@ const PUBLIC_ASSETS = new Set([
   '/sw.js',
 ]);
 
-export async function proxy(request: NextRequest) {
-  const path = request.nextUrl.pathname;
-  const supplied = request.headers.get('authorization');
-  // Never build a "Bearer undefined" literal from a missing env var. If no
-  // service key is configured, there is no service bypass at all.
-  const serviceKeys = [process.env.JARVIS_READONLY_API_KEY, process.env.CRON_SECRET]
-    .map((key) => key?.trim())
-    .filter((key): key is string => Boolean(key));
-  const trustedServiceRequest =
-    path === '/api/swing-setups' &&
-    serviceKeys.some((key) => supplied === `Bearer ${key}`);
+/**
+ * Strip empty values before they can become the string "undefined" inside a
+ * `Bearer ${key}` header. A missing secret must mean no service bypass at all.
+ */
+export function collectServiceKeys(...values: Array<string | null | undefined>) {
+  return values
+    .map((value) => value?.trim())
+    .filter((value): value is string => Boolean(value));
+}
 
-  // Public routes and assets never need a Supabase round-trip. Checking this
-  // before creating the client keeps the access page and icons off the auth path.
-  if (
+/** Only the scanner endpoint accepts the read-only/cron service bypass. */
+export function isTrustedServiceRequest(
+  path: string,
+  authorization: string | null,
+  serviceKeys: string[],
+) {
+  return (
+    path === '/api/swing-setups' &&
+    serviceKeys.some((key) => authorization === `Bearer ${key}`)
+  );
+}
+
+/**
+ * Routes and assets that never need a Supabase round-trip. API routes listed
+ * here authenticate themselves (cron secret or API key).
+ */
+export function isPublicPath(path: string) {
+  return (
     path === '/access' ||
     path.startsWith('/_next/') ||
     path.startsWith('/api/cron/') ||
     path.startsWith('/api/v1/') ||
-    trustedServiceRequest ||
     PUBLIC_ASSETS.has(path)
-  ) {
+  );
+}
+
+export async function proxy(request: NextRequest) {
+  const path = request.nextUrl.pathname;
+  const supplied = request.headers.get('authorization');
+  const serviceKeys = collectServiceKeys(
+    process.env.JARVIS_READONLY_API_KEY,
+    process.env.CRON_SECRET,
+  );
+
+  // Checking public paths before creating the client keeps the access page and
+  // icons off the auth path and avoids requiring Supabase env vars for them.
+  if (isPublicPath(path) || isTrustedServiceRequest(path, supplied, serviceKeys)) {
     return NextResponse.next({ request });
   }
 
@@ -46,7 +71,7 @@ export async function proxy(request: NextRequest) {
     {
       cookies: {
         getAll() { return request.cookies.getAll() },
-        setAll(cookiesToSet: { name: string; value: string; options: any }[]) {
+        setAll(cookiesToSet: { name: string; value: string; options: CookieOptions }[]) {
           cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value));
           response = NextResponse.next({ request });
           cookiesToSet.forEach(({ name, value, options }) => response.cookies.set(name, value, options));
