@@ -51,18 +51,23 @@ async function getBars(ticker:string, since:string):Promise<Bar[]> {
     return (quote.open ?? []).map((open:number|null,index:number) => ({ open:Number(open), high:Number(quote.high?.[index]), low:Number(quote.low?.[index]), close:Number(quote.close?.[index]) })).filter((bar:Bar) => Object.values(bar).every(Number.isFinite));
   } catch { return []; }
 }
-async function weeklyRecipients(supabase:any) {
+export async function weeklyRecipients(supabase:any) {
   const configured=(process.env.JARVIS_EMAIL_TO || "").split(",").map((email)=>email.trim().toLowerCase()).filter(Boolean);
   try {
-    const [{data,error},{data:suppressed}]=await Promise.all([
-      supabase.auth.admin.listUsers({page:1,perPage:1000}),
-      supabase.from("jarvis_email_suppressions").select("email"),
-    ]);
-    if(error) return filterSuppressed(configured, suppressed || []);
+    const {data:suppressed}=await supabase.from("jarvis_email_suppressions").select("email");
+    const users: DigestUser[]=[];
+    // Supabase lists at most 1,000 users per page. Paginate so opted-in
+    // accounts beyond the first page are not silently skipped.
+    for (let page=1; page<=10; page+=1) {
+      const {data,error}=await supabase.auth.admin.listUsers({page,perPage:1000});
+      if(error) return filterSuppressed(configured, suppressed || []);
+      const batch=(data?.users || []) as DigestUser[];
+      users.push(...batch);
+      if(batch.length<1000) break;
+    }
     // An account is not an email subscription. Only users who pressed the
     // digest toggle in Settings, with a confirmed address, join the send list.
-    const signedIn=selectDigestRecipients((data?.users || []) as DigestUser[], configured);
-    return filterSuppressed(signedIn, suppressed || []);
+    return filterSuppressed(selectDigestRecipients(users, configured), suppressed || []);
   } catch { return filterSuppressed(configured, []); }
 }
 

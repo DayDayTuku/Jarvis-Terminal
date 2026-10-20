@@ -131,7 +131,7 @@ pnpm dev        # local development
 pnpm build      # production build
 pnpm start      # serve the production build
 pnpm lint       # ESLint
-pnpm test       # node:test suite (147+ tests)
+pnpm test       # node:test suite (150+ tests)
 pnpm smoke      # boots the production build and checks headers + auth gates
 pnpm backtest   # macro-overlay backtest (requires network access)
 pnpm fit-score  # score-model fitting helper
