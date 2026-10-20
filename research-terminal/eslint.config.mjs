@@ -33,6 +33,8 @@ const eslintConfig = defineConfig([
     files: [
       'app/api/**/*.ts',
       'components/StockDetailModal.tsx',
+      'components/stock-detail/**/*.ts',
+      'components/stock-detail/**/*.tsx',
       'lib/weekly-positions.ts',
       'lib/macro-risk.ts',
       'proxy.ts',
