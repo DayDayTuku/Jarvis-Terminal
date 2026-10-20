@@ -131,7 +131,7 @@ pnpm dev        # local development
 pnpm build      # production build
 pnpm start      # serve the production build
 pnpm lint       # ESLint
-pnpm test       # node:test suite (144+ tests)
+pnpm test       # node:test suite (147+ tests)
 pnpm smoke      # boots the production build and checks headers + auth gates
 pnpm backtest   # macro-overlay backtest (requires network access)
 pnpm fit-score  # score-model fitting helper
@@ -160,14 +160,18 @@ public/               PWA icons, manifest, and service worker assets
 ## Security notes
 
 - `proxy.ts` protects application routes. Public paths (`/access`, `/_next/*`,
-  `/api/cron/*`, `/api/v1/*`, and PWA assets) authenticate themselves.
+  `/api/cron/*`, `/api/v1/*`, `/api/email/unsubscribe`, `/api/webhooks/resend`,
+  and PWA assets) authenticate themselves.
 - Missing service keys are filtered out, so an absent secret can never create a
   literal `Bearer undefined` bypass.
 - `SUPABASE_SERVICE_ROLE_KEY`, `CRON_SECRET`, and `RESEND_API_KEY` must stay
   server-side. Only `NEXT_PUBLIC_*` values reach the browser.
 - The service worker is registered in production only, so local development
-  never serves stale cached shells.
+  never serves stale cached shells. It caches only public assets and `/access`;
+  authenticated dashboards are never written to Cache Storage.
 - Security headers (CSP, HSTS, frame denial, permissions policy) are configured
   in `next.config.ts`.
 - Dashboard sections render inside an error boundary, so one failing panel does
   not blank the terminal.
+- Research notes, the watchlist, and the color palette persist locally in the
+  browser. Notes are not sent to the server.

@@ -14,11 +14,12 @@ import ResearchPapers from '../components/ResearchPapers';
 import SettingsLogout from '../components/SettingsLogout';
 import WeeklyDigestOptIn from '../components/WeeklyDigestOptIn';
 import RiskMap from '../components/RiskMap';
+import { SCHEMES, formatNoteTimestamp, isScheme, parseSavedNote, type Scheme } from '../lib/preferences';
+import { useDialogFocus } from '../lib/use-dialog-focus';
 
 const StockDetailModal = dynamic(() => import('../components/StockDetailModal'), { ssr: false });
 
 
-type Scheme = 'default' | 'deuteranopia' | 'protanopia' | 'tritanopia';
 type Section = 'OVERVIEW' | 'MACRO' | 'MARKETS' | 'NEWS' | 'QUANT LAB' | 'PORTFOLIO' | 'RISK MAP' | 'RESEARCH PAPERS' | 'SEASONALITY' | 'MARKET PARTICIPANT';
 type RegimePoint = { date: string; growth: number; inflation: number };
 type FredData = { status: string; freshness: string; indicators: Array<{ name: string; actual: number; mean: number; z: number; unit: string }>; yields: Array<{ maturity: string; value: number }>; regime: RegimePoint[] };
@@ -113,6 +114,27 @@ export default function Home() {
   }, [active]);
   const [scheme, setScheme] = useState<Scheme>('default'); const [note, setNote] = useState('');
   const [savedNote, setSavedNote] = useState('Watch the next Core PCE print. A second upside surprise would strengthen the higher-for-longer rates case.');
+  const [savedNoteAt, setSavedNoteAt] = useState<string | null>(null);
+  const notesDialogRef = useDialogFocus<HTMLElement>(notesOpen, () => setNotesOpen(false));
+  const settingsDialogRef = useDialogFocus<HTMLElement>(settingsOpen, () => setSettingsOpen(false));
+
+  useEffect(() => {
+    try {
+      const storedScheme = localStorage.getItem('jarvis_scheme');
+      if (isScheme(storedScheme)) setScheme(storedScheme);
+      const parsedNote = parseSavedNote(localStorage.getItem('jarvis_note'));
+      if (parsedNote) {
+        setSavedNote(parsedNote.text);
+        setSavedNoteAt(parsedNote.savedAt);
+      }
+    } catch {}
+  }, []);
+
+  const changeScheme = (next: Scheme) => {
+    setScheme(next);
+    try { localStorage.setItem('jarvis_scheme', next); } catch {}
+  };
+
   const [fred, setFred] = useState<FredData | null>(null); const [markets, setMarkets] = useState<MarketData | null>(null); const [gdelt, setGdelt] = useState<GdeltData | null>(null); const [calendar, setCalendar] = useState<CalendarData | null>(null);
 
   useEffect(() => {
@@ -341,7 +363,18 @@ export default function Home() {
 
   const thesisConfidence = liveCount >= 4 ? "HIGH" : liveCount >= 2 ? "MEDIUM" : "LOW";
 
-  const saveNote = () => { if (note.trim()) { setSavedNote(note.trim()); setNote(''); } setNotesOpen(false); };
+  const saveNote = () => {
+    if (note.trim()) {
+      const text = note.trim();
+      const savedAt = new Date().toISOString();
+      setSavedNote(text);
+      setSavedNoteAt(savedAt);
+      setNote('');
+      try { localStorage.setItem('jarvis_note', JSON.stringify({ text, savedAt })); } catch {}
+    }
+    setNotesOpen(false);
+  };
+  const savedNoteLabel = formatNoteTimestamp(savedNoteAt);
 
   return (
     <main className="terminal-shell" data-scheme={scheme}>
@@ -456,12 +489,14 @@ export default function Home() {
         <footer className="terminal-footer"><span>JARVIS / RESEARCH USE ONLY</span><span>Unavailable feeds retain explicit connection labels.</span><span>v1.2</span></footer>
       </div>
 
-      {notesOpen && <div className="overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) setNotesOpen(false); }}><section className="drawer" role="dialog" aria-modal="true" aria-label="Research notes"><div className="drawer-head"><div><span>RESEARCH LOG</span><h2>UPDATE CURRENT THESIS</h2></div><button onClick={() => setNotesOpen(false)}>ESC</button></div><label htmlFor="note">NEW NOTE</label><textarea id="note" autoFocus value={note} maxLength={600} onChange={(e) => setNote(e.target.value)} placeholder="What changed in the data, and what would disprove your read?" /><div className="prompt-line"><span>Keep the claim testable.</span><span>{note.length} / 600</span></div><div className="drawer-actions"><button onClick={() => setNotesOpen(false)}>CANCEL</button><button className="primary-button" onClick={saveNote}>SAVE NOTE</button></div><div className="recent-note"><span>LATEST ENTRY</span><p>{savedNote}</p><small>03 SEP 2026 · 08:15 WIB</small></div></section></div>}
-      {settingsOpen && <div className="overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) setSettingsOpen(false); }}><section className="drawer" role="dialog" aria-modal="true" aria-label="Terminal settings"><div className="drawer-head"><div><span>TERMINAL</span><h2>SETTINGS</h2></div><button onClick={() => setSettingsOpen(false)}>ESC</button></div><div className="setting-block"><h3>COLOR ACCESSIBILITY</h3><p>Choose a signal palette that keeps gains and losses distinct.</p><div className="scheme-list">{(['default','deuteranopia','protanopia','tritanopia'] as Scheme[]).map((item) => <button key={item} className={scheme===item?'selected':''} onClick={() => setScheme(item)}><i /><span>{item.toUpperCase()}</span><b>{scheme===item?'ON':''}</b></button>)}</div></div><div className="setting-block"><h3>DATA CONNECTIONS</h3><p>Technical feed detail is kept here so the daily view stays focused on decisions.</p><div className="settings-health connection-list"><p><i className={fred ? 'live' : ''} /><strong>FRED</strong><span>{fred ? `Updated ${fred.freshness}` : 'FRED_API_KEY not configured or upstream unavailable'}</span></p><p><i className={markets ? 'live' : ''} /><strong>IDX + SEASONALITY</strong><span>{markets ? `${markets.status} · Yahoo upstream` : 'Live request failed · illustrative values retained'}</span></p><p><i className={gdelt ? 'live' : ''} /><strong>GDELT DOC</strong><span>{gdelt ? 'Keyword-frequency series live · Goldstein pending' : 'Live request failed'}</span></p><p><i className={cot ? 'live' : ''} /><strong>CFTC COT</strong><span>{cot ? `${cot.status} · weekly public reports` : 'Public dataset request failed'}</span></p><p><i className={calendar ? 'live' : ''} /><strong>TRADINGECONOMICS</strong><span>{calendar ? 'Calendar connected' : 'TRADING_ECONOMICS_API_KEY required'}</span></p></div></div><WeeklyDigestOptIn /><FeedbackInbox active={settingsOpen} /><SettingsLogout /><button className="primary-button full" onClick={() => setSettingsOpen(false)}>APPLY SETTINGS</button></section></div>}
+      {notesOpen && <div className="overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) setNotesOpen(false); }}><section ref={notesDialogRef} tabIndex={-1} className="drawer" role="dialog" aria-modal="true" aria-label="Research notes"><div className="drawer-head"><div><span>RESEARCH LOG</span><h2>UPDATE CURRENT THESIS</h2></div><button onClick={() => setNotesOpen(false)}>ESC</button></div><label htmlFor="note">NEW NOTE</label><textarea id="note" autoFocus value={note} maxLength={600} onChange={(e) => setNote(e.target.value)} placeholder="What changed in the data, and what would disprove your read?" /><div className="prompt-line"><span>Keep the claim testable.</span><span>{note.length} / 600</span></div><div className="drawer-actions"><button onClick={() => setNotesOpen(false)}>CANCEL</button><button className="primary-button" onClick={saveNote}>SAVE NOTE</button></div><div className="recent-note"><span>LATEST ENTRY</span><p>{savedNote}</p><small>{savedNoteLabel}</small></div></section></div>}
+      {settingsOpen && <div className="overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) setSettingsOpen(false); }}><section ref={settingsDialogRef} tabIndex={-1} className="drawer" role="dialog" aria-modal="true" aria-label="Terminal settings"><div className="drawer-head"><div><span>TERMINAL</span><h2>SETTINGS</h2></div><button onClick={() => setSettingsOpen(false)}>ESC</button></div><div className="setting-block"><h3>COLOR ACCESSIBILITY</h3><p>Choose a signal palette that keeps gains and losses distinct.</p><div className="scheme-list">{SCHEMES.map((item) => <button key={item} className={scheme===item?'selected':''} onClick={() => changeScheme(item)}><i /><span>{item.toUpperCase()}</span><b>{scheme===item?'ON':''}</b></button>)}</div></div><div className="setting-block"><h3>DATA CONNECTIONS</h3><p>Technical feed detail is kept here so the daily view stays focused on decisions.</p><div className="settings-health connection-list"><p><i className={fred ? 'live' : ''} /><strong>FRED</strong><span>{fred ? `Updated ${fred.freshness}` : 'FRED_API_KEY not configured or upstream unavailable'}</span></p><p><i className={markets ? 'live' : ''} /><strong>IDX + SEASONALITY</strong><span>{markets ? `${markets.status} · Yahoo upstream` : 'Live request failed · illustrative values retained'}</span></p><p><i className={gdelt ? 'live' : ''} /><strong>GDELT DOC</strong><span>{gdelt ? 'Keyword-frequency series live · Goldstein pending' : 'Live request failed'}</span></p><p><i className={cot ? 'live' : ''} /><strong>CFTC COT</strong><span>{cot ? `${cot.status} · weekly public reports` : 'Public dataset request failed'}</span></p><p><i className={calendar ? 'live' : ''} /><strong>TRADINGECONOMICS</strong><span>{calendar ? 'Calendar connected' : 'TRADING_ECONOMICS_API_KEY required'}</span></p></div></div><WeeklyDigestOptIn /><FeedbackInbox active={settingsOpen} /><SettingsLogout /><button className="primary-button full" onClick={() => setSettingsOpen(false)}>APPLY SETTINGS</button></section></div>}
 
       <FeedbackModal open={feedbackOpen} section={active} ticker={modalTicker} onClose={() => setFeedbackOpen(false)} />
       {notification && (
         <div
+          role="status"
+          aria-live="polite"
           style={{
             position: 'fixed',
             bottom: '24px',
@@ -486,6 +521,7 @@ export default function Home() {
           <span style={{ width: '7px', height: '7px', borderRadius: '50%', background: '#48a6ff', boxShadow: '0 0 8px #48a6ff', flexShrink: 0 }} />
           <span>{notification}</span>
           <button
+            aria-label="Dismiss notification"
             onClick={() => setNotification(null)}
             style={{
               background: 'transparent',

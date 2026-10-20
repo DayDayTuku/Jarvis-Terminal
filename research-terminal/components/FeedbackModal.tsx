@@ -1,6 +1,7 @@
 'use client';
 
-import { FormEvent, useEffect, useState } from 'react';
+import { FormEvent, useState } from 'react';
+import { useDialogFocus } from '../lib/use-dialog-focus';
 
 type FeedbackKind = 'BUG' | 'DATA' | 'FEATURE' | 'OTHER';
 type SubmitState = 'idle' | 'sending' | 'sent' | 'error';
@@ -22,14 +23,9 @@ export default function FeedbackModal({
   const [state, setState] = useState<SubmitState>('idle');
   const [error, setError] = useState('');
 
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && state !== 'sending') onClose();
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [open, onClose, state]);
+  const dialogRef = useDialogFocus<HTMLElement>(open, () => {
+    if (state !== 'sending') onClose();
+  });
 
   if (!open) return null;
 
@@ -68,7 +64,7 @@ export default function FeedbackModal({
     <div className="feedback-overlay" onMouseDown={(event) => {
       if (event.target === event.currentTarget && state !== 'sending') onClose();
     }}>
-      <section className="feedback-modal" role="dialog" aria-modal="true" aria-labelledby="feedback-title">
+      <section ref={dialogRef} tabIndex={-1} className="feedback-modal" role="dialog" aria-modal="true" aria-labelledby="feedback-title">
         <header className="feedback-head">
           <div>
             <span>HELP SHAPE JARVIS</span>
