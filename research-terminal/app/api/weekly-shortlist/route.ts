@@ -11,10 +11,7 @@ import { buildLifecycle, carriedPositions, recentRunsBefore } from "@/lib/weekly
 import { loadMacroExposure } from "@/lib/macro-risk";
 import { formatMacroLabel, guardLock, regimeFromLabel } from "@/lib/lock-guard";
 import { YAHOO_HEADERS } from "@/lib/yahoo";
-
-function isAdmin(user: { app_metadata?: Record<string, unknown> } | null) {
-  return user?.app_metadata?.role === "admin";
-}
+import { isAdmin } from "@/lib/auth";
 function fridayOfCurrentWeek() {
   const now = new Date();
   const wib = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Jakarta" }));

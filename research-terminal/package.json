@@ -10,6 +10,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
+    "typecheck:test": "tsc -p tsconfig.test.json",
     "test": "node --import ./tests/node-test-setup.mjs --test --experimental-strip-types \"tests/**/*.test.ts\"",
     "backtest": "node --experimental-strip-types scripts/backtest.ts",
     "fit-score": "node --experimental-strip-types scripts/fit-score.ts"

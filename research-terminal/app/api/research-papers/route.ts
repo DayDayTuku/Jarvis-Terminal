@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '../../../utils/supabase/server';
+import { isAdmin } from '@/lib/auth';
 
 const MAX_FILE_SIZE = 20 * 1024 * 1024;
 const ALLOWED_TYPES = new Set([
@@ -8,9 +9,6 @@ const ALLOWED_TYPES = new Set([
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
 ]);
 
-function isAdmin(user: { app_metadata?: Record<string, unknown> } | null) {
-  return user?.app_metadata?.role === 'admin';
-}
 
 export async function GET() {
   const supabase = await createClient();

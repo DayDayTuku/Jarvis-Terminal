@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { createClient } from '../../../../utils/supabase/server'
+import { isAdmin } from '@/lib/auth'
 
 export const dynamic = 'force-dynamic'
 
@@ -9,10 +10,6 @@ type EventRow = {
   event_name: string
   page_path: string
   occurred_at: string
-}
-
-function isAdmin(user: { app_metadata?: Record<string, unknown> } | null) {
-  return user?.app_metadata?.role === 'admin'
 }
 
 function dayKey(value: string) {

@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '../../../utils/supabase/server';
+import { isAdmin } from '@/lib/auth';
+import { checkRateLimit, rateLimitHeaders } from '@/lib/rate-limit';
 
 const validCategories = new Set(['BUG', 'DATA', 'FEATURE', 'OTHER']);
 const validStatuses = new Set(['new', 'reviewing', 'resolved']);
@@ -19,15 +21,25 @@ type FeedbackUpdateRequest = {
   status?: unknown;
 };
 
-function isAdmin(user: { app_metadata?: Record<string, unknown> } | null) {
-  return user?.app_metadata?.role === 'admin';
-}
 
 export async function POST(request: NextRequest) {
   try {
     const supabase = await createClient();
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return NextResponse.json({ error: 'Please sign in before sending feedback.' }, { status: 401 });
+
+    const limit = await checkRateLimit({
+      scope: 'feedback',
+      identifier: user.id,
+      limit: 5,
+      windowSeconds: 300,
+    });
+    if (!limit.allowed) {
+      return NextResponse.json(
+        { error: 'Too many feedback submissions. Try again in a few minutes.' },
+        { status: 429, headers: rateLimitHeaders(limit) },
+      );
+    }
 
     const body = (await request.json()) as FeedbackRequest;
     const category = typeof body.kind === 'string' ? body.kind.toUpperCase() : '';

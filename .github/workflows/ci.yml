@@ -27,10 +27,14 @@ jobs:
           cache: pnpm
           cache-dependency-path: research-terminal/pnpm-lock.yaml
       - name: Install
-        run: pnpm install --no-frozen-lockfile
+        run: pnpm install --frozen-lockfile
       - name: Type check
         run: pnpm exec tsc --noEmit
+      - name: Type check tests
+        run: pnpm typecheck:test
       - name: Lint
         run: pnpm lint
       - name: Unit tests
         run: pnpm test
+      - name: Build
+        run: pnpm build

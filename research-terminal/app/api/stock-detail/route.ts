@@ -1,7 +1,8 @@
 import { fetchUpstream } from "@/lib/upstream";
-// app/api/stock-detail/route.ts (v4 — all res.json() typed as any to fix build)
+// app/api/stock-detail/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { IDX_UNIVERSE } from "@/lib/idx-universe";
+import { checkRateLimit, clientIdentifier, rateLimitHeaders } from "@/lib/rate-limit";
 
 const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
 
@@ -434,6 +435,19 @@ function cacheDetail(ticker: string, data: Record<string, any>, ttl = DETAIL_TTL
 }
 
 export async function GET(req: NextRequest) {
+  const limit = await checkRateLimit({
+    scope: "stock-detail",
+    identifier: clientIdentifier(req),
+    limit: 60,
+    windowSeconds: 60,
+  });
+  if (!limit.allowed) {
+    return NextResponse.json(
+      { error: "Too many stock lookups. Try again shortly." },
+      { status: 429, headers: rateLimitHeaders(limit) },
+    );
+  }
+
   const rawTicker = req.nextUrl.searchParams.get("ticker");
   if (!rawTicker) {
     return NextResponse.json({ error: "ticker is required" }, { status: 400 });

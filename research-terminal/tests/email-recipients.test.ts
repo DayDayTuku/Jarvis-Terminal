@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  filterSuppressed,
   hasConfirmedEmail,
   isWeeklyDigestOptedIn,
   selectDigestRecipients,
@@ -61,4 +62,21 @@ test("addresses are deduplicated case-insensitively", () => {
     "owner@example.com",
     "second@example.com",
   ]);
+});
+
+test("suppressed addresses are removed case-insensitively", () => {
+  assert.deepEqual(
+    filterSuppressed(
+      ["Owner@Example.com", "second@example.com", "third@example.com"],
+      ["owner@example.com", { email: "THIRD@example.com" }],
+    ),
+    ["second@example.com"],
+  );
+});
+
+test("suppression accepts rows with missing email values", () => {
+  assert.deepEqual(
+    filterSuppressed(["owner@example.com"], [{ email: null }, { email: "   " }, "owner@example.com"]),
+    [],
+  );
 });

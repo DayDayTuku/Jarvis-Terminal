@@ -32,7 +32,7 @@ test("GET /api/fred parses the keyless CSV fallback into a live payload", async 
   try {
     const response = await fred();
     assert.equal(response.status, 200);
-    const body = await response.json();
+    const body = await response.json() as { status: string; indicators: unknown[]; yields: unknown[]; regime: unknown[] };
     assert.equal(body.status, "live");
     assert.equal(body.indicators.length, 6);
     assert.equal(body.yields.length, 7);
@@ -53,7 +53,7 @@ test("GET /api/fred reports an outage as stale instead of inventing values", asy
   try {
     const response = await fred();
     assert.equal(response.status, 503);
-    const body = await response.json();
+    const body = await response.json() as { status: string; error: string };
     assert.equal(body.status, "stale");
     assert.match(body.error, /FRED is down/);
   } finally {
@@ -68,7 +68,7 @@ test("GET /api/markets returns a 503 when every Yahoo symbol fails", async () =>
   try {
     const response = await markets();
     assert.equal(response.status, 503);
-    const body = await response.json();
+    const body = await response.json() as { status: string; failures: unknown[] };
     assert.equal(body.status, "stale");
     assert.ok(body.failures.length > 0);
   } finally {
@@ -85,7 +85,7 @@ test("GET /api/seasonality reports a 503 when the chart feed fails", async () =>
     const request = new NextRequest("https://jarvis.test/api/seasonality?ticker=BUMI");
     const response = await seasonality(request);
     assert.equal(response.status, 503);
-    const body = await response.json();
+    const body = await response.json() as { status: string; ticker: string };
     assert.equal(body.status, "stale");
     assert.equal(body.ticker, "BUMI");
   } finally {
@@ -101,7 +101,7 @@ test("GET /api/cot returns a 503 with the failed datasets listed", async () => {
   try {
     const response = await cot();
     assert.equal(response.status, 503);
-    const body = await response.json();
+    const body = await response.json() as { status: string; failures: unknown[] };
     assert.equal(body.status, "stale");
     assert.ok(body.failures.length > 0);
   } finally {

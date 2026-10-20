@@ -3,25 +3,22 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { deriveStatus, type LifecycleActionName } from "@/lib/weekly-lifecycle";
 import { regimeFor } from "@/lib/setup-model";
+import { checkRateLimit, clientIdentifier, rateLimitHeaders } from "@/lib/rate-limit";
 
 export const maxDuration = 30;
-type WindowState = { count:number; resetAt:number };
-const windows = new Map<string,WindowState>();
 const LIMIT = 60;
-const WINDOW_MS = 60_000;
-const ALLOWED_ORIGIN = "https://glabs-ghazaems.vercel.app";
+const WINDOW_SECONDS = 60;
+const ALLOWED_ORIGIN = process.env.JARVIS_V1_ALLOWED_ORIGIN || "https://glabs-ghazaems.vercel.app";
 
 function corsHeaders() { return {"Access-Control-Allow-Origin":ALLOWED_ORIGIN,"Access-Control-Allow-Headers":"Authorization, Content-Type","Access-Control-Allow-Methods":"GET, OPTIONS","Vary":"Origin"}; }
 function json(body:unknown,status=200,extra:Record<string,string>={}) { return NextResponse.json(body,{status,headers:{...corsHeaders(),...extra}}); }
-function authorize(request:NextRequest) {
+async function authorize(request:NextRequest) {
   const configured=process.env.JARVIS_READONLY_API_KEY;
   const supplied=request.headers.get("authorization")?.replace(/^Bearer\s+/i,"")||"";
   if(!configured||supplied!==configured) return {ok:false as const,response:json({error:"Unauthorized"},401)};
-  const client=request.headers.get("x-forwarded-for")?.split(",")[0]?.trim()||"unknown";
-  const now=Date.now(); const prior=windows.get(client); const state=!prior||prior.resetAt<=now?{count:0,resetAt:now+WINDOW_MS}:prior;
-  state.count+=1; windows.set(client,state);
-  const headers={"X-RateLimit-Limit":String(LIMIT),"X-RateLimit-Remaining":String(Math.max(0,LIMIT-state.count)),"X-RateLimit-Reset":String(Math.ceil(state.resetAt/1000))};
-  if(state.count>LIMIT) return {ok:false as const,response:json({error:"Rate limit exceeded"},429,{...headers,"Retry-After":String(Math.ceil((state.resetAt-now)/1000))})};
+  const limit=await checkRateLimit({scope:"api-v1",identifier:clientIdentifier(request),limit:LIMIT,windowSeconds:WINDOW_SECONDS});
+  const headers=rateLimitHeaders(limit);
+  if(!limit.allowed) return {ok:false as const,response:json({error:"Rate limit exceeded"},429,headers)};
   return {ok:true as const,headers};
 }
 async function scanner(origin:string) {
@@ -31,7 +28,7 @@ async function scanner(origin:string) {
 }
 export async function OPTIONS(){return new NextResponse(null,{status:204,headers:corsHeaders()});}
 export async function GET(request:NextRequest,{params}:{params:Promise<{path:string[]}>}){
-  const auth=authorize(request); if(!auth.ok)return auth.response;
+  const auth=await authorize(request); if(!auth.ok)return auth.response;
   const {path=[]}=await params; const route=path.join("/"); const origin=new URL(request.url).origin; const common={...auth.headers,"Cache-Control":"public, s-maxage=300, stale-while-revalidate=600"};
   try{
     if(route==="market-regime"){const setups=await scanner(origin);return json({asOf:new Date().toISOString(),methodology:"V5",regime:regimeFor(setups),universeSize:setups.length},200,common);}

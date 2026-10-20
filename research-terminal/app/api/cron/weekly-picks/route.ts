@@ -12,7 +12,8 @@ import { buildLifecycle, carriedPositions, recentRunsBefore } from "@/lib/weekly
 import { pickLongs as pick, pickShort, positionWeight as weight, regimeFor, shortWeight } from "@/lib/setup-model";
 import { loadMacroExposure } from "@/lib/macro-risk";
 import { formatMacroLabel, guardLock } from "@/lib/lock-guard";
-import { selectDigestRecipients, type DigestUser } from "@/lib/email-recipients";
+import { selectDigestRecipients, filterSuppressed, type DigestUser } from "@/lib/email-recipients";
+import { unsubscribeUrl } from "@/lib/email-unsubscribe";
 import { YAHOO_HEADERS } from "@/lib/yahoo";
 
 export const maxDuration = 60;
@@ -51,15 +52,18 @@ async function getBars(ticker:string, since:string):Promise<Bar[]> {
   } catch { return []; }
 }
 async function weeklyRecipients(supabase:any) {
-  const configured=(process.env.JARVIS_EMAIL_TO || "iggerzefanya@gmail.com").split(",").map((email)=>email.trim().toLowerCase()).filter(Boolean);
+  const configured=(process.env.JARVIS_EMAIL_TO || "").split(",").map((email)=>email.trim().toLowerCase()).filter(Boolean);
   try {
-    const {data,error}=await supabase.auth.admin.listUsers({page:1,perPage:1000});
-    if(error) return [...new Set(configured)];
+    const [{data,error},{data:suppressed}]=await Promise.all([
+      supabase.auth.admin.listUsers({page:1,perPage:1000}),
+      supabase.from("jarvis_email_suppressions").select("email"),
+    ]);
+    if(error) return filterSuppressed(configured, suppressed || []);
     // An account is not an email subscription. Only users who pressed the
     // digest toggle in Settings, with a confirmed address, join the send list.
     const signedIn=selectDigestRecipients((data?.users || []) as DigestUser[], configured);
-    return signedIn;
-  } catch { return [...new Set(configured)]; }
+    return filterSuppressed(signedIn, suppressed || []);
+  } catch { return filterSuppressed(configured, []); }
 }
 
 type DeliveryType = "weekly_digest"|"market_alert";
@@ -90,7 +94,9 @@ async function sendMarketAlerts(items:MarketAlert[], recipients:string[], supaba
     const state=await deliveryState(supabase,eventKey,email);
     if(state.sent) { deliveries.push({email:state.recipient,ok:true,status:208,id:state.providerId,error:null}); continue; }
     await markDelivery(supabase,eventKey,"market_alert",email,"pending");
-    const response=await fetchUpstream("https://api.resend.com/emails",{method:"POST",headers:{Authorization:"Bearer "+apiKey,"Content-Type":"application/json","Idempotency-Key":eventKey+"/"+email},body:JSON.stringify({from:fromAddress,to:[email],subject:"JARVIS · Market-close action · "+items.length+" new",html})});
+    const unsubscribe=unsubscribeUrl(email);
+    const emailHtml=unsubscribe?html.replace("</main>","<p style='color:#6b7280;font-size:12px'><a href='"+unsubscribe+"' style='color:#48a6ff'>Unsubscribe from these emails</a></p></main>"):html;
+    const response=await fetchUpstream("https://api.resend.com/emails",{method:"POST",headers:{Authorization:"Bearer "+apiKey,"Content-Type":"application/json","Idempotency-Key":eventKey+"/"+email},body:JSON.stringify({from:fromAddress,to:[email],subject:"JARVIS · Market-close action · "+items.length+" new",html:emailHtml,...(unsubscribe?{headers:{"List-Unsubscribe":"<"+unsubscribe+">","List-Unsubscribe-Post":"List-Unsubscribe=One-Click"}}:{})})});
     const data:any=await response.json().catch(()=>({}));
     await markDelivery(supabase,eventKey,"market_alert",email,response.ok?"sent":"failed",data.id||null,data.message||null);
     deliveries.push({email,ok:response.ok,status:response.status,id:data.id||null,error:data.message||null});
@@ -103,7 +109,7 @@ async function sendMarketAlerts(items:MarketAlert[], recipients:string[], supaba
 async function sendDigest(weekOf:string, regime:string, candidates:Candidate[], actions:Action[], supabase:any, recipientOverride?:string[]) {
   const apiKey=process.env.RESEND_API_KEY;
   if(!apiKey) return {sent:false,reason:"not_configured"};
-  const recipients=recipientOverride || (process.env.JARVIS_EMAIL_TO || "iggerzefanya@gmail.com").split(",").map((email)=>email.trim()).filter(Boolean);
+  const recipients=recipientOverride || (process.env.JARVIS_EMAIL_TO || "").split(",").map((email)=>email.trim()).filter(Boolean);
   // A week the macro overlay stood down to 0% deploys no capital: the names are
   // recorded but must not read as actionable picks, so the digest says so plainly.
   const standAside=candidates.length>0 && candidates.every((item)=>Number(item.position_weight||0)===0);
@@ -119,7 +125,9 @@ async function sendDigest(weekOf:string, regime:string, candidates:Candidate[], 
     const state=await deliveryState(supabase,eventKey,email);
     if(state.sent) { deliveries.push({email:state.recipient,ok:true,status:208,id:state.providerId,error:null}); continue; }
     await markDelivery(supabase,eventKey,"weekly_digest",email,"pending");
-    const response=await fetchUpstream("https://api.resend.com/emails",{method:"POST",headers:{Authorization:"Bearer "+apiKey,"Content-Type":"application/json","Idempotency-Key":eventKey+"/"+email},body:JSON.stringify({from:fromAddress,to:[email],subject:"JARVIS V5 · Weekly Picks · "+weekOf,html})});
+    const unsubscribe=unsubscribeUrl(email);
+    const emailHtml=unsubscribe?html.replace("</main>","<p style='color:#6b7280;font-size:12px'><a href='"+unsubscribe+"' style='color:#48a6ff'>Unsubscribe from these emails</a></p></main>"):html;
+    const response=await fetchUpstream("https://api.resend.com/emails",{method:"POST",headers:{Authorization:"Bearer "+apiKey,"Content-Type":"application/json","Idempotency-Key":eventKey+"/"+email},body:JSON.stringify({from:fromAddress,to:[email],subject:"JARVIS V5 · Weekly Picks · "+weekOf,html:emailHtml,...(unsubscribe?{headers:{"List-Unsubscribe":"<"+unsubscribe+">","List-Unsubscribe-Post":"List-Unsubscribe=One-Click"}}:{})})});
     const data:any=await response.json().catch(()=>({}));
     await markDelivery(supabase,eventKey,"weekly_digest",email,response.ok?"sent":"failed",data.id||null,data.message||null);
     deliveries.push({email,ok:response.ok,status:response.status,id:data.id||null,error:data.message||null});

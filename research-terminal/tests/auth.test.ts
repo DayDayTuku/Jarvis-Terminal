@@ -8,6 +8,7 @@ import {
   proxy,
 } from "../proxy.ts";
 import { GET as weeklyPicks } from "../app/api/cron/weekly-picks/route.ts";
+import { isAdmin } from "../lib/auth.ts";
 
 test("missing service keys do not create a 'Bearer undefined' bypass", () => {
   const keys = collectServiceKeys(undefined, null, "   ");
@@ -29,10 +30,19 @@ test("public paths bypass auth while application routes do not", () => {
   assert.equal(isPublicPath("/_next/static/chunk.js"), true);
   assert.equal(isPublicPath("/api/cron/weekly-picks"), true);
   assert.equal(isPublicPath("/api/v1/markets"), true);
+  assert.equal(isPublicPath("/api/email/unsubscribe"), true);
+  assert.equal(isPublicPath("/api/webhooks/resend"), true);
   assert.equal(isPublicPath("/manifest.webmanifest"), true);
   assert.equal(isPublicPath("/"), false);
   assert.equal(isPublicPath("/api/news"), false);
   assert.equal(isPublicPath("/api/swing-setups"), false);
+});
+
+test("admin checks require the app_metadata admin role", () => {
+  assert.equal(isAdmin({ app_metadata: { role: "admin" } }), true);
+  assert.equal(isAdmin({ app_metadata: { role: "user" } }), false);
+  assert.equal(isAdmin({ app_metadata: {} }), false);
+  assert.equal(isAdmin(null), false);
 });
 
 test("proxy lets the access page and PWA assets through without Supabase env", async () => {
@@ -108,7 +118,7 @@ test("weekly-picks reports missing database credentials after authenticating", a
       }),
     );
     assert.equal(response.status, 503);
-    assert.match((await response.json()).error, /credentials are missing/i);
+    assert.match(((await response.json()) as { error: string }).error, /credentials are missing/i);
   } finally {
     if (previousSecret === undefined) delete process.env.CRON_SECRET;
     else process.env.CRON_SECRET = previousSecret;

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '../../../../utils/supabase/server'
+import { checkRateLimit, rateLimitHeaders } from '@/lib/rate-limit'
 
 const ALLOWED_EVENTS = new Set([
   'session_start',
@@ -13,6 +14,19 @@ export async function POST(request: NextRequest) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  const limit = await checkRateLimit({
+    scope: 'analytics-event',
+    identifier: user.id,
+    limit: 120,
+    windowSeconds: 60,
+  })
+  if (!limit.allowed) {
+    return NextResponse.json(
+      { error: 'Too many analytics events.' },
+      { status: 429, headers: rateLimitHeaders(limit) },
+    )
+  }
 
   const body: unknown = await request.json().catch(() => null)
   const payload = body && typeof body === 'object' ? body as Record<string, unknown> : {}

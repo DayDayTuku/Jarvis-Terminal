@@ -47,3 +47,17 @@ export function selectDigestRecipients(users: DigestUser[], configured: string[]
 
   return [...new Set([...owners, ...optedIn])];
 }
+
+/** Remove addresses that unsubscribed or bounced/complained. */
+export function filterSuppressed(
+  recipients: string[],
+  suppressed: Array<string | { email?: string | null }>,
+) {
+  const blocked = new Set(
+    suppressed
+      .map((item) => (typeof item === "string" ? item : item.email || ""))
+      .map(normalize)
+      .filter(Boolean),
+  );
+  return [...new Set(recipients.map(normalize).filter((email) => email && !blocked.has(email)))];
+}

@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { IDX_UNIVERSE, type IDXStock } from "@/lib/idx-universe";
 
 type Detail = Record<string, any>;
@@ -79,6 +79,7 @@ export default function StockDetailModal({
   const [peerError, setPeerError] = useState<string | null>(null);
   const [retryKey, setRetryKey] = useState(0);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     setLoading(true);
@@ -180,6 +181,39 @@ export default function StockDetailModal({
     return () => controller.abort();
   }, [tab, ticker, data, peerData.length, peerLoading]);
 
+  // Trap focus inside the dialog, lock background scrolling, and restore focus
+  // to the control that opened the modal.
+  useEffect(() => {
+    const previous = document.activeElement as HTMLElement | null;
+    const originalOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    dialogRef.current?.focus();
+
+    const trap = (event: KeyboardEvent) => {
+      if (event.key !== "Tab" || !dialogRef.current) return;
+      const focusable = dialogRef.current.querySelectorAll<HTMLElement>(
+        'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+      );
+      if (!focusable.length) { event.preventDefault(); return; }
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+
+    document.addEventListener("keydown", trap);
+    return () => {
+      document.body.style.overflow = originalOverflow;
+      document.removeEventListener("keydown", trap);
+      previous?.focus?.();
+    };
+  }, []);
+
   // Handle escape key
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -211,7 +245,12 @@ export default function StockDetailModal({
       }}
     >
       <div
+        ref={dialogRef}
         className="stock-modal-content"
+        role="dialog"
+        aria-modal="true"
+        aria-label={`${ticker} stock details`}
+        tabIndex={-1}
         style={{
           backgroundColor: "#070a0f",
           border: "1px solid #1f2d3d",

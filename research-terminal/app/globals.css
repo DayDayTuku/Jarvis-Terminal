@@ -1,5 +1,4 @@
 @import 'tailwindcss';
-@import 'leaflet/dist/leaflet.css';
 
 :root {
   --bg: #000000; --panel: #080808; --panel-raised: #0d0d0d; --line: #242424; --line-strong: #3a3a3a;

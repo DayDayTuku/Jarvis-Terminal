@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import "leaflet/dist/leaflet.css";
 import type { CircleMarker, LayerGroup, Map as LeafletMap, Marker } from "leaflet";
 import {
   HAZARD_FAMILIES,

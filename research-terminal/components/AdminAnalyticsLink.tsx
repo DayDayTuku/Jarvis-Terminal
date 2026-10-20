@@ -2,13 +2,14 @@
 
 import { useEffect, useState } from 'react'
 import { createClient } from '../utils/supabase/client'
+import { isAdmin } from '../lib/auth'
 
 export default function AdminAnalyticsLink() {
   const [visible, setVisible] = useState(false)
 
   useEffect(() => {
     createClient().auth.getUser().then(({ data }) => {
-      setVisible(data.user?.app_metadata?.role === 'admin')
+      setVisible(isAdmin(data.user))
     })
   }, [])
 

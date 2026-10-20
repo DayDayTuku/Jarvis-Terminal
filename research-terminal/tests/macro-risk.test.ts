@@ -4,7 +4,7 @@ import { BASE_EXPOSURE, EXPOSURE_STEPS, indexSessionMove, macroExposure, macroFl
 
 const day = (index: number) => new Date(Date.UTC(2025, 0, 1) + index * 86_400_000).toISOString().slice(0, 10);
 const bars = (values: number[]): MacroBar[] => values.map((close, index) => ({ date: day(index), close }));
-const at = (values: number[]) => day(values.length - 1);
+const at = (values: Array<number | MacroBar>) => day(values.length - 1);
 const rising = (n: number, start = 100) => bars(Array.from({ length: n }, (_, i) => start + i));
 const falling = (n: number, start = 100) => bars(Array.from({ length: n }, (_, i) => start - i));
 

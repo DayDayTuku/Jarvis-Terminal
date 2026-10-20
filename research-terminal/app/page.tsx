@@ -2,8 +2,9 @@
 
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import Image from 'next/image';
+import dynamic from 'next/dynamic';
 import StockSearch from '../components/StockSearch';
-import StockDetailModal from '../components/StockDetailModal';
+import PanelBoundary from '../components/PanelBoundary';
 import NewsIntelligence from '../components/NewsIntelligence';
 import QuantLab from '../components/QuantLab';
 import PortfolioStressLab from '../components/PortfolioStressLab';
@@ -13,6 +14,8 @@ import ResearchPapers from '../components/ResearchPapers';
 import SettingsLogout from '../components/SettingsLogout';
 import WeeklyDigestOptIn from '../components/WeeklyDigestOptIn';
 import RiskMap from '../components/RiskMap';
+
+const StockDetailModal = dynamic(() => import('../components/StockDetailModal'), { ssr: false });
 
 
 type Scheme = 'default' | 'deuteranopia' | 'protanopia' | 'tritanopia';
@@ -113,13 +116,27 @@ export default function Home() {
   const [fred, setFred] = useState<FredData | null>(null); const [markets, setMarkets] = useState<MarketData | null>(null); const [gdelt, setGdelt] = useState<GdeltData | null>(null); const [calendar, setCalendar] = useState<CalendarData | null>(null);
 
   useEffect(() => {
-    Promise.allSettled([fetch('/api/fred').then((r) => r.ok ? r.json() : Promise.reject()), fetch('/api/markets').then((r) => r.ok ? r.json() : Promise.reject()), fetch('/api/gdelt').then((r) => r.ok ? r.json() : Promise.reject()), fetch('/api/calendar').then((r) => r.ok ? r.json() : Promise.reject()), fetch('/api/cot').then((r) => r.ok ? r.json() : Promise.reject())]).then(([fredResult, marketResult, gdeltResult, calendarResult, cotResult]) => {
-      if (fredResult.status === 'fulfilled') setFred(fredResult.value as FredData);
-      if (marketResult.status === 'fulfilled') setMarkets(marketResult.value as MarketData);
-      if (gdeltResult.status === 'fulfilled') setGdelt(gdeltResult.value as GdeltData);
-      if (calendarResult.status === 'fulfilled') setCalendar(calendarResult.value as CalendarData);
-      if (cotResult.status === 'fulfilled') setCot(cotResult.value as CotData);
-    });
+    let cancelled = false;
+    let lastLoaded = 0;
+    const load = () => {
+      if (cancelled || Date.now() - lastLoaded < 5 * 60 * 1000) return;
+      lastLoaded = Date.now();
+      Promise.allSettled([fetch('/api/fred').then((r) => r.ok ? r.json() : Promise.reject()), fetch('/api/markets').then((r) => r.ok ? r.json() : Promise.reject()), fetch('/api/gdelt').then((r) => r.ok ? r.json() : Promise.reject()), fetch('/api/calendar').then((r) => r.ok ? r.json() : Promise.reject()), fetch('/api/cot').then((r) => r.ok ? r.json() : Promise.reject())]).then(([fredResult, marketResult, gdeltResult, calendarResult, cotResult]) => {
+        if (cancelled) return;
+        if (fredResult.status === 'fulfilled') setFred(fredResult.value as FredData);
+        if (marketResult.status === 'fulfilled') setMarkets(marketResult.value as MarketData);
+        if (gdeltResult.status === 'fulfilled') setGdelt(gdeltResult.value as GdeltData);
+        if (calendarResult.status === 'fulfilled') setCalendar(calendarResult.value as CalendarData);
+        if (cotResult.status === 'fulfilled') setCot(cotResult.value as CotData);
+      });
+    };
+    load();
+
+    // Refresh stale feeds when the tab returns to the foreground, but never
+    // more than once every five minutes.
+    const onVisibility = () => { if (document.visibilityState === 'visible') load(); };
+    document.addEventListener('visibilitychange', onVisibility);
+
     const onKey = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
       if (target?.closest('textarea, input, select, [contenteditable="true"]')) return;
@@ -129,7 +146,12 @@ export default function Home() {
       if (key === 'n') { setNotesOpen(true); return; }
       if (key === 's') { setSettingsOpen(true); return; }
     };
-    window.addEventListener('keydown', onKey); return () => window.removeEventListener('keydown', onKey);
+    window.addEventListener('keydown', onKey);
+    return () => {
+      cancelled = true;
+      document.removeEventListener('visibilitychange', onVisibility);
+      window.removeEventListener('keydown', onKey);
+    };
   }, []);
 
   useEffect(() => { setSeasonality(null); fetch(`/api/seasonality?ticker=${seasonTicker}`).then((response)=>response.ok?response.json():Promise.reject()).then((data)=>setSeasonality(data as SeasonalityData)).catch(()=>setSeasonality(null)); }, [seasonTicker]);
@@ -371,6 +393,7 @@ export default function Home() {
 
         <div className="view-heading"><div><span>RESEARCH / {active}</span><h2>{active === 'OVERVIEW' ? 'Daily Research Overview' : titleCase(active)}</h2></div><p>{sectionDescription(active)}</p></div>
 
+        <PanelBoundary label={active} resetKey={active}>
         {active === 'OVERVIEW' && <section className="decision-home">
           <header className="decision-intro">
             <span className="decision-kicker">JARVIS / DECISION BRIEF</span>
@@ -428,6 +451,7 @@ export default function Home() {
         {active === 'SEASONALITY' && <section className="panel seasonality-panel"><PanelHead index="01" title="MONTHLY RETURN SEASONALITY"><div className="ticker-switcher">{[...new Set([seasonTicker, 'BUMI', 'AMMN', 'ADRO', 'JKSE'])].map((ticker)=><button key={ticker} onClick={()=>setSeasonTicker(ticker)} className={seasonTicker===ticker?'active':''}>{ticker}</button>)}</div></PanelHead>{seasonality ? <><div className="season-summary"><div><span>SELECTED SERIES</span><strong>{seasonality.ticker}</strong><small>{seasonality.symbol}</small></div><p>Average calendar-month return across completed monthly observations. Historical tendency only—not a forecast.</p><b>BASED ON {seasonality.years} YEARS OF HISTORICAL DATA · {seasonality.from}–{seasonality.through}</b></div><div className="season-grid">{seasonality.months.map((month)=><div key={month.month} className={`season-tile ${heatTone(month.average)}`}><span>{monthName(month.month)}</span><strong>{signed(month.average)}%</strong><small>{month.positiveRate.toFixed(0)}% POSITIVE · N={month.observations}</small></div>)}</div><div className="season-legend"><span>WEAKER AVERAGE</span><i/><span>STRONGER AVERAGE</span></div><PanelFoot left="AVERAGE MONTHLY CLOSE-TO-CLOSE RETURN" right="YAHOO FINANCE UPSTREAM · DAILY HISTORY" /></> : <FeedUnavailable title="SEASONALITY FEED UNAVAILABLE" body="No historical values are shown until Yahoo returns a valid 5–10 year price series." />}</section>}
 
         {active === 'MARKET PARTICIPANT' && <section className="dashboard-grid cot-grid"><article className="panel cot-panel"><PanelHead index="01" title="CFTC COT POSITIONING"><div className="ticker-switcher">{['USD','GOLD','US10Y','BTC'].map((asset)=><button key={asset} onClick={()=>setCotAsset(asset)} className={cotAsset===asset?'active':''} disabled={!cot?.series.some((item)=>item.key===asset)}>{asset}</button>)}</div></PanelHead>{selectedCot ? <><div className="cot-summary"><div><span>CONTRACT</span><strong>{selectedCot.label}</strong></div><div><span>LATEST REPORT</span><strong>{formatDate(selectedCot.latest)}</strong></div><div><span>FREQUENCY</span><strong>WEEKLY · CFTC</strong></div></div><CotChart series={selectedCot} /><CotTable series={selectedCot} /><PanelFoot left="NET POSITION = LONG CONTRACTS − SHORT CONTRACTS" right={`UPDATED WEEKLY · THROUGH ${formatDate(selectedCot.latest)}`} /></> : <FeedUnavailable title="CFTC CONNECTION FAILED" body="No positioning values are shown because the public COT dataset did not return a valid series." />}</article></section>}
+        </PanelBoundary>
 
         <footer className="terminal-footer"><span>JARVIS / RESEARCH USE ONLY</span><span>Unavailable feeds retain explicit connection labels.</span><span>v1.2</span></footer>
       </div>
