@@ -1,11 +1,14 @@
 'use client';
 
 import { useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { createClient } from '../utils/supabase/client';
 
 const TIMEOUT = 60 * 60 * 1000; // 1 jam tanpa aktivitas
 
 export default function SessionTimeout() {
+  const router = useRouter();
+
   useEffect(() => {
     const supabase = createClient();
     let timer: ReturnType<typeof setTimeout>;
@@ -15,7 +18,8 @@ export default function SessionTimeout() {
 
       timer = setTimeout(async () => {
         await supabase.auth.signOut();
-        window.location.href = '/access';
+        router.replace('/access');
+        router.refresh();
       }, TIMEOUT);
     };
 
@@ -33,7 +37,7 @@ export default function SessionTimeout() {
         window.removeEventListener(event, resetTimer);
       });
     };
-  }, []);
+  }, [router]);
 
   return null;
 }

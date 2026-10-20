@@ -1,10 +1,12 @@
 'use client'
 
 import { useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { createClient } from '../utils/supabase/client'
 import AdminAnalyticsLink from './AdminAnalyticsLink'
 
 export default function SettingsLogout() {
+  const router = useRouter()
   const [loggingOut, setLoggingOut] = useState(false)
   const [error, setError] = useState('')
 
@@ -17,7 +19,8 @@ export default function SettingsLogout() {
       setLoggingOut(false)
       return
     }
-    window.location.href = '/access'
+    router.replace('/access')
+    router.refresh()
   }
 
   return <>
