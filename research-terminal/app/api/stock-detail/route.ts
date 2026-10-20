@@ -1,3 +1,4 @@
+import { fetchUpstream } from "@/lib/upstream";
 // app/api/stock-detail/route.ts (v4 — all res.json() typed as any to fix build)
 import { NextRequest, NextResponse } from "next/server";
 import { IDX_UNIVERSE } from "@/lib/idx-universe";
@@ -18,7 +19,7 @@ async function fetchWithRetry(url: string, options: any, attempts = 3) {
 
   for (let attempt = 0; attempt < attempts; attempt += 1) {
     try {
-      const response = await fetch(url, options);
+      const response = await fetchUpstream(url, options);
       if (response.status === 429) {
         yahooCooldownUntil = Date.now() + YAHOO_COOLDOWN_MS;
         return response;
@@ -55,7 +56,7 @@ async function getCrumbAndCookie(forceRefresh = false): Promise<{ crumb: string;
   }
 
   try {
-    const cookieRes = await fetch("https://fc.yahoo.com", {
+    const cookieRes = await fetchUpstream("https://fc.yahoo.com", {
       headers: { "User-Agent": UA },
       redirect: "manual",
     });
@@ -63,7 +64,7 @@ async function getCrumbAndCookie(forceRefresh = false): Promise<{ crumb: string;
     if (!setCookie) return null;
     const cookie = setCookie.split(";")[0];
 
-    const crumbRes = await fetch("https://query1.finance.yahoo.com/v1/test/getcrumb", {
+    const crumbRes = await fetchUpstream("https://query1.finance.yahoo.com/v1/test/getcrumb", {
       headers: { "User-Agent": UA, Cookie: cookie },
     });
     const crumb = await crumbRes.text();
@@ -210,7 +211,7 @@ const TRADINGVIEW_COLUMNS = [
 async function getTradingViewSnapshot(ticker: string) {
   const symbol = ticker.replace(/\.JK$/i, "").toUpperCase();
   try {
-    const response = await fetch("https://scanner.tradingview.com/indonesia/scan", {
+    const response = await fetchUpstream("https://scanner.tradingview.com/indonesia/scan", {
       method: "POST",
       headers: { "Content-Type": "application/json", Accept: "application/json" },
       body: JSON.stringify({
@@ -262,7 +263,7 @@ async function getEodhdDetail(ticker: string, basic: Record<string, any> | null)
   if (!token) return null;
 
   try {
-    const response = await fetch(
+    const response = await fetchUpstream(
       `https://eodhd.com/api/v1.1/fundamentals/${encodeURIComponent(ticker)}?api_token=${encodeURIComponent(token)}&fmt=json`,
       {
         headers: { Accept: "application/json" },
@@ -367,7 +368,7 @@ async function getAnnualFinancialHistory(ticker: string) {
   const period1 = period2 - 7 * 365 * 24 * 60 * 60;
   const url = `https://query2.finance.yahoo.com/ws/fundamentals-timeseries/v1/finance/timeseries/${encodeURIComponent(ticker)}?symbol=${encodeURIComponent(ticker)}&type=${types}&period1=${period1}&period2=${period2}`;
   try {
-    const response = await fetch(url, {
+    const response = await fetchUpstream(url, {
       headers: { "User-Agent": UA, Accept: "application/json" },
       signal: AbortSignal.timeout(10000),
       next: { revalidate: 3600 },

@@ -1,3 +1,4 @@
+import { fetchUpstream } from "../../../lib/upstream.ts";
 import { NextResponse } from 'next/server';
 
 type TimelinePoint = { date: string; value: number };
@@ -29,7 +30,7 @@ export async function GET() {
   try {
     const settled = await Promise.allSettled(regions.map(async (region) => {
       const params = new URLSearchParams({ query: region.query, mode: 'timelinevol', format: 'json', timespan: '3months', timelinesmooth: '3' });
-      const response = await fetch(`https://api.gdeltproject.org/api/v2/doc/doc?${params}`, { headers: { accept: 'application/json', 'user-agent': 'Jarvis Research Terminal' }, cache: 'no-store' });
+      const response = await fetchUpstream(`https://api.gdeltproject.org/api/v2/doc/doc?${params}`, { headers: { accept: 'application/json', 'user-agent': 'Jarvis Research Terminal' }, cache: 'no-store' });
       if (!response.ok) throw new Error(`${region.key} returned ${response.status}`);
       const timeline = extractTimeline(await response.json()); if (!timeline.length) throw new Error(`${region.key} returned no timeline`);
       return { region: region.key, score: score(timeline), timeline };

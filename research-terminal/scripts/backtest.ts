@@ -51,15 +51,6 @@ async function loadMacro(from: string): Promise<Map<string, BacktestBar[]>> {
 }
 
 // Individual risk-off reads. Each returns a half-size multiplier, or 1 when calm.
-const idrWeak = (read: MacroRead): number => {
-  const move = read.change(IDR, 20); // USD/IDR up = rupiah weaker = risk-off
-  return move !== null && move > 0 ? 0.5 : 1;
-};
-/** Exposure scale on rupiah weakness over `sessions` days (1 = full size). */
-const idrScale = (sessions: number, defensive = 0.5) => (read: MacroRead): number => {
-  const move = read.change(IDR, sessions);
-  return move !== null && move > 0 ? defensive : 1;
-};
 const vixHigh = (read: MacroRead): number => {
   const level = read.value(VIX);
   return level !== null && level >= 22 ? 0.5 : 1;
@@ -69,12 +60,6 @@ const regionSoft = (read: MacroRead): number => {
   if (!distances.length) return 1;
   return distances.reduce((sum, value) => sum + value, 0) / distances.length < 0 ? 0.5 : 1;
 };
-const indexSoft = (read: MacroRead): number => {
-  const distance = read.distFromSma("^JKSE", 200);
-  return distance !== null && distance < 0 ? 0.5 : 1;
-};
-const riskFlags = (read: MacroRead): number =>
-  [idrWeak(read), vixHigh(read), regionSoft(read), indexSoft(read)].filter((value) => value < 1).length;
 
 function row(label: string, result: BacktestResult): string {
   const s = result.summary;

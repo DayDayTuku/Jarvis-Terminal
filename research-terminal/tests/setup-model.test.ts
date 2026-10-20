@@ -12,7 +12,6 @@ import {
   regimeFor,
   selectWeek,
   shortWeight,
-  type Regime,
   type SetupFeatures,
   type ScoredSetup,
 } from "../lib/setup-model.ts";

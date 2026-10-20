@@ -1,3 +1,4 @@
+import { fetchUpstream } from "@/lib/upstream";
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import {
@@ -11,6 +12,7 @@ import { buildLifecycle, carriedPositions, recentRunsBefore } from "@/lib/weekly
 import { pickLongs as pick, pickShort, positionWeight as weight, regimeFor, shortWeight } from "@/lib/setup-model";
 import { loadMacroExposure } from "@/lib/macro-risk";
 import { formatMacroLabel, guardLock } from "@/lib/lock-guard";
+import { selectDigestRecipients, type DigestUser } from "@/lib/email-recipients";
 import { YAHOO_HEADERS } from "@/lib/yahoo";
 
 export const maxDuration = 60;
@@ -40,7 +42,7 @@ async function getBars(ticker:string, since:string):Promise<Bar[]> {
   try {
     const period1 = Math.floor(new Date(since + "T00:00:00+07:00").getTime()/1000);
     const url = "https://query2.finance.yahoo.com/v8/finance/chart/" + encodeURIComponent(ticker) + ".JK?period1=" + period1 + "&period2=" + (Math.floor(Date.now()/1000)+86400) + "&interval=1d";
-    const response = await fetch(url,{headers:YAHOO_HEADERS,cache:"no-store"});
+    const response = await fetchUpstream(url,{headers:YAHOO_HEADERS,cache:"no-store"});
     if(!response.ok) return [];
     const json:any = await response.json();
     const quote = json?.chart?.result?.[0]?.indicators?.quote?.[0];
@@ -53,8 +55,10 @@ async function weeklyRecipients(supabase:any) {
   try {
     const {data,error}=await supabase.auth.admin.listUsers({page:1,perPage:1000});
     if(error) return [...new Set(configured)];
-    const signedIn=(data?.users || []).filter((user:any)=>user.email).map((user:any)=>String(user.email).trim().toLowerCase());
-    return [...new Set([...configured,...signedIn])];
+    // An account is not an email subscription. Only users who pressed the
+    // digest toggle in Settings, with a confirmed address, join the send list.
+    const signedIn=selectDigestRecipients((data?.users || []) as DigestUser[], configured);
+    return signedIn;
   } catch { return [...new Set(configured)]; }
 }
 
@@ -77,7 +81,7 @@ async function sendMarketAlerts(items:MarketAlert[], recipients:string[], supaba
   if(!items.length) return {sent:false,reason:"no_new_actions"};
   const fromAddress=process.env.JARVIS_EMAIL_FROM||"Jarvis Research <onboarding@resend.dev>";
   const rows=items.map((item)=>"<tr><td><b>"+escapeHtml(item.ticker)+"</b></td><td><b>"+escapeHtml(item.action)+"</b></td><td>"+item.sessionLow.toLocaleString("id-ID")+" / "+item.sessionHigh.toLocaleString("id-ID")+"</td><td>"+item.trigger.toLocaleString("id-ID")+"</td></tr>").join("");
-  const html="<!doctype html><html><body style='margin:0;background:#f4f5f7;font-family:Arial;color:#111827'><div style='max-width:720px;margin:auto;padding:28px 16px'><header style='background:#111827;color:white;padding:24px'><small>JARVIS RESEARCH</small><h1>Market-close action</h1><p>A new Weekly Picks trigger was confirmed after market close.</p></header><main style='background:white;padding:22px'><table style='width:100%;border-collapse:collapse' cellpadding='9'><tr style='background:#1f3c52;color:white'><th>Ticker</th><th>Action</th><th>Day low / high</th><th>Trigger</th></tr>"+rows+"</table><p style='color:#6b7280;font-size:12px'>This is an automated rules-based monitoring alert, not investment advice.</p></main></div></body></html>";
+  const html="<!doctype html><html><body style='margin:0;background:#f4f5f7;font-family:Arial;color:#111827'><div style='max-width:720px;margin:auto;padding:28px 16px'><header style='background:#111827;color:white;padding:24px'><small>JARVIS RESEARCH</small><h1>Market-close action</h1><p>A new Weekly Picks trigger was confirmed after market close.</p></header><main style='background:white;padding:22px'><table style='width:100%;border-collapse:collapse' cellpadding='9'><tr style='background:#1f3c52;color:white'><th>Ticker</th><th>Action</th><th>Day low / high</th><th>Trigger</th></tr>"+rows+"</table><p style='color:#6b7280;font-size:12px'>This is an automated rules-based monitoring alert, not investment advice.</p><p style='color:#6b7280;font-size:12px'>You opted in to these alerts. You can turn them off any time in Jarvis → Settings.</p></main></div></body></html>";
   const senderAddress=fromAddress.match(/<([^>]+)>/)?.[1] || "onboarding@resend.dev";
   const deliveryRecipients=[...new Set([...recipients.map((email)=>email.toLowerCase()),senderAddress.toLowerCase()])];
   const eventKey="market-alert/"+items.map((item)=>[item.ticker,item.action,item.trigger].join("-")).sort().join("_").replace(/[^a-zA-Z0-9_-]/g,"").slice(0,140);
@@ -86,7 +90,7 @@ async function sendMarketAlerts(items:MarketAlert[], recipients:string[], supaba
     const state=await deliveryState(supabase,eventKey,email);
     if(state.sent) { deliveries.push({email:state.recipient,ok:true,status:208,id:state.providerId,error:null}); continue; }
     await markDelivery(supabase,eventKey,"market_alert",email,"pending");
-    const response=await fetch("https://api.resend.com/emails",{method:"POST",headers:{Authorization:"Bearer "+apiKey,"Content-Type":"application/json","Idempotency-Key":eventKey+"/"+email},body:JSON.stringify({from:fromAddress,to:[email],subject:"JARVIS · Market-close action · "+items.length+" new",html})});
+    const response=await fetchUpstream("https://api.resend.com/emails",{method:"POST",headers:{Authorization:"Bearer "+apiKey,"Content-Type":"application/json","Idempotency-Key":eventKey+"/"+email},body:JSON.stringify({from:fromAddress,to:[email],subject:"JARVIS · Market-close action · "+items.length+" new",html})});
     const data:any=await response.json().catch(()=>({}));
     await markDelivery(supabase,eventKey,"market_alert",email,response.ok?"sent":"failed",data.id||null,data.message||null);
     deliveries.push({email,ok:response.ok,status:response.status,id:data.id||null,error:data.message||null});
@@ -105,7 +109,7 @@ async function sendDigest(weekOf:string, regime:string, candidates:Candidate[], 
   const standAside=candidates.length>0 && candidates.every((item)=>Number(item.position_weight||0)===0);
   const actionRows=actions.length?actions.map((item)=>"<tr><td>"+escapeHtml(item.ticker)+"</td><td><b>"+item.action+"</b></td><td>"+Number(item.target_weight || 0).toFixed(1)+"%</td><td>"+escapeHtml(stripAlertMarkers(item.reason))+"</td></tr>").join(""):"<tr><td colspan='4'>No prior-position action this week.</td></tr>";
   const pickRows=candidates.length?candidates.map((item)=>"<tr><td><b>"+escapeHtml(item.ticker)+"</b></td><td>"+escapeHtml(item.setup)+"</td><td>"+Number(item.score).toFixed(1)+"</td><td>"+Number(item.planned_entry_low).toLocaleString("id-ID")+"–"+Number(item.planned_entry_high).toLocaleString("id-ID")+"</td></tr>").join(""):"<tr><td colspan='4'>No qualified setup. Capital remains in cash.</td></tr>";
-  const html="<!doctype html><html><body style='margin:0;background:#f4f5f7;font-family:Arial;color:#111827'><div style='max-width:760px;margin:auto;padding:28px 16px'><header style='background:#111827;color:white;padding:24px'><small>JARVIS RESEARCH</small><h1>Weekly Picks</h1><p>Week of "+escapeHtml(weekOf)+" · V5 "+escapeHtml(regime)+"</p></header><main style='background:white;padding:22px'><h2>Last week's positions</h2><table style='width:100%;border-collapse:collapse' cellpadding='9'><tr style='background:#1f3c52;color:white'><th>Ticker</th><th>Action</th><th>Weight</th><th>Reason</th></tr>"+actionRows+"</table>"+(standAside?"<h2>This week's picks — standing aside</h2><p style='background:#fff7ed;border:1px solid #f59e0b;border-radius:8px;padding:10px;color:#7c2d12'><b>No new positions this week.</b> The macro risk overlay is at 0% deployed, so the names below qualified but are <b>not entered</b>; capital remains in cash.</p>":"<h2>This week's picks</h2>")+"<table style='width:100%;border-collapse:collapse' cellpadding='9'><tr style='background:#1f3c52;color:white'><th>Ticker</th><th>Setup</th><th>Score</th><th>Entry</th></tr>"+pickRows+"</table><p style='color:#6b7280;font-size:12px'>Rules-based research, not investment advice. Every pick is reviewed next week as HOLD, REDUCE, EXIT, NO_ENTRY, or EXPIRED.</p></main></div></body></html>";
+  const html="<!doctype html><html><body style='margin:0;background:#f4f5f7;font-family:Arial;color:#111827'><div style='max-width:760px;margin:auto;padding:28px 16px'><header style='background:#111827;color:white;padding:24px'><small>JARVIS RESEARCH</small><h1>Weekly Picks</h1><p>Week of "+escapeHtml(weekOf)+" · V5 "+escapeHtml(regime)+"</p></header><main style='background:white;padding:22px'><h2>Last week's positions</h2><table style='width:100%;border-collapse:collapse' cellpadding='9'><tr style='background:#1f3c52;color:white'><th>Ticker</th><th>Action</th><th>Weight</th><th>Reason</th></tr>"+actionRows+"</table>"+(standAside?"<h2>This week's picks — standing aside</h2><p style='background:#fff7ed;border:1px solid #f59e0b;border-radius:8px;padding:10px;color:#7c2d12'><b>No new positions this week.</b> The macro risk overlay is at 0% deployed, so the names below qualified but are <b>not entered</b>; capital remains in cash.</p>":"<h2>This week's picks</h2>")+"<table style='width:100%;border-collapse:collapse' cellpadding='9'><tr style='background:#1f3c52;color:white'><th>Ticker</th><th>Setup</th><th>Score</th><th>Entry</th></tr>"+pickRows+"</table><p style='color:#6b7280;font-size:12px'>Rules-based research, not investment advice. Every pick is reviewed next week as HOLD, REDUCE, EXIT, NO_ENTRY, or EXPIRED.</p><p style='color:#6b7280;font-size:12px'>You opted in to this digest. You can turn it off any time in Jarvis → Settings.</p></main></div></body></html>";
   const fromAddress=process.env.JARVIS_EMAIL_FROM||"Jarvis Research <onboarding@resend.dev>";
   const senderAddress=fromAddress.match(/<([^>]+)>/)?.[1] || "onboarding@resend.dev";
   const deliveryRecipients=[...new Set([...recipients.map((email)=>email.toLowerCase()),senderAddress.toLowerCase()])];
@@ -115,7 +119,7 @@ async function sendDigest(weekOf:string, regime:string, candidates:Candidate[], 
     const state=await deliveryState(supabase,eventKey,email);
     if(state.sent) { deliveries.push({email:state.recipient,ok:true,status:208,id:state.providerId,error:null}); continue; }
     await markDelivery(supabase,eventKey,"weekly_digest",email,"pending");
-    const response=await fetch("https://api.resend.com/emails",{method:"POST",headers:{Authorization:"Bearer "+apiKey,"Content-Type":"application/json","Idempotency-Key":eventKey+"/"+email},body:JSON.stringify({from:fromAddress,to:[email],subject:"JARVIS V5 · Weekly Picks · "+weekOf,html})});
+    const response=await fetchUpstream("https://api.resend.com/emails",{method:"POST",headers:{Authorization:"Bearer "+apiKey,"Content-Type":"application/json","Idempotency-Key":eventKey+"/"+email},body:JSON.stringify({from:fromAddress,to:[email],subject:"JARVIS V5 · Weekly Picks · "+weekOf,html})});
     const data:any=await response.json().catch(()=>({}));
     await markDelivery(supabase,eventKey,"weekly_digest",email,response.ok?"sent":"failed",data.id||null,data.message||null);
     deliveries.push({email,ok:response.ok,status:response.status,id:data.id||null,error:data.message||null});
@@ -211,7 +215,7 @@ export async function GET(request:NextRequest) {
     await supabase.from("jarvis_weekly_runs").update({note:(cleanNote+" "+marker).trim()}).eq("id",existing.id);
     return NextResponse.json({ok:email.sent,alreadyLocked:true,retriedEmail:true,runId:existing.id,email},{status:email.sent?200:502});
   }
-  const scannerResponse=await fetch("https://jarvisfinance.my.id"+"/api/swing-setups",{cache:"no-store",headers:{Authorization:"Bearer "+process.env.JARVIS_READONLY_API_KEY}});
+  const scannerResponse=await fetchUpstream("https://jarvisfinance.my.id"+"/api/swing-setups",{cache:"no-store",headers:{Authorization:"Bearer "+process.env.JARVIS_READONLY_API_KEY}});
   if(!scannerResponse.ok) return NextResponse.json({error:"Screener unavailable."},{status:503});
   const scanner:any=await scannerResponse.json();
   const setups=Array.isArray(scanner?.setups)?scanner.setups as Setup[]:[];

@@ -1,3 +1,4 @@
+import { fetchUpstream } from "../../../lib/upstream.ts";
 import { NextResponse } from 'next/server';
 
 type Chart = { meta: { symbol: string; regularMarketPrice?: number }; timestamp?: number[]; indicators: { quote: Array<{ close: Array<number | null> }> } };
@@ -24,7 +25,7 @@ const assetConfig = [
 
 async function chart(symbol: string, range = '1mo') {
   const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?range=${range}&interval=1d`;
-  const response = await fetch(url, { headers: { 'user-agent': 'Mozilla/5.0', accept: 'application/json' }, cache: 'no-store' });
+  const response = await fetchUpstream(url, { headers: { 'user-agent': 'Mozilla/5.0', accept: 'application/json' }, cache: 'no-store' });
   if (!response.ok) throw new Error(`${symbol} returned ${response.status}`);
   const payload = await response.json() as { chart: { result: Chart[] | null } };
   const result = payload.chart.result?.[0]; if (!result) throw new Error(`${symbol} returned no data`); return result;
@@ -56,7 +57,8 @@ export async function GET() {
     return [{ name: asset.name, symbol: asset.symbol, timestamps, closes }];
   });
 
-  if (!watchlist.length && !heatmap.length && !assets.length) return NextResponse.json({ status: 'stale', source: 'Yahoo Finance upstream', failures }, { status: 503 });
+  const hasHeatmapData = heatmap.some((sector) => sector.daily !== null || sector.weekly !== null);
+  if (!watchlist.length && !assets.length && !hasHeatmapData) return NextResponse.json({ status: 'stale', source: 'Yahoo Finance upstream', failures }, { status: 503 });
   const lowConfidenceSectors = heatmap.filter((sector) => sector.confidence === 'low').map((sector) => sector.label);
   return NextResponse.json({ status: failures.length || lowConfidenceSectors.length ? 'partial' : 'live', source: 'Yahoo Finance upstream', watchlist, heatmap, assets, failures, lowConfidenceSectors, sectorMethod: 'simple_average', freshness: new Date().toISOString() }, { headers: { 'cache-control': 'public, max-age=900' } });
 }

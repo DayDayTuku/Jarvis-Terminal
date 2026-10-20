@@ -1,3 +1,4 @@
+import { fetchUpstream } from "@/lib/upstream";
 import { NextResponse } from "next/server";
 import { createClient } from "../../../utils/supabase/server";
 import { tradeOutcome, collapseStreaks, weightOr, type PriceBar, type PriorPosition } from "@/lib/weekly-lifecycle";
@@ -34,7 +35,7 @@ async function getBars(symbol: string, since: string): Promise<PriceBar[]> {
     const period1 = Math.floor(new Date(`${since}T00:00:00+07:00`).getTime() / 1000);
     const period2 = Math.floor(Date.now() / 1000) + 86400;
     const url = `https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?period1=${period1}&period2=${period2}&interval=1d`;
-    const response = await fetch(url, { headers: YAHOO_HEADERS, next: { revalidate: 900 } });
+    const response = await fetchUpstream(url, { headers: YAHOO_HEADERS, next: { revalidate: 900 } });
     if (!response.ok) return [];
     const json = (await response.json()) as YahooChart;
     const result = json?.chart?.result?.[0];

@@ -1,5 +1,5 @@
-const CACHE = "jarvis-shell-v1";
-const SHELL = ["/", "/access", "/manifest.webmanifest", "/jarvis-logo.png"];
+const CACHE = "jarvis-shell-v2";
+const SHELL = ["/", "/access", "/manifest.webmanifest", "/jarvis-logo-128.png"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(SHELL)).catch(() => undefined));

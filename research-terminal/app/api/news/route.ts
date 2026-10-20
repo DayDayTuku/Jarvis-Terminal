@@ -1,3 +1,4 @@
+import { fetchUpstream } from "@/lib/upstream";
 import { NextResponse } from "next/server";
 
 type Topic = "IDX" | "MACRO" | "COMMODITIES";
@@ -67,7 +68,7 @@ function cleanGoogleTitle(title: string, source: string) {
 
 async function fetchGoogleNews(topic: Topic, query: string): Promise<Article[]> {
   const params = new URLSearchParams({ q: query, hl: "id", gl: "ID", ceid: "ID:id" });
-  const response = await fetch(`https://news.google.com/rss/search?${params}`, {
+  const response = await fetchUpstream(`https://news.google.com/rss/search?${params}`, {
     headers: { accept: "application/rss+xml, application/xml, text/xml", "user-agent": "Jarvis Research Terminal/1.0" },
     next: { revalidate: 600 },
     signal: AbortSignal.timeout(12000),
@@ -92,7 +93,7 @@ async function fetchGoogleNews(topic: Topic, query: string): Promise<Article[]> 
 
 async function fetchGdelt(topic: Topic, query: string): Promise<Article[]> {
   const params = new URLSearchParams({ query, mode: "artlist", format: "json", maxrecords: "20", timespan: "72h", sort: "datedesc" });
-  const response = await fetch(`https://api.gdeltproject.org/api/v2/doc/doc?${params}`, {
+  const response = await fetchUpstream(`https://api.gdeltproject.org/api/v2/doc/doc?${params}`, {
     headers: { accept: "application/json", "user-agent": "Jarvis Research Terminal/1.0" },
     next: { revalidate: 900 }, signal: AbortSignal.timeout(10000),
   });

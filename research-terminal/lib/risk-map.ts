@@ -1,3 +1,4 @@
+import { fetchUpstream } from "./upstream.ts";
 /**
  * Risk map: one source of truth for the "where is the world fragile" layer.
  *
@@ -437,7 +438,7 @@ async function fetchHazardType(type: string): Promise<HazardPoint[]> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 12000);
   try {
-    const response = await fetch(`https://www.gdacs.org/gdacsapi/api/events/geteventlist/MAP?eventtype=${type}`, {
+    const response = await fetchUpstream(`https://www.gdacs.org/gdacsapi/api/events/geteventlist/MAP?eventtype=${type}`, {
       headers: { accept: "application/json", "user-agent": "Jarvis Research Terminal" },
       cache: "no-store",
       signal: controller.signal,

@@ -1,3 +1,4 @@
+import { fetchUpstream } from "./upstream.ts";
 /**
  * Worldwide natural-hazard reads.
  *
@@ -242,7 +243,7 @@ async function fetchText(url: string, timeoutMs: number): Promise<string> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const response = await fetch(url, {
+    const response = await fetchUpstream(url, {
       headers: { accept: "text/csv,text/plain", "user-agent": "Jarvis Research Terminal" },
       cache: "no-store",
       signal: controller.signal,
@@ -275,7 +276,7 @@ export async function fetchIndonesiaQuakes(): Promise<QuakeRead[]> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 12000);
   try {
-    const response = await fetch("https://data.bmkg.go.id/DataMKG/TEWS/gempadirasakan.json", {
+    const response = await fetchUpstream("https://data.bmkg.go.id/DataMKG/TEWS/gempadirasakan.json", {
       headers: { accept: "application/json", "user-agent": "Jarvis Research Terminal" },
       cache: "no-store",
       signal: controller.signal,

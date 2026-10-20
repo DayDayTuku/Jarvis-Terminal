@@ -1,5 +1,6 @@
 'use client'
 
+import Link from 'next/link'
 import { useEffect, useState, type CSSProperties } from 'react'
 
 type Analytics = {
@@ -51,7 +52,7 @@ export default function AdminAnalyticsPage() {
       .catch((cause)=>setError(cause instanceof Error?cause.message:'Unable to load analytics.'))
   },[])
 
-  if(error) return <main style={styles.page}><section style={styles.error}><p style={styles.eyebrow}>ADMIN ONLY</p><h1>Analytics unavailable</h1><p>{error}</p><a href='/' style={{color:'#0875c1'}}>Return to Jarvis</a></section></main>
+  if(error) return <main style={styles.page}><section style={styles.error}><p style={styles.eyebrow}>ADMIN ONLY</p><h1>Analytics unavailable</h1><p>{error}</p><Link href='/' style={{color:'#0875c1'}}>Return to Jarvis</Link></section></main>
   if(!data) return <main style={styles.page}><section style={styles.error}><p style={styles.eyebrow}>JARVIS ADMIN</p><h1>Loading product signals…</h1></section></main>
 
   const metrics=[
@@ -61,7 +62,7 @@ export default function AdminAnalyticsPage() {
   const maxDaily=Math.max(1,...data.dailyActive.map((item)=>item.users))
 
   return <main style={styles.page}><div style={styles.shell}>
-    <header style={styles.header}><div><div style={styles.eyebrow}>ADMIN · PRODUCT INTELLIGENCE</div><h1 style={styles.title}>Jarvis Analytics</h1><p style={styles.sub}>Usage, activation, and Weekly Picks health. Private operational data—visible only to administrators.</p></div><a href='/' style={styles.back}>BACK TO TERMINAL ↗</a></header>
+    <header style={styles.header}><div><div style={styles.eyebrow}>ADMIN · PRODUCT INTELLIGENCE</div><h1 style={styles.title}>Jarvis Analytics</h1><p style={styles.sub}>Usage, activation, and Weekly Picks health. Private operational data—visible only to administrators.</p></div><Link href='/' style={styles.back}>BACK TO TERMINAL ↗</Link></header>
 
     <section style={styles.grid}>{metrics.map(([label,value])=><article key={String(label)} style={styles.card}><div style={styles.label}>{label}</div><div style={styles.value}>{value}</div></article>)}</section>
 

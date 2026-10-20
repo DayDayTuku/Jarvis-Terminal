@@ -178,7 +178,7 @@ export default function StockDetailModal({
     })();
 
     return () => controller.abort();
-  }, [tab, ticker, data, peerData.length]);
+  }, [tab, ticker, data, peerData.length, peerLoading]);
 
   // Handle escape key
   useEffect(() => {
@@ -971,7 +971,7 @@ function ScenarioLab({
       { label: "BASE", growth: 5, multiple: anchorMultiple, probability: 50 },
       { label: "BULL", growth: 18, multiple: anchorMultiple * 1.25, probability: 25 },
     ]);
-  }, [ticker]);
+  }, [ticker, anchorMultiple]);
 
   useEffect(() => {
     if (edited) return;

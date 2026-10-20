@@ -1,3 +1,4 @@
+import { fetchUpstream } from "../../../lib/upstream.ts";
 import { NextResponse } from 'next/server';
 
 type Raw = Record<string,string|undefined>;
@@ -11,7 +12,7 @@ const assets = [
 
 async function load(asset: typeof assets[number]) {
   const params=new URLSearchParams({'$select':asset.fields,'$where':`contract_market_name='${asset.contract}'`,'$order':'report_date_as_yyyy_mm_dd DESC','$limit':'156'});
-  const response=await fetch(`https://publicreporting.cftc.gov/resource/${asset.dataset}.json?${params}`,{headers:{accept:'application/json','user-agent':'Jarvis Research Terminal'},cache:'no-store'});if(!response.ok)throw new Error(`${asset.key} returned ${response.status}`);
+  const response=await fetchUpstream(`https://publicreporting.cftc.gov/resource/${asset.dataset}.json?${params}`,{headers:{accept:'application/json','user-agent':'Jarvis Research Terminal'},cache:'no-store'});if(!response.ok)throw new Error(`${asset.key} returned ${response.status}`);
   const raw=await response.json() as Raw[];const points=raw.map((row)=>({date:(row.report_date_as_yyyy_mm_dd??'').slice(0,10),values:Object.fromEntries(asset.groups.map(([label,longKey,shortKey])=>[label,Number(row[longKey]??0)-Number(row[shortKey]??0)]))})).reverse();
   if(!points.length)throw new Error(`${asset.key} returned no observations`);return {key:asset.key,label:asset.label,groups:asset.groups.map(([label])=>label),points,latest:points.at(-1)?.date};
 }

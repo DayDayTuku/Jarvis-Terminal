@@ -1,6 +1,7 @@
 'use client';
 
 import { FormEvent, Suspense, useEffect, useState } from 'react';
+import Image from 'next/image';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { createClient } from '../../utils/supabase/client';
 
@@ -67,7 +68,7 @@ function AccessForm() {
           <div className="access-login-mark">
             <span className="mark-fragment fragment-one" /><span className="mark-fragment fragment-two" />
             <span className="mark-fragment fragment-three" /><span className="mark-fragment fragment-four" />
-            <img src="/jarvis-logo.png" alt="" />
+            <Image src="/jarvis-logo-128.png" alt="" width={128} height={128} />
           </div>
           <strong>ACCESS GRANTED</strong><small>OPENING RESEARCH WORKSPACE</small>
         </div>
@@ -79,7 +80,7 @@ function AccessForm() {
           <div className="access-intro-orbit orbit-two" />
           <div className="access-intro-brand">
             <div className="access-intro-logo-wrap">
-              <img src="/jarvis-logo.png" alt="" />
+              <Image src="/jarvis-logo-128.png" alt="" width={128} height={128} />
               <span className="access-intro-scan" />
             </div>
             <strong>JARVIS</strong>
@@ -90,7 +91,7 @@ function AccessForm() {
       )}
       <section className="access-card">
         <div className="access-welcome">
-          <img className="access-logo" src="/jarvis-logo.png" alt="Jarvis Research" />
+          <Image className="access-logo" src="/jarvis-logo-128.png" alt="Jarvis Research" width={128} height={128} />
           <span className="access-eyebrow">IDX · MACRO · COMMODITIES</span>
           <h1>JARVIS</h1>
           <p>JUST ANOTHER RESEARCH, VALUATION AND INTELLIGENCE SYSTEM</p>

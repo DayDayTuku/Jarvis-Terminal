@@ -64,7 +64,12 @@ export default function QuantLab({
   const load = () => {
     setLoading(true);
     fetch("/api/swing-setups")
-      .then((response) => response.ok ? response.json() : response.json().then((body: any) => Promise.reject(new Error(body?.message ?? "Scanner unavailable"))))
+      .then((response) => response.ok ? response.json() : response.json().then((body: unknown) => {
+        const message = body && typeof body === "object" && "message" in body && typeof (body as { message?: unknown }).message === "string"
+          ? (body as { message: string }).message
+          : "Scanner unavailable";
+        return Promise.reject(new Error(message));
+      }))
       .then((payload) => setData(payload as ScannerData))
       .catch((error) => setData({ status: "unavailable", asOf: new Date().toISOString(), universe: 0, scanned: 0, methodology: "", setups: [], message: error instanceof Error ? error.message : "Scanner unavailable" }))
       .finally(() => setLoading(false));

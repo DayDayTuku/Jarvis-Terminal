@@ -1,3 +1,4 @@
+import { fetchUpstream } from "@/lib/upstream";
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { deriveStatus, type LifecycleActionName } from "@/lib/weekly-lifecycle";
@@ -24,7 +25,7 @@ function authorize(request:NextRequest) {
   return {ok:true as const,headers};
 }
 async function scanner(origin:string) {
-  const response=await fetch(origin+"/api/swing-setups",{cache:"no-store",headers:{Authorization:"Bearer "+(process.env.JARVIS_READONLY_API_KEY||"")}});
+  const response=await fetchUpstream(origin+"/api/swing-setups",{cache:"no-store",headers:{Authorization:"Bearer "+(process.env.JARVIS_READONLY_API_KEY||"")}});
   if(!response.ok) throw new Error("Screener upstream unavailable");
   const payload:any=await response.json(); return Array.isArray(payload?.setups)?payload.setups:[];
 }

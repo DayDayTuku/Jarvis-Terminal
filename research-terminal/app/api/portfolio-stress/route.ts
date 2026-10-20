@@ -1,3 +1,4 @@
+import { fetchUpstream } from "@/lib/upstream";
 import { NextRequest, NextResponse } from "next/server";
 import { IDX_UNIVERSE } from "@/lib/idx-universe";
 import { YAHOO_HEADERS } from "@/lib/yahoo";
@@ -26,7 +27,7 @@ async function fetchSeries(symbol: string): Promise<Series> {
   let reason = `${symbol} unavailable`;
   for (const host of ["https://query2.finance.yahoo.com", "https://query1.finance.yahoo.com"]) {
     try {
-      const response = await fetch(host + path, {
+      const response = await fetchUpstream(host + path, {
         headers: YAHOO_HEADERS,
         signal: AbortSignal.timeout(9000),
         next: { revalidate: 900 },

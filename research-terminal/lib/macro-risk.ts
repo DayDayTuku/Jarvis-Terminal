@@ -1,3 +1,4 @@
+import { fetchUpstream } from "./upstream.ts";
 // Macro / regional risk overlay.
 //
 // The mandate is capital preservation, so the model trims NEW risk when the
@@ -111,7 +112,7 @@ export async function yahooDaily(symbol: string, since: string): Promise<MacroBa
   try {
     const period1 = Math.floor(Date.parse(`${since}T00:00:00Z`) / 1000);
     const url = `https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?period1=${period1}&period2=${Math.floor(Date.now() / 1000) + 86_400}&interval=1d`;
-    const response = await fetch(url, { headers: YAHOO_HEADERS, cache: "no-store" });
+    const response = await fetchUpstream(url, { headers: YAHOO_HEADERS, cache: "no-store" });
     if (!response.ok) return [];
     const json: any = await response.json();
     const result = json?.chart?.result?.[0];

@@ -1,3 +1,4 @@
+import { fetchUpstream } from "../../../lib/upstream.ts";
 import { NextResponse } from 'next/server';
 
 const MACRO = ['CPIAUCSL', 'PPIACO', 'PCEPILFE', 'RSXFS', 'UMCSENT', 'MANEMP', 'INDPRO'];
@@ -12,12 +13,12 @@ function yoy(series: Array<number | null>) { const result = series.map(() => nul
 async function fetchSeries(id: string, start: string): Promise<Series> {
   const apiKey = process.env.FRED_API_KEY;
   if (apiKey) {
-    const response = await fetch(`https://api.stlouisfed.org/fred/series/observations?series_id=${id}&api_key=${apiKey}&file_type=json&observation_start=${start}`, { headers: { accept: 'application/json', 'user-agent': 'Jarvis Research Terminal' }, cache: 'no-store' });
+    const response = await fetchUpstream(`https://api.stlouisfed.org/fred/series/observations?series_id=${id}&api_key=${apiKey}&file_type=json&observation_start=${start}`, { headers: { accept: 'application/json', 'user-agent': 'Jarvis Research Terminal' }, cache: 'no-store' });
     if (!response.ok) throw new Error(`${id} returned ${response.status}`);
     const payload = await response.json() as { observations: Array<{ date: string; value: string }> };
     return payload.observations.map((row) => { const parsed = Number(row.value); return { date: row.date, value: row.value !== '.' && Number.isFinite(parsed) ? parsed : null }; });
   }
-  const response = await fetch(`https://fred.stlouisfed.org/graph/fredgraph.csv?id=${id}&cosd=${start}`, { headers: { accept: 'text/csv', 'user-agent': 'Jarvis Research Terminal' }, cache: 'no-store' });
+  const response = await fetchUpstream(`https://fred.stlouisfed.org/graph/fredgraph.csv?id=${id}&cosd=${start}`, { headers: { accept: 'text/csv', 'user-agent': 'Jarvis Research Terminal' }, cache: 'no-store' });
   if (!response.ok) throw new Error(`${id} returned ${response.status}`);
   const lines = (await response.text()).trim().split(/\r?\n/).slice(1);
   return lines.map((line) => { const [date, raw] = line.split(','); const parsed = Number(raw); return { date, value: raw && raw !== '.' && Number.isFinite(parsed) ? parsed : null }; });

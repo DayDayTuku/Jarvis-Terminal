@@ -6,6 +6,17 @@
 /.next/
 /out/
 /build
+# vinext worker output
+/client/
+/server/
+
+# editor/sync conflict copies
+**/* 2.ts
+**/* 2.tsx
+**/* 2.js
+**/* 2.jsx
+**/* 2.json
+**/* 2.css
 
 # typescript
 *.tsbuildinfo

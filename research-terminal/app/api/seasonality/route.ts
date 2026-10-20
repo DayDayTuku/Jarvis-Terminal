@@ -1,3 +1,4 @@
+import { fetchUpstream } from "../../../lib/upstream.ts";
 import { NextRequest, NextResponse } from 'next/server';
 
 const symbols: Record<string,string> = { BUMI: 'BUMI.JK', AMMN: 'AMMN.JK', ADRO: 'ADRO.JK', JKSE: '^JKSE' };
@@ -8,7 +9,7 @@ export async function GET(request: NextRequest) {
   const symbol = symbols[ticker] || (ticker === 'JKSE' ? '^JKSE' : `${ticker}.JK`);
   if (!symbol) return NextResponse.json({ status: 'error', error: 'Unsupported ticker' }, { status: 400 });
   try {
-    const response = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?range=10y&interval=1d`, { headers: { 'user-agent': 'Mozilla/5.0', accept: 'application/json' }, cache: 'no-store' });
+    const response = await fetchUpstream(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?range=10y&interval=1d`, { headers: { 'user-agent': 'Mozilla/5.0', accept: 'application/json' }, cache: 'no-store' });
     if (!response.ok) throw new Error(`${symbol} returned ${response.status}`);
     const payload = await response.json() as { chart: { result: Chart[] | null } }; const chart = payload.chart.result?.[0]; if (!chart) throw new Error('No price history returned');
     const closes = chart.indicators.quote[0]?.close ?? []; const timestamps = chart.timestamp ?? []; const buckets = new Map<string, number[]>();

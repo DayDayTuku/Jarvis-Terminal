@@ -1,3 +1,4 @@
+import { fetchUpstream } from "@/lib/upstream";
 import { NextResponse } from "next/server";
 import { IDX_UNIVERSE } from "@/lib/idx-universe";
 import { classifyAll, type SetupFeatures } from "@/lib/setup-model";
@@ -53,7 +54,7 @@ function toFeatures(row: RawRow, sector: string): SetupFeatures {
 export async function GET() {
   try {
     const tickers = IDX_UNIVERSE.map((stock) => `IDX:${stock.ticker.replace(".JK", "")}`);
-    const response = await fetch("https://scanner.tradingview.com/indonesia/scan", {
+    const response = await fetchUpstream("https://scanner.tradingview.com/indonesia/scan", {
       method: "POST",
       headers: { "Content-Type": "application/json", Accept: "application/json" },
       body: JSON.stringify({
