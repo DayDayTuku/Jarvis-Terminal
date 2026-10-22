@@ -45,13 +45,17 @@ try {
   assert.equal(access.headers.get("x-content-type-options"), "nosniff");
   assert.equal(access.headers.get("x-frame-options"), "DENY");
 
+  const pricing = await fetch(`${base}/pricing`);
+  assert.equal(pricing.status, 200, "/pricing should render without a session");
+  assert.match(await pricing.text(), /Research depth without a paywall/);
+
   const cron = await fetch(`${base}/api/cron/weekly-picks`);
   assert.equal(cron.status, 401, "cron must reject anonymous requests");
 
   const api = await fetch(`${base}/api/v1/weekly-picks`);
   assert.equal(api.status, 401, "v1 must reject requests without the read-only key");
 
-  console.log("smoke: access page, security headers, cron auth, and v1 auth passed");
+  console.log("smoke: access page, pricing page, security headers, cron auth, and v1 auth passed");
 } finally {
   child.kill("SIGTERM");
   await Promise.race([

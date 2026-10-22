@@ -39,6 +39,12 @@ const featureLabel: Record<string,string> = {
   weekly_picks_view:'Weekly Picks',
   research_paper_open:'Research Papers',
   stock_detail_open:'Stock Detail',
+  onboarding_complete:'Onboarding Complete',
+  watchlist_add:'Watchlist Add',
+  portfolio_save:'Portfolio Save',
+  note_save:'Thesis Note Save',
+  pricing_view:'Pricing View',
+  upgrade_click:'Upgrade Click',
 }
 
 export default function AdminAnalyticsPage() {

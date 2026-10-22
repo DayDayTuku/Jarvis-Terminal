@@ -27,7 +27,7 @@ export function parseSavedNote(raw: string | null): SavedNote | null {
 }
 
 export function formatNoteTimestamp(savedAt: string | null) {
-  if (!savedAt) return "SAMPLE THESIS · NOT YET SAVED";
+  if (!savedAt) return "NOT YET SAVED";
   return (
     new Date(savedAt)
       .toLocaleString("en-GB", {

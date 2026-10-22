@@ -25,6 +25,6 @@ test("saved notes are parsed defensively", () => {
 });
 
 test("invalid timestamps fall back to an unsaved label", () => {
-  assert.equal(formatNoteTimestamp(null), "SAMPLE THESIS · NOT YET SAVED");
+  assert.equal(formatNoteTimestamp(null), "NOT YET SAVED");
   assert.match(formatNoteTimestamp("2026-10-20T12:00:00.000Z"), /2026.*WIB$/);
 });

@@ -1,7 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { IDX_UNIVERSE } from "@/lib/idx-universe";
+import { normalizeTicker } from "@/lib/workspace";
+import { trackEvent } from "@/lib/analytics-client";
 
 type InputRow = { id: string; ticker: string; value: string };
 type StressData = {
@@ -60,17 +62,69 @@ export default function PortfolioStressLab() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [selectedScenario, setSelectedScenario] = useState("market_shock");
+  const [syncStatus, setSyncStatus] = useState<"loading" | "synced" | "local">("loading");
+  const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    try {
-      const saved = localStorage.getItem("jarvis_portfolio_positions");
-      if (!saved) return;
-      const parsed = JSON.parse(saved) as Array<{ ticker?: string; value?: string }>;
-      if (Array.isArray(parsed) && parsed.length) {
-        setRows(parsed.slice(0, 8).map((row) => ({ id: crypto.randomUUID(), ticker: String(row.ticker ?? ""), value: String(row.value ?? "") })));
+    let cancelled = false;
+    const loadLocal = () => {
+      try {
+        const saved = localStorage.getItem("jarvis_portfolio_positions");
+        if (!saved) return [] as InputRow[];
+        const parsed = JSON.parse(saved) as Array<{ ticker?: string; value?: string }>;
+        if (!Array.isArray(parsed)) return [] as InputRow[];
+        return parsed.slice(0, 8).map((row) => ({ id: crypto.randomUUID(), ticker: String(row.ticker ?? ""), value: String(row.value ?? "") }));
+      } catch {
+        return [] as InputRow[];
       }
-    } catch {}
+    };
+
+    fetch("/api/portfolio", { credentials: "same-origin" })
+      .then((response) => (response.ok ? response.json() : Promise.reject()))
+      .then((payload: { portfolio?: { positions?: Array<{ ticker?: string; value?: number }> } | null }) => {
+        if (cancelled) return;
+        const positions = payload.portfolio?.positions ?? [];
+        if (positions.length) {
+          setRows(positions.slice(0, 8).map((row) => ({
+            id: crypto.randomUUID(),
+            ticker: String(row.ticker ?? ""),
+            value: String(row.value ?? ""),
+          })));
+          setSyncStatus("synced");
+        } else {
+          const local = loadLocal();
+          if (local.length) setRows(local);
+          setSyncStatus("local");
+        }
+      })
+      .catch(() => {
+        if (cancelled) return;
+        const local = loadLocal();
+        if (local.length) setRows(local);
+        setSyncStatus("local");
+      });
+
+    return () => { cancelled = true; };
   }, []);
+
+  const importCsv = async (file: File) => {
+    const text = await file.text();
+    const imported: InputRow[] = [];
+    for (const line of text.split(/\r?\n/)) {
+      if (!line.trim()) continue;
+      const [tickerCell, ...rest] = line.split(/[;,\t]/);
+      const ticker = normalizeTicker(tickerCell);
+      const value = rest.join("").replace(/[^\d]/g, "");
+      if (!ticker || !value) continue;
+      imported.push({ id: crypto.randomUUID(), ticker, value });
+    }
+    if (!imported.length) {
+      setError("No valid positions found. Use two columns: ticker and current value.");
+      return;
+    }
+    setRows(imported.slice(0, 8));
+    setError("");
+  };
 
   const validRows = useMemo(() => rows.filter((row) => row.ticker.trim() && Number(row.value) > 0), [rows]);
   const update = (id: string, patch: Partial<InputRow>) => setRows((current) => current.map((row) => row.id === id ? { ...row, ...patch } : row));
@@ -81,6 +135,16 @@ export default function PortfolioStressLab() {
     setData(null);
     try {
       localStorage.setItem("jarvis_portfolio_positions", JSON.stringify(rows.map(({ ticker, value }) => ({ ticker, value }))));
+      const positions = validRows.map((row) => ({ ticker: row.ticker, value: Number(row.value) }));
+      trackEvent("portfolio_save", { positions: positions.length });
+      void fetch("/api/portfolio", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        credentials: "same-origin",
+        body: JSON.stringify({ positions }),
+      })
+        .then((response) => { if (response.ok) setSyncStatus("synced"); })
+        .catch(() => setSyncStatus("local"));
       const response = await fetch("/api/portfolio-stress", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -98,12 +162,23 @@ export default function PortfolioStressLab() {
   };
   const scenario = data?.scenarios.find((item) => item.key === selectedScenario) ?? data?.scenarios[0];
 
+  const exportPortfolio = () => {
+    const lines = ["ticker,current_value_idr", ...validRows.map((row) => `${row.ticker},${Number(row.value)}`)];
+    const blob = new Blob([lines.join("\n")], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "jarvis-portfolio.csv";
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <section className="portfolio-lab">
       <article className="panel portfolio-builder">
         <div className="suite-head">
-          <div><span>PORTFOLIO STRESS LAB · BETA</span><h3>Find what can break the portfolio.</h3><p>Enter current market value—not cost basis. Holdings stay in this browser.</p></div>
-          <strong>{validRows.length}/8 POSITIONS</strong>
+          <div><span>PORTFOLIO STRESS LAB · BETA</span><h3>Find what can break the portfolio.</h3><p>Enter current market value—not cost basis. Saved to your account with a browser fallback.</p></div>
+          <strong>{validRows.length}/8 POSITIONS · {syncStatus === "synced" ? "SYNCED" : syncStatus === "loading" ? "CHECKING" : "LOCAL"}</strong>
         </div>
         <div className="portfolio-input-head"><span>TICKER</span><span>CURRENT VALUE (IDR)</span><span /></div>
         {rows.map((row) => (
@@ -116,8 +191,21 @@ export default function PortfolioStressLab() {
           </div>
         ))}
         <datalist id="idx-tickers">{IDX_UNIVERSE.map((stock) => <option key={stock.ticker} value={stock.ticker.replace(".JK", "")}>{stock.name}</option>)}</datalist>
+        <input
+          ref={fileRef}
+          type="file"
+          accept=".csv,text/csv"
+          hidden
+          onChange={(event) => {
+            const file = event.target.files?.[0];
+            if (file) void importCsv(file);
+            event.target.value = "";
+          }}
+        />
         <div className="portfolio-actions">
           <button type="button" disabled={rows.length >= 8} onClick={() => setRows((current) => [...current, newRow()])}>+ ADD POSITION</button>
+          <button type="button" onClick={() => fileRef.current?.click()}>IMPORT CSV</button>
+          <button type="button" onClick={exportPortfolio} disabled={!validRows.length}>EXPORT CSV</button>
           <button type="button" className="primary" disabled={loading || !validRows.length} onClick={analyze}>{loading ? "ANALYZING…" : "RUN STRESS TEST"}</button>
         </div>
         {error && <div className="suite-error">{error}</div>}

@@ -88,6 +88,55 @@ unavailable during a deployment. The migration in
 `supabase/migrations/20261020000000_add_rate_limits_and_email_suppressions.sql`
 creates both the limiter and the suppression list.
 
+### Personal workspace sync
+
+Watchlists, portfolios, thesis notes, accessibility preferences, onboarding state,
+and the compact "since last visit" snapshot are stored per account:
+
+| Table | Purpose |
+| --- | --- |
+| `jarvis_watchlist` | Ticker list, one row per ticker |
+| `jarvis_portfolios` | One saved portfolio with a JSONB positions array |
+| `jarvis_notes` | Append-only thesis history (latest 20 shown in the drawer) |
+| `jarvis_user_preferences` | Color scheme, onboarding flag, last visit snapshot |
+
+All tables use row-level security scoped to `auth.uid()`. The migration is
+`supabase/migrations/20261022000000_add_user_workspace.sql`. If it has not been
+applied, the APIs return `503` and the browser keeps a local fallback so the
+terminal still works.
+
+Authenticated workspace endpoints:
+
+- `GET/POST/DELETE /api/watchlist`
+- `GET/PUT /api/portfolio`
+- `GET/POST/DELETE /api/notes`
+- `GET/PUT /api/preferences`
+
+Writes are rate limited. Notes are capped at 2,000 characters, portfolios at 50
+positions, and watchlists at 50 tickers.
+
+### Plans and pricing
+
+`/pricing` is public. Free access stays open; Pro and Desk tiers are scaffolded
+for workflow depth, exports, alerts, and white-label/team use. Checkout is not
+wired until a provider is selected. Set `NEXT_PUBLIC_UPGRADE_URL` to a checkout
+URL to enable the Pro CTA, and `NEXT_PUBLIC_SALES_EMAIL` to enable the Desk
+contact link. Current plan is read from `user_metadata.plan` (`free`, `pro`, or
+`desk`). Existing research features are not hard-paywalled.
+
+Product analytics now includes activation and pricing events
+(`onboarding_complete`, `watchlist_add`, `portfolio_save`, `note_save`,
+`pricing_view`, `upgrade_click`, and others) in the same migration.
+
+### Data honesty
+
+Production panels never substitute synthetic values for a failed feed. The
+global data-status bar reports each connection as live, partial, stale, or
+offline. Unavailable macro, market, calendar, seasonality, and COT panels are
+withheld or show an explicit unavailable state. The only remaining placeholder
+surface is the starter watchlist when a user has not saved any tickers; ticker
+prices still require the live market feed.
+
 ### Cron
 
 `vercel.json` schedules `/api/cron/weekly-picks` at **09:30 UTC, Monday–Friday**
@@ -120,6 +169,8 @@ See `.env.example` for placeholders. Summary:
 | `FRED_API_KEY` | Optional | Uses the FRED API; otherwise the keyless CSV fallback |
 | `EODHD_API_TOKEN` | Optional | Adds EODHD fundamentals to stock detail |
 | `TRADING_ECONOMICS_API_KEY` | Optional | Economic calendar |
+| `NEXT_PUBLIC_UPGRADE_URL` | Optional | Checkout URL for the Pro plan CTA |
+| `NEXT_PUBLIC_SALES_EMAIL` | Optional | Contact address for Desk/white-label enquiries |
 | `JARVIS_SHORT_ELIGIBLE` | Optional | Comma-separated tickers allowed in the short overlay |
 
 Never commit `.env.local` or a service-role key.
@@ -131,7 +182,7 @@ pnpm dev        # local development
 pnpm build      # production build
 pnpm start      # serve the production build
 pnpm lint       # ESLint
-pnpm test       # node:test suite (150+ tests)
+pnpm test       # node:test suite (160+ tests)
 pnpm smoke      # boots the production build and checks headers + auth gates
 pnpm backtest   # macro-overlay backtest (requires network access)
 pnpm fit-score  # score-model fitting helper
@@ -147,6 +198,7 @@ checks npm and GitHub Actions weekly.
 app/                  App Router pages and API routes
   api/                Data, auth-protected, cron, and public v1 endpoints
   access/             Sign-in / sign-up gate
+  pricing/            Public plan comparison and upgrade CTAs
   admin/analytics/    Admin-only product analytics
 components/           Dashboard panels, modals, and settings
 lib/                  Models, lifecycle logic, upstream fetch wrapper, email rules

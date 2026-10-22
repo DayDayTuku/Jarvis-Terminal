@@ -27,6 +27,7 @@ test("configured service keys are trimmed and only unlock the scanner endpoint",
 
 test("public paths bypass auth while application routes do not", () => {
   assert.equal(isPublicPath("/access"), true);
+  assert.equal(isPublicPath("/pricing"), true);
   assert.equal(isPublicPath("/_next/static/chunk.js"), true);
   assert.equal(isPublicPath("/api/cron/weekly-picks"), true);
   assert.equal(isPublicPath("/api/v1/markets"), true);

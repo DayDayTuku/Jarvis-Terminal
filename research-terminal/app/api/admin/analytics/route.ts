@@ -41,12 +41,21 @@ export async function GET() {
 
   const rows = (events || []) as EventRow[]
   const uniqueSince = (since: string) => new Set(rows.filter((row) => row.occurred_at >= since).map((row) => row.user_id)).size
-  const featureNames = ['weekly_picks_view', 'research_paper_open', 'stock_detail_open']
+  const activationNames = ['weekly_picks_view', 'research_paper_open', 'stock_detail_open']
+  const featureNames = [
+    ...activationNames,
+    'onboarding_complete',
+    'watchlist_add',
+    'portfolio_save',
+    'note_save',
+    'pricing_view',
+    'upgrade_click',
+  ]
   const featureUsage = featureNames.map((name) => ({ name, count: rows.filter((row) => row.event_name === name).length }))
   const topPageMap = new Map<string, number>()
   rows.filter((row) => row.event_name === 'page_view').forEach((row) => topPageMap.set(row.page_path, (topPageMap.get(row.page_path) || 0) + 1))
   const topPages = [...topPageMap].map(([path, count]) => ({ path, count })).sort((a, b) => b.count - a.count).slice(0, 8)
-  const activeFeatureUsers = new Set(rows.filter((row) => featureNames.includes(row.event_name)).map((row) => row.user_id)).size
+  const activeFeatureUsers = new Set(rows.filter((row) => activationNames.includes(row.event_name)).map((row) => row.user_id)).size
   const registeredUsers = usersResult.data?.users?.length || 0
 
   const dailyMap = new Map<string, Set<string>>()

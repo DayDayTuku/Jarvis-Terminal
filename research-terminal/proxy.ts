@@ -42,6 +42,7 @@ export function isTrustedServiceRequest(
 export function isPublicPath(path: string) {
   return (
     path === '/access' ||
+    path === '/pricing' ||
     path === '/api/email/unsubscribe' ||
     path === '/api/webhooks/resend' ||
     path.startsWith('/_next/') ||

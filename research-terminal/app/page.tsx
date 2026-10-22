@@ -14,8 +14,15 @@ import ResearchPapers from '../components/ResearchPapers';
 import SettingsLogout from '../components/SettingsLogout';
 import WeeklyDigestOptIn from '../components/WeeklyDigestOptIn';
 import RiskMap from '../components/RiskMap';
+import DataStatusBar from '../components/DataStatusBar';
+import OnboardingModal from '../components/OnboardingModal';
+import CommandPalette from '../components/CommandPalette';
+import PlanCard from '../components/PlanCard';
 import { SCHEMES, formatNoteTimestamp, isScheme, parseSavedNote, type Scheme } from '../lib/preferences';
 import { useDialogFocus } from '../lib/use-dialog-focus';
+import { normalizeTicker } from '../lib/workspace';
+import { buildVisitSnapshot, describeVisitDelta, parseVisitSnapshot, visitAgeLabel, type VisitSnapshot } from '../lib/visit-snapshot';
+import { trackEvent } from '../lib/analytics-client';
 
 const StockDetailModal = dynamic(() => import('../components/StockDetailModal'), { ssr: false });
 
@@ -30,31 +37,6 @@ type CalendarData = { status: string; freshness: string; events: Array<{ date: s
 type SeasonalityData = { status: string; ticker: string; symbol: string; years: number; from: number; through: number; months: Array<{ month: number; average: number; positiveRate: number; observations: number }> };
 type CotSeries = { key: string; label: string; groups: string[]; latest: string; points: Array<{ date: string; values: Record<string,number> }> };
 type CotData = { status: string; source: string; freshness: string; series: CotSeries[]; failures: string[] };
-
-const releases = [
-  { time: '08:30', country: 'US', event: 'Core PCE Price Index', forecast: '0.3%', prior: '0.2%', status: 'HIGH' },
-  { time: '10:00', country: 'CN', event: 'NBS Manufacturing PMI', forecast: '49.8', prior: '49.5', status: 'HIGH' },
-  { time: '14:00', country: 'ID', event: 'Consumer Confidence', forecast: '121.2', prior: '121.7', status: 'MED' },
-  { time: '19:30', country: 'US', event: 'Initial Jobless Claims', forecast: '232K', prior: '229K', status: 'MED' },
-];
-
-const fallbackIndicators = [
-  { name: 'CPI', actual: 2.7, mean: 2.9, z: .82, unit: '%' }, { name: 'Core PCE', actual: 2.9, mean: 2.5, z: 1.14, unit: '%' },
-  { name: 'PPI', actual: 3.3, mean: 2.6, z: .66, unit: '%' }, { name: 'Retail Sales', actual: .5, mean: .3, z: .31, unit: '%' },
-  { name: 'Consumer Sentiment', actual: 61.7, mean: 68.4, z: -.73, unit: '' }, { name: 'ISM Manufacturing', actual: 48.4, mean: 51.2, z: -.58, unit: '' },
-];
-
-const fallbackWatch = [
-  { ticker: 'BUMI', price: 153, change: 2.68 }, { ticker: 'AMMN', price: 7350, change: -1.34 }, { ticker: 'ADRO', price: 1955, change: .77 },
-];
-const fallbackHeat: MarketData['heatmap'] = [
-  { label: 'ENERGY', symbol: 'IDXENERGY.JK', daily: 1.8, weekly: 4.2, constituents: [{ticker:'ADRO',price:1955,daily:.77,weekly:2.1},{ticker:'BUMI',price:153,daily:2.68,weekly:5.2}] },
-  { label: 'BASIC MATERIALS', symbol: 'IDXBASIC.JK', daily: .9, weekly: 2.1, constituents: [{ticker:'AMMN',price:7350,daily:-1.34,weekly:.8},{ticker:'ANTM',price:1920,daily:.52,weekly:1.7}] },
-  { label: 'FINANCIALS', symbol: 'IDXFINANCE.JK', daily: .4, weekly: -.6, constituents: [] }, { label: 'TECHNOLOGY', symbol: 'IDXTECHNO.JK', daily: -.7, weekly: -2.4, constituents: [] },
-  { label: 'INDUSTRIALS', symbol: 'IDXINDUST.JK', daily: .2, weekly: 1.3, constituents: [] }, { label: 'CYCLICALS', symbol: 'IDXCYCLIC.JK', daily: -.3, weekly: -1.2, constituents: [] }, { label: 'HEALTHCARE', symbol: 'IDXHEALTH.JK', daily: -1.1, weekly: .4, constituents: [] },
-];
-const fallbackYield = [4.41, 4.29, 4.12, 4.03, 4.06, 4.18, 4.36];
-const fallbackTrail: RegimePoint[] = Array.from({ length: 36 }, (_, index) => { const date = new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth() - (35 - index), 1)); return { date: date.toISOString().slice(0,10), growth: 1.1 - index * .045 + Math.sin(index * .7) * .3, inflation: -.7 + index * .04 + Math.cos(index * .5) * .34 }; });
 
 type NavGroup = 'MONITOR' | 'DECIDE' | 'RESEARCH';
 const navigation = [
@@ -104,16 +86,25 @@ export default function Home() {
   const [seasonTicker, setSeasonTicker] = useState('BUMI'); const [seasonality, setSeasonality] = useState<SeasonalityData|null>(null);
   const [cot, setCot] = useState<CotData|null>(null); const [cotAsset, setCotAsset] = useState('USD');
   const [notesOpen, setNotesOpen] = useState(false); const [settingsOpen, setSettingsOpen] = useState(false); const [feedbackOpen, setFeedbackOpen] = useState(false);
+  const [onboardingOpen, setOnboardingOpen] = useState(false);
+  const [commandOpen, setCommandOpen] = useState(false);
+  const [preferencesReady, setPreferencesReady] = useState(false);
+  const [onboardingComplete, setOnboardingComplete] = useState(false);
+  const [previousVisit, setPreviousVisit] = useState<VisitSnapshot | null>(null);
+  const [lastLoadedAt, setLastLoadedAt] = useState<string | null>(null);
+  const [visitSaved, setVisitSaved] = useState(false);
+  const [watchlistManaged, setWatchlistManaged] = useState(false);
+  const [noteHistory, setNoteHistory] = useState<Array<{ id: number | string; body: string; created_at: string }>>([]);
   const modalOpenRef = useRef(false);
   // Keep the global shortcut handler aware of overlays without re-binding it every render.
-  useEffect(() => { modalOpenRef.current = notesOpen || settingsOpen || feedbackOpen; }, [notesOpen, settingsOpen, feedbackOpen]);
+  useEffect(() => { modalOpenRef.current = notesOpen || settingsOpen || feedbackOpen || onboardingOpen || commandOpen; }, [notesOpen, settingsOpen, feedbackOpen, onboardingOpen, commandOpen]);
   // On the mobile bottom bar, keep the active section scrolled into view.
   useEffect(() => {
     if (!window.matchMedia('(max-width: 720px)').matches) return;
     navRefs.current[active]?.scrollIntoView({ block: 'nearest', inline: 'center', behavior: 'smooth' });
   }, [active]);
   const [scheme, setScheme] = useState<Scheme>('default'); const [note, setNote] = useState('');
-  const [savedNote, setSavedNote] = useState('Watch the next Core PCE print. A second upside surprise would strengthen the higher-for-longer rates case.');
+  const [savedNote, setSavedNote] = useState('');
   const [savedNoteAt, setSavedNoteAt] = useState<string | null>(null);
   const notesDialogRef = useDialogFocus<HTMLElement>(notesOpen, () => setNotesOpen(false));
   const settingsDialogRef = useDialogFocus<HTMLElement>(settingsOpen, () => setSettingsOpen(false));
@@ -127,12 +118,81 @@ export default function Home() {
         setSavedNote(parsedNote.text);
         setSavedNoteAt(parsedNote.savedAt);
       }
+      const storedVisit = parseVisitSnapshot(localStorage.getItem('jarvis_visit_snapshot'));
+      if (storedVisit) setPreviousVisit(storedVisit);
+      setOnboardingComplete(localStorage.getItem('jarvis_onboarding_complete_v1') === '1');
+      if (localStorage.getItem('jarvis_watchlist_managed') === '1') setWatchlistManaged(true);
     } catch {}
+  }, []);
+
+  const savePreferences = (payload: Record<string, unknown>) => {
+    void fetch('/api/preferences', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
+      body: JSON.stringify(payload),
+    }).catch(() => undefined);
+  };
+
+  // Load account-scoped workspace state. Each request is allowed to fail
+  // independently so a missing migration never blocks the research terminal.
+  useEffect(() => {
+    let cancelled = false;
+    const preferencesRequest = fetch('/api/preferences', { credentials: 'same-origin' })
+      .then((response) => (response.ok ? response.json() : Promise.reject()))
+      .then((data: { preferences?: Record<string, unknown> }) => data.preferences ?? null);
+    const notesRequest = fetch('/api/notes?limit=20', { credentials: 'same-origin' })
+      .then((response) => (response.ok ? response.json() : Promise.reject()))
+      .then((data: { notes?: Array<{ id: number | string; body: string; created_at: string }> }) => data.notes ?? []);
+
+    Promise.allSettled([preferencesRequest, notesRequest]).then(([preferencesResult, notesResult]) => {
+      if (cancelled) return;
+
+      let remoteOnboarding = false;
+      if (preferencesResult.status === 'fulfilled' && preferencesResult.value) {
+        const preferences = preferencesResult.value;
+        if (isScheme(preferences.color_scheme)) {
+          setScheme(preferences.color_scheme);
+          try { localStorage.setItem('jarvis_scheme', preferences.color_scheme); } catch {}
+        }
+        remoteOnboarding = preferences.onboarding_complete === true;
+        if (remoteOnboarding) {
+          setOnboardingComplete(true);
+          try { localStorage.setItem('jarvis_onboarding_complete_v1', '1'); } catch {}
+        }
+        if (preferences.last_snapshot && typeof preferences.last_snapshot === 'object') {
+          const remoteVisit = parseVisitSnapshot(JSON.stringify(preferences.last_snapshot));
+          if (remoteVisit) setPreviousVisit((current) => current ?? remoteVisit);
+        }
+      }
+
+      let localOnboarding = false;
+      try { localOnboarding = localStorage.getItem('jarvis_onboarding_complete_v1') === '1'; } catch {}
+      if (!remoteOnboarding && !localOnboarding) setOnboardingOpen(true);
+
+      if (notesResult.status === 'fulfilled' && notesResult.value.length) {
+        const history = notesResult.value;
+        setNoteHistory(history);
+        const latest = history[0];
+        if (latest) {
+          setSavedNote(latest.body);
+          setSavedNoteAt(latest.created_at);
+          try {
+            localStorage.setItem('jarvis_note', JSON.stringify({ text: latest.body, savedAt: latest.created_at }));
+          } catch {}
+        }
+      }
+      setPreferencesReady(true);
+    });
+
+    return () => { cancelled = true; };
   }, []);
 
   const changeScheme = (next: Scheme) => {
     setScheme(next);
     try { localStorage.setItem('jarvis_scheme', next); } catch {}
+    savePreferences({ colorScheme: next });
+    trackEvent('preferences_save', { preference: 'color_scheme', value: next });
   };
 
   const [fred, setFred] = useState<FredData | null>(null); const [markets, setMarkets] = useState<MarketData | null>(null); const [gdelt, setGdelt] = useState<GdeltData | null>(null); const [calendar, setCalendar] = useState<CalendarData | null>(null);
@@ -150,6 +210,7 @@ export default function Home() {
         if (gdeltResult.status === 'fulfilled') setGdelt(gdeltResult.value as GdeltData);
         if (calendarResult.status === 'fulfilled') setCalendar(calendarResult.value as CalendarData);
         if (cotResult.status === 'fulfilled') setCot(cotResult.value as CotData);
+        setLastLoadedAt(new Date().toISOString());
       });
     };
     load();
@@ -163,6 +224,7 @@ export default function Home() {
       const target = event.target as HTMLElement | null;
       if (target?.closest('textarea, input, select, [contenteditable="true"]')) return;
       if (event.key === 'Escape') { setNotesOpen(false); setSettingsOpen(false); setFeedbackOpen(false); return; }
+      if (modalOpenRef.current) return;
       if (event.metaKey || event.ctrlKey || event.altKey) return;
       const key = event.key.toLowerCase();
       if (key === 'n') { setNotesOpen(true); return; }
@@ -225,13 +287,57 @@ export default function Home() {
   const [customWatchlist, setCustomWatchlist] = useState<Array<{ ticker: string; price: number; change: number }>>([]);
 
   useEffect(() => {
+    let cancelled = false;
+    let localTickers: string[] = [];
     try {
       const saved = localStorage.getItem('jarvis_watchlist');
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed)) setCustomWatchlist(parsed);
+        if (Array.isArray(parsed)) {
+          localTickers = parsed
+            .map((item) => normalizeTicker(item && typeof item === 'object' ? (item as { ticker?: unknown }).ticker : item))
+            .filter((item): item is string => Boolean(item));
+        }
       }
     } catch {}
+
+    fetch('/api/watchlist', { credentials: 'same-origin' })
+      .then((response) => (response.ok ? response.json() : Promise.reject()))
+      .then(async (data: { tickers?: string[] }) => {
+        let tickers = Array.isArray(data.tickers) ? data.tickers : [];
+        if (!tickers.length && localTickers.length) {
+          // One-time migration from the browser-only watchlist. Keep the local
+          // copy if any write fails so a partial migration cannot lose data.
+          const writes = await Promise.allSettled(localTickers.map((ticker) => fetch('/api/watchlist', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'same-origin',
+            body: JSON.stringify({ ticker }),
+          })));
+          tickers = localTickers;
+          if (writes.every((write) => write.status === 'fulfilled' && write.value.ok)) {
+            try { localStorage.removeItem('jarvis_watchlist'); } catch {}
+          }
+        }
+        if (!cancelled) {
+          setCustomWatchlist(tickers.map((ticker) => ({ ticker, price: 0, change: 0 })));
+          if (tickers.length) {
+            setWatchlistManaged(true);
+            try { localStorage.setItem('jarvis_watchlist_managed', '1'); } catch {}
+          }
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setCustomWatchlist(localTickers.map((ticker) => ({ ticker, price: 0, change: 0 })));
+          if (localTickers.length) {
+            setWatchlistManaged(true);
+            try { localStorage.setItem('jarvis_watchlist_managed', '1'); } catch {}
+          }
+        }
+      });
+
+    return () => { cancelled = true; };
   }, []);
 
   const openStockDetail = (ticker: string) => {
@@ -263,43 +369,77 @@ export default function Home() {
     return () => window.removeEventListener("popstate", closeModalOnBack);
   }, []);
 
-  const handleAddToWatchlist = (rawTicker: string) => {
-    const cleanTicker = rawTicker.replace('.JK', '').toUpperCase();
-    setCustomWatchlist((prev) => {
-      const exists = prev.some((item) => item.ticker === cleanTicker);
-      let updated;
-      if (exists) {
-        updated = prev.filter((item) => item.ticker !== cleanTicker);
-        setNotification(`REMOVED ${cleanTicker} FROM WATCHLIST`);
-      } else {
-        updated = [...prev, { ticker: cleanTicker, price: 0, change: 0 }];
-        setNotification(`ADDED ${cleanTicker} TO WATCHLIST`);
-      }
-      try {
-        localStorage.setItem('jarvis_watchlist', JSON.stringify(updated));
-      } catch {}
-      return updated;
-    });
-    setTimeout(() => setNotification(null), 4000);
+  const announce = (message: string) => {
+    setNotification(message);
+    window.setTimeout(() => setNotification(null), 4000);
   };
 
-  const indicators = fred?.indicators ?? fallbackIndicators; const yields = fred?.yields.map((item) => item.value) ?? fallbackYield;
-  const baseWatchlist = markets?.watchlist ?? fallbackWatch;
+  const mirrorWatchlist = (items: Array<{ ticker: string; price: number; change: number }>) => {
+    try { localStorage.setItem('jarvis_watchlist', JSON.stringify(items)); } catch {}
+  };
+
+  const addWatchlistTicker = (rawTicker: string) => {
+    const ticker = normalizeTicker(rawTicker);
+    if (!ticker) {
+      announce('INVALID TICKER');
+      return;
+    }
+    setWatchlistManaged(true);
+    try { localStorage.setItem('jarvis_watchlist_managed', '1'); } catch {}
+    setCustomWatchlist((prev) => {
+      if (prev.some((item) => item.ticker === ticker)) return prev;
+      const updated = [...prev, { ticker, price: 0, change: 0 }];
+      mirrorWatchlist(updated);
+      return updated;
+    });
+    announce(`ADDED ${ticker} TO WATCHLIST`);
+    trackEvent('watchlist_add', { ticker });
+    void fetch('/api/watchlist', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
+      body: JSON.stringify({ ticker }),
+    }).catch(() => undefined);
+  };
+
+  const removeWatchlistTicker = (rawTicker: string) => {
+    const ticker = normalizeTicker(rawTicker);
+    if (!ticker) return;
+    setWatchlistManaged(true);
+    try { localStorage.setItem('jarvis_watchlist_managed', '1'); } catch {}
+    setCustomWatchlist((prev) => {
+      const updated = prev.filter((item) => item.ticker !== ticker);
+      mirrorWatchlist(updated);
+      return updated;
+    });
+    announce(`REMOVED ${ticker} FROM WATCHLIST`);
+    trackEvent('watchlist_remove', { ticker });
+    void fetch(`/api/watchlist?ticker=${encodeURIComponent(ticker)}`, {
+      method: 'DELETE',
+      credentials: 'same-origin',
+    }).catch(() => undefined);
+  };
+
+  const handleAddToWatchlist = (rawTicker: string) => {
+    const ticker = normalizeTicker(rawTicker);
+    if (!ticker) return;
+    if (customWatchlist.some((item) => item.ticker === ticker)) removeWatchlistTicker(ticker);
+    else addWatchlistTicker(ticker);
+  };
+
+  const indicators = fred?.indicators ?? []; const yields = fred?.yields.map((item) => item.value) ?? [];
+  const baseWatchlist = useMemo(() => markets?.watchlist ?? [], [markets]);
   const watchlist = useMemo(() => {
-    if (!customWatchlist.length) return baseWatchlist;
+    if (!watchlistManaged && !customWatchlist.length) return baseWatchlist;
     const map = new Map<string, { ticker: string; price: number; change: number }>();
     baseWatchlist.forEach((item) => map.set(item.ticker, item));
-    customWatchlist.forEach((item) => {
-      if (!map.has(item.ticker)) {
-        map.set(item.ticker, item);
-      }
-    });
-    return Array.from(map.values());
-  }, [baseWatchlist, customWatchlist]);
-  const heatmap = markets?.heatmap ?? fallbackHeat;
+    return customWatchlist.map((item) => map.get(item.ticker) ?? item);
+  }, [baseWatchlist, customWatchlist, watchlistManaged]);
+  const heatmap = markets?.heatmap ?? [];
   const marketChange = (name: string) => { const values = markets?.assets.find((item) => item.name === name)?.closes.filter((x): x is number => x !== null) ?? []; const last = values.at(-1) ?? 0; const prior = values.at(-2) ?? last; const recent = values.slice(-20); const average = recent.length ? recent.reduce((sum, value) => sum + value, 0) / recent.length : 0; return { last, average, change: prior ? ((last / prior) - 1) * 100 : 0 }; };
-  const dxy = marketChange('DXY'); const oil = marketChange('OIL'); const liveCount = Number(Boolean(fred)) + Number(Boolean(markets)) + Number(Boolean(gdelt)) + Number(Boolean(calendar));
-  const currentRegime = (fred?.regime ?? fallbackTrail).at(-1)!;
+  const dxy = marketChange('DXY'); const oil = marketChange('OIL');
+  const liveCount = [fred, markets, gdelt, calendar, cot].filter((payload) => Boolean(payload) && (payload?.status === 'live' || payload?.status === 'partial')).length;
+  const currentRegime = (fred?.regime ?? []).at(-1) ?? { date: '', growth: 0, inflation: 0 };
   const selectedHeat = heatmap.find((item) => item.label === selectedSector) ?? heatmap[0];
   const selectedCot = cot?.series.find((item) => item.key === cotAsset) ?? cot?.series[0] ?? null;
 
@@ -362,19 +502,101 @@ export default function Home() {
   }
 
   const thesisConfidence = liveCount >= 4 ? "HIGH" : liveCount >= 2 ? "MEDIUM" : "LOW";
+  const currentVisit = buildVisitSnapshot({
+    regime: regimeLabel(currentRegime),
+    breadthPositive: positiveSectors,
+    breadthTotal: validSectorMoves.length,
+    liveFeeds: liveCount,
+  });
+  const visitDeltas = describeVisitDelta(previousVisit, currentVisit);
+  const feedReadings: Array<{ label: string; status: 'live' | 'partial' | 'stale' | 'unavailable'; detail: string }> = [
+    { label: 'FRED', status: feedStatus(fred), detail: fred ? `Through ${fred.freshness} · ${fred.status}` : 'Macro feed did not return data' },
+    { label: 'IDX', status: feedStatus(markets), detail: markets ? `${markets.status} · Yahoo upstream` : 'Market feed did not return data' },
+    { label: 'GDELT', status: gdelt ? 'partial' : 'unavailable', detail: gdelt ? 'Keyword frequency only; severity pending' : 'Geopolitical feed did not return data' },
+    { label: 'CALENDAR', status: feedStatus(calendar), detail: calendar ? `TradingEconomics · ${calendar.status}` : 'Calendar feed did not return data' },
+    { label: 'COT', status: feedStatus(cot), detail: cot ? `Weekly CFTC reports · ${cot.status}` : 'Positioning feed did not return data' },
+  ];
+
+  // Persist one snapshot per session, after the feed requests have settled.
+  // It powers "since last visit" without storing raw market payloads.
+  useEffect(() => {
+    if (!preferencesReady || !lastLoadedAt || visitSaved) return;
+    const snapshot = buildVisitSnapshot({
+      regime: regimeLabel(currentRegime),
+      breadthPositive: positiveSectors,
+      breadthTotal: validSectorMoves.length,
+      liveFeeds: liveCount,
+    });
+    try { localStorage.setItem('jarvis_visit_snapshot', JSON.stringify(snapshot)); } catch {}
+    void fetch('/api/preferences', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
+      body: JSON.stringify({ lastVisitAt: snapshot.takenAt, lastSnapshot: snapshot }),
+    }).catch(() => undefined);
+    setVisitSaved(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [preferencesReady, lastLoadedAt, visitSaved]);
 
   const saveNote = () => {
-    if (note.trim()) {
-      const text = note.trim();
-      const savedAt = new Date().toISOString();
-      setSavedNote(text);
-      setSavedNoteAt(savedAt);
-      setNote('');
-      try { localStorage.setItem('jarvis_note', JSON.stringify({ text, savedAt })); } catch {}
+    const text = note.trim();
+    if (!text) {
+      setNotesOpen(false);
+      return;
     }
+    const savedAt = new Date().toISOString();
+    const optimistic = { id: `local-${Date.now()}`, body: text, created_at: savedAt };
+    setSavedNote(text);
+    setSavedNoteAt(savedAt);
+    setNoteHistory((history) => [optimistic, ...history].slice(0, 20));
+    setNote('');
     setNotesOpen(false);
+    try { localStorage.setItem('jarvis_note', JSON.stringify({ text, savedAt })); } catch {}
+    trackEvent('note_save');
+    void fetch('/api/notes', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
+      body: JSON.stringify({ body: text }),
+    })
+      .then((response) => (response.ok ? response.json() : Promise.reject()))
+      .then((data: { note?: { id: number | string; body: string; created_at: string } }) => {
+        if (!data.note) return;
+        setNoteHistory((history) => history.map((item) => item.id === optimistic.id ? data.note! : item));
+      })
+      .catch(() => announce('NOTE SAVED LOCALLY · CLOUD SYNC UNAVAILABLE'));
   };
   const savedNoteLabel = formatNoteTimestamp(savedNoteAt);
+
+  const completeOnboarding = () => {
+    setOnboardingOpen(false);
+    setOnboardingComplete(true);
+    try { localStorage.setItem('jarvis_onboarding_complete_v1', '1'); } catch {}
+    savePreferences({ onboardingComplete: true });
+    trackEvent('onboarding_complete');
+  };
+
+  const exportSeasonality = () => {
+    if (!seasonality) return;
+    const lines = [
+      'ticker,month,average_return_pct,positive_rate_pct,observations',
+      ...seasonality.months.map((month) => [
+        seasonality.ticker,
+        month.month,
+        month.average.toFixed(4),
+        month.positiveRate.toFixed(2),
+        month.observations,
+      ].join(',')),
+    ];
+    const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${seasonality.ticker}-seasonality.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+    trackEvent('seasonality_export', { ticker: seasonality.ticker });
+  };
 
   return (
     <main className="terminal-shell" data-scheme={scheme}>
@@ -397,13 +619,13 @@ export default function Home() {
                   onClick={() => changeSection(item.label)}
                   aria-current={active === item.label ? 'page' : undefined}
                   className={active === item.label ? 'active' : ''}
-                ><span aria-hidden="true">{item.icon}</span></button>
+                ><span aria-hidden="true">{item.icon}</span><span className="nav-label">{badge}</span></button>
               </Fragment>
             );
           })}
         </nav>
-        <div className="side-tools"><button aria-label="Notes" data-label="NOTES" title="Notes" onClick={() => setNotesOpen(true)}><span aria-hidden="true">✎</span></button><button aria-label="Settings" data-label="SETTINGS" title="Settings" onClick={() => setSettingsOpen(true)}><span aria-hidden="true">⚙</span></button></div>
-        <button className="sidebar-feedback" aria-label="Send feedback" data-label="FEEDBACK" title="Send feedback" onClick={() => setFeedbackOpen(true)}><span aria-hidden="true">?</span></button>
+        <div className="side-tools"><button aria-label="Notes" data-label="NOTES" title="Notes" onClick={() => setNotesOpen(true)}><span aria-hidden="true">✎</span><span className="nav-label">NOTES</span></button><button aria-label="Settings" data-label="SETTINGS" title="Settings" onClick={() => setSettingsOpen(true)}><span aria-hidden="true">⚙</span><span className="nav-label">SETTINGS</span></button></div>
+        <button className="sidebar-feedback" aria-label="Send feedback" data-label="FEEDBACK" title="Send feedback" onClick={() => setFeedbackOpen(true)}><span aria-hidden="true">?</span><span className="nav-label">FEEDBACK</span></button>
       </aside>
 
       <div className="app-column">
@@ -412,16 +634,22 @@ export default function Home() {
             placeholder="Search IDX tickers, companies (e.g. ABMM, BBCA)..."
             onSelect={handleStockSelect}
           />
+          <button className="command-trigger" type="button" onClick={() => setCommandOpen(true)} aria-label="Open command palette">
+            <span aria-hidden="true">⌘K</span>
+            <strong>COMMANDS</strong>
+          </button>
           <div className="global-date" aria-label={`Current time ${wibDate} ${wibTime} WIB`}><span>{wibDay}</span><strong>{wibDate}</strong><b>{wibTime} WIB</b></div>
           <button className="feedback-trigger" type="button" onClick={() => setFeedbackOpen(true)}><span aria-hidden="true">✦</span><strong>SEND FEEDBACK</strong><small>HELP IMPROVE JARVIS</small></button>
         </header>
 
+        <DataStatusBar feeds={feedReadings} checkedAt={lastLoadedAt ? new Date(lastLoadedAt).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jakarta' }) + ' WIB' : null} />
+
         <section className="signal-strip" aria-label="Key readings">
-          <MetricCard label="MACRO REGIME" value={regimeLabel(currentRegime)} tone="orange" condition="GROWTH–INFLATION PRESSURE" implication="Defensive tilt; avoid paying for fragile growth." source={fred ? 'FRED LIVE' : 'ILLUSTRATIVE DATA'} />
-          <MetricCard label="GPR COMPOSITE" value={gdelt ? 'PARTIAL' : '64.2'} condition={gdelt ? `FREQUENCY ${gdelt.frequencyScore.toFixed(1)} · LIVE` : 'ELEVATED · RISK RISING'} implication={gdelt ? 'Goldstein severity is still required for a valid composite.' : 'Higher event-risk premium; tighten position sizing.'} source={gdelt ? 'GDELT KEYWORD FEED LIVE' : 'ILLUSTRATIVE DATA'} />
-          <MetricCard label="US 10Y–2Y" value={`${((yields[4] - yields[2]) * 100).toFixed(0)} BP`} condition={spreadLabel((yields[4] - yields[2]) * 100)} implication="A flatter curve keeps cyclical conviction constrained." source={fred ? 'FRED LIVE' : 'ILLUSTRATIVE DATA'} />
-          <MetricCard label="DXY" value={dxy.last ? dxy.last.toFixed(2) : '103.42'} condition={relativeLabel(dxy.last, dxy.average, 'DOLLAR')} implication="Firm USD is a headwind for EM risk and commodities." source={markets ? `${signed(dxy.change)}% · LIVE` : 'ILLUSTRATIVE DATA'} />
-          <MetricCard label="WTI CRUDE" value={oil.last ? '$' + oil.last.toFixed(2) : '$84.17'} condition={relativeLabel(oil.last, oil.average, 'ENERGY')} implication="Supports the energy complex; coal equities benefit indirectly." source={markets ? `${signed(oil.change)}% · LIVE` : 'ILLUSTRATIVE DATA'} />
+          <MetricCard label="MACRO REGIME" value={regimeLabel(currentRegime)} tone="orange" condition={currentRegime.date ? 'GROWTH–INFLATION PRESSURE' : 'NO VALID READING'} implication={fred ? 'Defensive tilt; avoid paying for fragile growth.' : 'No synthetic regime is shown while FRED is unavailable.'} source={fred ? (fred.status === 'live' ? 'FRED LIVE' : 'FRED STALE') : 'FEED OFFLINE'} />
+          <MetricCard label="GPR COMPOSITE" value={gdelt ? 'PARTIAL' : '—'} condition={gdelt ? `FREQUENCY ${gdelt.frequencyScore.toFixed(1)} · LIVE` : 'FEED OFFLINE'} implication={gdelt ? 'Goldstein severity is still required for a valid composite.' : 'The composite is withheld rather than estimated.'} source={gdelt ? 'GDELT KEYWORD FEED LIVE' : 'FEED OFFLINE'} />
+          <MetricCard label="US 10Y–2Y" value={fred && yields.length > 4 ? `${((yields[4] - yields[2]) * 100).toFixed(0)} BP` : '—'} condition={fred && yields.length > 4 ? spreadLabel((yields[4] - yields[2]) * 100) : 'FEED OFFLINE'} implication="A flatter curve keeps cyclical conviction constrained." source={fred && yields.length > 4 ? (fred.status === 'live' ? 'FRED LIVE' : 'FRED STALE') : 'FEED OFFLINE'} />
+          <MetricCard label="DXY" value={markets && dxy.last ? dxy.last.toFixed(2) : '—'} condition={markets ? relativeLabel(dxy.last, dxy.average, 'DOLLAR') : 'FEED OFFLINE'} implication="Firm USD is a headwind for EM risk and commodities." source={markets && dxy.last ? `${signed(dxy.change)}% · ${markets.status.toUpperCase()}` : 'FEED OFFLINE'} />
+          <MetricCard label="WTI CRUDE" value={markets && oil.last ? '$' + oil.last.toFixed(2) : '—'} condition={markets ? relativeLabel(oil.last, oil.average, 'ENERGY') : 'FEED OFFLINE'} implication="Supports the energy complex; coal equities benefit indirectly." source={markets && oil.last ? `${signed(oil.change)}% · ${markets.status.toUpperCase()}` : 'FEED OFFLINE'} />
         </section>
 
         <div className="view-heading"><div><span>RESEARCH / {active}</span><h2>{active === 'OVERVIEW' ? 'Daily Research Overview' : titleCase(active)}</h2></div><p>{sectionDescription(active)}</p></div>
@@ -434,11 +662,24 @@ export default function Home() {
             <p>A quiet research briefing before you move into charts, screeners, and individual stocks.</p>
           </header>
 
+          <section className="visit-strip" aria-label="Changes since your last visit">
+            <div className="visit-stamp">
+              <span>SINCE LAST VISIT</span>
+              <strong>{previousVisit ? visitAgeLabel(previousVisit.takenAt) : 'FIRST SESSION'}</strong>
+            </div>
+            {visitDeltas.map((delta) => (
+              <div className={`visit-delta ${delta.tone}`} key={delta.label}>
+                <span>{delta.label}</span>
+                <strong>{delta.value}</strong>
+              </div>
+            ))}
+          </section>
+
           <section className="decision-posture" aria-label="Current market posture">
             <div><span>MARKET REGIME</span><strong className="posture-name">{regimeLabel(currentRegime)}</strong></div>
             <div><span>RESEARCH BIAS</span><strong>{thesisHeadline}</strong></div>
             <div><span>IDX BREADTH</span><strong>{validSectorMoves.length ? `${positiveSectors}/${validSectorMoves.length} POSITIVE` : 'PENDING'}</strong></div>
-            <div><span>DATA CONFIDENCE</span><strong>{thesisConfidence} · {liveCount}/4 FEEDS</strong></div>
+            <div><span>DATA CONFIDENCE</span><strong>{thesisConfidence} · {liveCount}/5 FEEDS</strong></div>
           </section>
 
           <div className="decision-body">
@@ -451,7 +692,7 @@ export default function Home() {
 
             <aside className="decision-actions" aria-labelledby="actions-title">
               <header className="brief-section-head"><h3 id="actions-title">NEXT RESEARCH MOVE</h3><span>CHOOSE A SURFACE</span></header>
-              <div className="decision-current-thesis"><span>CURRENT THESIS</span><h4>{thesisHeadline}</h4><p>{savedNote}</p></div>
+              <div className="decision-current-thesis"><span>CURRENT THESIS</span><h4>{thesisHeadline}</h4><p>{savedNote || 'No thesis saved yet. Open Research Notes and write down what would disprove your current read.'}</p><button type="button" className="inline-link" onClick={() => setNotesOpen(true)}>OPEN RESEARCH NOTES →</button></div>
               <button className="decision-link" onClick={() => changeSection('QUANT LAB')}><span><strong>OPEN WEEKLY PICKS</strong><small>Review V5 selections and portfolio actions</small></span><span aria-hidden="true">→</span></button>
               <button className="decision-link" onClick={() => changeSection('MARKETS')}><span><strong>CHECK MARKET STRUCTURE</strong><small>Breadth, sectors, and watchlist detail</small></span><span aria-hidden="true">→</span></button>
               <button className="decision-link" onClick={() => changeSection('PORTFOLIO')}><span><strong>STRESS THE PORTFOLIO</strong><small>Check concentration before adding risk</small></span><span aria-hidden="true">→</span></button>
@@ -459,17 +700,17 @@ export default function Home() {
           </div>
         </section>}
 
-        {active === 'MACRO' && <section className="dashboard-grid macro-grid">
-          <article className="panel regime-panel"><PanelHead index="01" title="MACRO REGIME MAP"><div className="range-switcher">{(['6M','1Y','3Y'] as const).map((item) => <button key={item} onClick={() => setRange(item)} className={range === item ? 'active' : ''}>{item}</button>)}</div></PanelHead><RegimeCanvas points={fred?.regime ?? fallbackTrail} range={range} /><PanelFoot left="INDUSTRIAL PRODUCTION GROWTH × CPI INFLATION" right={fred ? `FRED · THROUGH ${formatDate(fred.freshness)}` : `ILLUSTRATIVE · THROUGH ${formatDate(fallbackTrail.at(-1)!.date)}`} /></article>
-          <article className="panel indicator-panel"><PanelHead index="02" title="MACRO INDICATOR Z-SCORES"><span className="head-note">VS 10Y MEAN</span></PanelHead><div className="indicator-head"><span>INDICATOR</span><span>ACTUAL</span><span>MEAN</span><span>DEVIATION</span><span>Z</span></div>{indicators.map((item) => <div className="indicator-row" key={item.name}><strong>{item.name}</strong><span>{formatNumber(item.actual, item.unit)}</span><span>{formatNumber(item.mean, item.unit)}</span><div className="deviation-track"><i className={zTone(item.z)} style={{width:`${Math.min(96, 50 + item.z * 28)}%`}} /></div><b className={zTone(item.z)}>{signed(item.z)}</b></div>)}<PanelFoot left="SEASONALLY ADJUSTED WHERE AVAILABLE" right={fred ? 'FRED LIVE' : 'ILLUSTRATIVE DATA'} /></article>
-          <YieldCurve values={yields} live={Boolean(fred)} />
-        </section>}
+        {active === 'MACRO' && (fred ? <section className="dashboard-grid macro-grid">
+          <article className="panel regime-panel"><PanelHead index="01" title="MACRO REGIME MAP"><div className="range-switcher">{(['6M','1Y','3Y'] as const).map((item) => <button key={item} onClick={() => setRange(item)} className={range === item ? 'active' : ''}>{item}</button>)}</div></PanelHead><RegimeCanvas points={fred.regime} range={range} /><PanelFoot left="INDUSTRIAL PRODUCTION GROWTH × CPI INFLATION" right={`FRED · THROUGH ${formatDate(fred.freshness)}`} /></article>
+          <article className="panel indicator-panel"><PanelHead index="02" title="MACRO INDICATOR Z-SCORES"><span className="head-note">VS 10Y MEAN</span></PanelHead><div className="indicator-head"><span>INDICATOR</span><span>ACTUAL</span><span>MEAN</span><span>DEVIATION</span><span>Z</span></div>{indicators.map((item) => <div className="indicator-row" key={item.name}><strong>{item.name}</strong><span>{formatNumber(item.actual, item.unit)}</span><span>{formatNumber(item.mean, item.unit)}</span><div className="deviation-track"><i className={zTone(item.z)} style={{width:`${Math.min(96, 50 + item.z * 28)}%`}} /></div><b className={zTone(item.z)}>{signed(item.z)}</b></div>)}<PanelFoot left="SEASONALLY ADJUSTED WHERE AVAILABLE" right="FRED LIVE" /></article>
+          <YieldCurve values={yields} />
+        </section> : <section className="dashboard-grid macro-grid"><article className="panel wide-panel"><FeedUnavailable title="MACRO FEED UNAVAILABLE" body="FRED did not return a valid regime or Treasury series. No illustrative macro values are shown because they could be mistaken for live data." /></article></section>)}
 
-        {active === 'MARKETS' && <section className="dashboard-grid markets-grid">
-          <article className="panel heatmap-panel"><PanelHead index="01" title="IDX SECTOR HEATMAP"><div className="range-switcher">{(['1D','1W'] as const).map((item) => <button key={item} onClick={() => setHeatPeriod(item)} className={heatPeriod === item ? 'active' : ''}>{item}</button>)}</div></PanelHead><div className="heatmap">{heatmap.map((item, index) => { const value = heatPeriod === '1D' ? item.daily : item.weekly; return <button key={item.label} onClick={() => setSelectedSector(item.label)} className={`heat-tile ${['xl','lg','md','lg','sm','sm','md','sm','md','lg','md'][index]} ${value === null ? 'no-data' : heatTone(value)} ${item.confidence === 'low' ? 'low-confidence' : ''} ${selectedHeat?.label === item.label ? 'selected' : ''}`}><span>{item.label}</span><strong>{value === null ? '—' : `${signed(value)}%`}</strong><small>{item.confidence === 'low' ? `LOW CONFIDENCE · ${item.validCount ?? 0}/${item.memberCount ?? 0} VALID` : 'VIEW MEMBERS →'}</small></button>; })}</div>{selectedHeat && <div className="heat-drilldown"><div><span>SELECTED SECTOR</span><strong>{selectedHeat.label}</strong><small>SIMPLE AVG · {selectedHeat.validCount ?? selectedHeat.constituents.length}/{selectedHeat.memberCount ?? selectedHeat.constituents.length} VALID</small></div>{selectedHeat.constituents.length ? selectedHeat.constituents.map((stock) => { const value = heatPeriod === '1D' ? stock.daily : stock.weekly; return <div key={stock.ticker} onClick={() => openStockDetail(stock.ticker)} style={{cursor:'pointer'}} title={`Click to view ${stock.ticker} fundamentals`}><span>{stock.ticker}</span><strong>{stock.price.toLocaleString('en-US',{maximumFractionDigits:2})}</strong><small className={value === null ? '' : value >= 0 ? 'positive' : 'negative'}>{value === null ? 'NO VALID RETURN' : `${signed(value)}%`}</small></div>}) : <p>Constituent feed unavailable for this sector.</p>}</div>}<PanelFoot left="SIMPLE AVERAGE OF VALID IDX-IC CONSTITUENT BASKETS" right={markets ? `${markets.status.toUpperCase()} · YAHOO UPSTREAM` : 'ILLUSTRATIVE DATA'} /></article>
-          <Watchlist watchlist={watchlist} live={Boolean(markets)} onSelectStock={(t) => openStockDetail(t)} />
+        {active === 'MARKETS' && (markets ? <section className="dashboard-grid markets-grid">
+          <article className="panel heatmap-panel"><PanelHead index="01" title="IDX SECTOR HEATMAP"><div className="range-switcher">{(['1D','1W'] as const).map((item) => <button key={item} onClick={() => setHeatPeriod(item)} className={heatPeriod === item ? 'active' : ''}>{item}</button>)}</div></PanelHead><div className="heatmap">{heatmap.map((item, index) => { const value = heatPeriod === '1D' ? item.daily : item.weekly; return <button key={item.label} onClick={() => setSelectedSector(item.label)} className={`heat-tile ${['xl','lg','md','lg','sm','sm','md','sm','md','lg','md'][index]} ${value === null ? 'no-data' : heatTone(value)} ${item.confidence === 'low' ? 'low-confidence' : ''} ${selectedHeat?.label === item.label ? 'selected' : ''}`}><span>{item.label}</span><strong>{value === null ? '—' : `${signed(value)}%`}</strong><small>{item.confidence === 'low' ? `LOW CONFIDENCE · ${item.validCount ?? 0}/${item.memberCount ?? 0} VALID` : 'VIEW MEMBERS →'}</small></button>; })}</div>{selectedHeat && <div className="heat-drilldown"><div><span>SELECTED SECTOR</span><strong>{selectedHeat.label}</strong><small>SIMPLE AVG · {selectedHeat.validCount ?? selectedHeat.constituents.length}/{selectedHeat.memberCount ?? selectedHeat.constituents.length} VALID</small></div>{selectedHeat.constituents.length ? selectedHeat.constituents.map((stock) => { const value = heatPeriod === '1D' ? stock.daily : stock.weekly; return <div key={stock.ticker} onClick={() => openStockDetail(stock.ticker)} style={{cursor:'pointer'}} title={`Click to view ${stock.ticker} fundamentals`}><span>{stock.ticker}</span><strong>{stock.price.toLocaleString('en-US',{maximumFractionDigits:2})}</strong><small className={value === null ? '' : value >= 0 ? 'positive' : 'negative'}>{value === null ? 'NO VALID RETURN' : `${signed(value)}%`}</small></div>}) : <p>Constituent feed unavailable for this sector.</p>}</div>}<PanelFoot left="SIMPLE AVERAGE OF VALID IDX-IC CONSTITUENT BASKETS" right={`${markets.status.toUpperCase()} · YAHOO UPSTREAM`} /></article>
+          <Watchlist watchlist={watchlist} live onSelectStock={(t) => openStockDetail(t)} onAdd={addWatchlistTicker} onRemove={removeWatchlistTicker} managed={watchlistManaged || customWatchlist.length > 0} />
           <Calendar data={calendar} />
-        </section>}
+        </section> : <section className="dashboard-grid markets-grid"><article className="panel wide-panel"><FeedUnavailable title="IDX MARKET FEED UNAVAILABLE" body="The market upstream did not return sector or price data. Price cells are withheld so stale or synthetic values cannot be mistaken for live quotes." /></article><Watchlist watchlist={watchlist} live={false} onSelectStock={(t) => openStockDetail(t)} onAdd={addWatchlistTicker} onRemove={removeWatchlistTicker} managed={watchlistManaged || customWatchlist.length > 0} /><Calendar data={calendar} /></section>)}
 
         {active === 'NEWS' && <NewsIntelligence />}
 
@@ -481,7 +722,7 @@ export default function Home() {
 
         {active === 'RESEARCH PAPERS' && <ResearchPapers />}
 
-        {active === 'SEASONALITY' && <section className="panel seasonality-panel"><PanelHead index="01" title="MONTHLY RETURN SEASONALITY"><div className="ticker-switcher">{[...new Set([seasonTicker, 'BUMI', 'AMMN', 'ADRO', 'JKSE'])].map((ticker)=><button key={ticker} onClick={()=>setSeasonTicker(ticker)} className={seasonTicker===ticker?'active':''}>{ticker}</button>)}</div></PanelHead>{seasonality ? <><div className="season-summary"><div><span>SELECTED SERIES</span><strong>{seasonality.ticker}</strong><small>{seasonality.symbol}</small></div><p>Average calendar-month return across completed monthly observations. Historical tendency only—not a forecast.</p><b>BASED ON {seasonality.years} YEARS OF HISTORICAL DATA · {seasonality.from}–{seasonality.through}</b></div><div className="season-grid">{seasonality.months.map((month)=><div key={month.month} className={`season-tile ${heatTone(month.average)}`}><span>{monthName(month.month)}</span><strong>{signed(month.average)}%</strong><small>{month.positiveRate.toFixed(0)}% POSITIVE · N={month.observations}</small></div>)}</div><div className="season-legend"><span>WEAKER AVERAGE</span><i/><span>STRONGER AVERAGE</span></div><PanelFoot left="AVERAGE MONTHLY CLOSE-TO-CLOSE RETURN" right="YAHOO FINANCE UPSTREAM · DAILY HISTORY" /></> : <FeedUnavailable title="SEASONALITY FEED UNAVAILABLE" body="No historical values are shown until Yahoo returns a valid 5–10 year price series." />}</section>}
+        {active === 'SEASONALITY' && <section className="panel seasonality-panel"><PanelHead index="01" title="MONTHLY RETURN SEASONALITY"><div className="ticker-switcher">{[...new Set([seasonTicker, 'BUMI', 'AMMN', 'ADRO', 'JKSE'])].map((ticker)=><button key={ticker} onClick={()=>setSeasonTicker(ticker)} className={seasonTicker===ticker?'active':''}>{ticker}</button>)}<button type="button" className="season-export" onClick={exportSeasonality} disabled={!seasonality}>EXPORT CSV</button></div></PanelHead>{seasonality ? <><div className="season-summary"><div><span>SELECTED SERIES</span><strong>{seasonality.ticker}</strong><small>{seasonality.symbol}</small></div><p>Average calendar-month return across completed monthly observations. Historical tendency only—not a forecast.</p><b>BASED ON {seasonality.years} YEARS OF HISTORICAL DATA · {seasonality.from}–{seasonality.through}</b></div><div className="season-grid">{seasonality.months.map((month)=><div key={month.month} className={`season-tile ${heatTone(month.average)}`}><span>{monthName(month.month)}</span><strong>{signed(month.average)}%</strong><small>{month.positiveRate.toFixed(0)}% POSITIVE · N={month.observations}</small></div>)}</div><div className="season-legend"><span>WEAKER AVERAGE</span><i/><span>STRONGER AVERAGE</span></div><PanelFoot left="AVERAGE MONTHLY CLOSE-TO-CLOSE RETURN" right="YAHOO FINANCE UPSTREAM · DAILY HISTORY" /></> : <FeedUnavailable title="SEASONALITY FEED UNAVAILABLE" body="No historical values are shown until Yahoo returns a valid 5–10 year price series." />}</section>}
 
         {active === 'MARKET PARTICIPANT' && <section className="dashboard-grid cot-grid"><article className="panel cot-panel"><PanelHead index="01" title="CFTC COT POSITIONING"><div className="ticker-switcher">{['USD','GOLD','US10Y','BTC'].map((asset)=><button key={asset} onClick={()=>setCotAsset(asset)} className={cotAsset===asset?'active':''} disabled={!cot?.series.some((item)=>item.key===asset)}>{asset}</button>)}</div></PanelHead>{selectedCot ? <><div className="cot-summary"><div><span>CONTRACT</span><strong>{selectedCot.label}</strong></div><div><span>LATEST REPORT</span><strong>{formatDate(selectedCot.latest)}</strong></div><div><span>FREQUENCY</span><strong>WEEKLY · CFTC</strong></div></div><CotChart series={selectedCot} /><CotTable series={selectedCot} /><PanelFoot left="NET POSITION = LONG CONTRACTS − SHORT CONTRACTS" right={`UPDATED WEEKLY · THROUGH ${formatDate(selectedCot.latest)}`} /></> : <FeedUnavailable title="CFTC CONNECTION FAILED" body="No positioning values are shown because the public COT dataset did not return a valid series." />}</article></section>}
         </PanelBoundary>
@@ -489,9 +730,36 @@ export default function Home() {
         <footer className="terminal-footer"><span>JARVIS / RESEARCH USE ONLY</span><span>Unavailable feeds retain explicit connection labels.</span><span>v1.2</span></footer>
       </div>
 
-      {notesOpen && <div className="overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) setNotesOpen(false); }}><section ref={notesDialogRef} tabIndex={-1} className="drawer" role="dialog" aria-modal="true" aria-label="Research notes"><div className="drawer-head"><div><span>RESEARCH LOG</span><h2>UPDATE CURRENT THESIS</h2></div><button onClick={() => setNotesOpen(false)}>ESC</button></div><label htmlFor="note">NEW NOTE</label><textarea id="note" autoFocus value={note} maxLength={600} onChange={(e) => setNote(e.target.value)} placeholder="What changed in the data, and what would disprove your read?" /><div className="prompt-line"><span>Keep the claim testable.</span><span>{note.length} / 600</span></div><div className="drawer-actions"><button onClick={() => setNotesOpen(false)}>CANCEL</button><button className="primary-button" onClick={saveNote}>SAVE NOTE</button></div><div className="recent-note"><span>LATEST ENTRY</span><p>{savedNote}</p><small>{savedNoteLabel}</small></div></section></div>}
-      {settingsOpen && <div className="overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) setSettingsOpen(false); }}><section ref={settingsDialogRef} tabIndex={-1} className="drawer" role="dialog" aria-modal="true" aria-label="Terminal settings"><div className="drawer-head"><div><span>TERMINAL</span><h2>SETTINGS</h2></div><button onClick={() => setSettingsOpen(false)}>ESC</button></div><div className="setting-block"><h3>COLOR ACCESSIBILITY</h3><p>Choose a signal palette that keeps gains and losses distinct.</p><div className="scheme-list">{SCHEMES.map((item) => <button key={item} className={scheme===item?'selected':''} onClick={() => changeScheme(item)}><i /><span>{item.toUpperCase()}</span><b>{scheme===item?'ON':''}</b></button>)}</div></div><div className="setting-block"><h3>DATA CONNECTIONS</h3><p>Technical feed detail is kept here so the daily view stays focused on decisions.</p><div className="settings-health connection-list"><p><i className={fred ? 'live' : ''} /><strong>FRED</strong><span>{fred ? `Updated ${fred.freshness}` : 'FRED_API_KEY not configured or upstream unavailable'}</span></p><p><i className={markets ? 'live' : ''} /><strong>IDX + SEASONALITY</strong><span>{markets ? `${markets.status} · Yahoo upstream` : 'Live request failed · illustrative values retained'}</span></p><p><i className={gdelt ? 'live' : ''} /><strong>GDELT DOC</strong><span>{gdelt ? 'Keyword-frequency series live · Goldstein pending' : 'Live request failed'}</span></p><p><i className={cot ? 'live' : ''} /><strong>CFTC COT</strong><span>{cot ? `${cot.status} · weekly public reports` : 'Public dataset request failed'}</span></p><p><i className={calendar ? 'live' : ''} /><strong>TRADINGECONOMICS</strong><span>{calendar ? 'Calendar connected' : 'TRADING_ECONOMICS_API_KEY required'}</span></p></div></div><WeeklyDigestOptIn /><FeedbackInbox active={settingsOpen} /><SettingsLogout /><button className="primary-button full" onClick={() => setSettingsOpen(false)}>APPLY SETTINGS</button></section></div>}
+      {notesOpen && <div className="overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) setNotesOpen(false); }}><section ref={notesDialogRef} tabIndex={-1} className="drawer" role="dialog" aria-modal="true" aria-label="Research notes"><div className="drawer-head"><div><span>RESEARCH LOG</span><h2>UPDATE CURRENT THESIS</h2></div><button onClick={() => setNotesOpen(false)}>ESC</button></div><label htmlFor="note">NEW NOTE</label><textarea id="note" autoFocus value={note} maxLength={2000} onChange={(e) => setNote(e.target.value)} placeholder="What changed in the data, and what would disprove your read?" /><div className="prompt-line"><span>Keep the claim testable. Notes sync to your account.</span><span>{note.length} / 2000</span></div><div className="drawer-actions"><button onClick={() => setNotesOpen(false)}>CANCEL</button><button className="primary-button" onClick={saveNote}>SAVE NOTE</button></div><div className="recent-note"><span>LATEST ENTRY</span><p>{savedNote || 'No thesis saved yet.'}</p><small>{savedNoteLabel}</small></div>{noteHistory.length > 1 && <div className="note-history"><span>THESIS HISTORY</span>{noteHistory.slice(0, 6).map((entry) => <div key={entry.id}><small>{new Date(entry.created_at).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'Asia/Jakarta' }).toUpperCase()}</small><p>{entry.body}</p></div>)}</div>}</section></div>}
+      {settingsOpen && <div className="overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) setSettingsOpen(false); }}><section ref={settingsDialogRef} tabIndex={-1} className="drawer" role="dialog" aria-modal="true" aria-label="Terminal settings"><div className="drawer-head"><div><span>TERMINAL</span><h2>SETTINGS</h2></div><button onClick={() => setSettingsOpen(false)}>ESC</button></div><div className="setting-block"><h3>COLOR ACCESSIBILITY</h3><p>Choose a signal palette that keeps gains and losses distinct.</p><div className="scheme-list">{SCHEMES.map((item) => <button key={item} className={scheme===item?'selected':''} onClick={() => changeScheme(item)}><i /><span>{item.toUpperCase()}</span><b>{scheme===item?'ON':''}</b></button>)}</div></div><div className="setting-block"><h3>DATA CONNECTIONS</h3><p>Technical feed detail is kept here so the daily view stays focused on decisions.</p><div className="settings-health connection-list"><p><i className={fred ? 'live' : ''} /><strong>FRED</strong><span>{fred ? `Updated ${fred.freshness}` : 'FRED_API_KEY not configured or upstream unavailable'}</span></p><p><i className={markets ? 'live' : ''} /><strong>IDX + SEASONALITY</strong><span>{markets ? `${markets.status} · Yahoo upstream` : 'Live request failed · panel withheld, no synthetic values'}</span></p><p><i className={gdelt ? 'live' : ''} /><strong>GDELT DOC</strong><span>{gdelt ? 'Keyword-frequency series live · Goldstein pending' : 'Live request failed'}</span></p><p><i className={cot ? 'live' : ''} /><strong>CFTC COT</strong><span>{cot ? `${cot.status} · weekly public reports` : 'Public dataset request failed'}</span></p><p><i className={calendar ? 'live' : ''} /><strong>TRADINGECONOMICS</strong><span>{calendar ? 'Calendar connected' : 'TRADING_ECONOMICS_API_KEY required'}</span></p></div></div><PlanCard /><WeeklyDigestOptIn /><FeedbackInbox active={settingsOpen} /><div className="setting-block"><h3>ONBOARDING</h3><p>Revisit the starter watchlist, thesis prompt, and notification setup.</p><button type="button" className="quiet-button" onClick={() => { setSettingsOpen(false); setOnboardingOpen(true); trackEvent('onboarding_start', { source: 'settings' }); }}>{onboardingComplete ? 'REPLAY ONBOARDING' : 'FINISH SETUP'}</button></div><SettingsLogout /><button className="primary-button full" onClick={() => setSettingsOpen(false)}>APPLY SETTINGS</button></section></div>}
 
+      <OnboardingModal
+        open={onboardingOpen}
+        onClose={() => {
+          setOnboardingOpen(false);
+          try { localStorage.setItem('jarvis_onboarding_complete_v1', '1'); } catch {}
+          savePreferences({ onboardingComplete: true });
+          trackEvent('onboarding_complete', { skipped: true });
+        }}
+        onComplete={completeOnboarding}
+        onAddTickers={(tickers) => tickers.forEach(addWatchlistTicker)}
+        onOpenNotes={() => { completeOnboarding(); setNotesOpen(true); }}
+        onOpenSettings={() => { completeOnboarding(); setSettingsOpen(true); }}
+      />
+      <CommandPalette
+        open={commandOpen}
+        onOpenChange={setCommandOpen}
+        sections={navigation.map((item) => ({ label: item.label, description: navDesc[item.label] }))}
+        onNavigate={(label) => {
+          const item = navigation.find((entry) => entry.label === label);
+          if (item) changeSection(item.label);
+        }}
+        onOpenStock={openStockDetail}
+        onOpenNotes={() => setNotesOpen(true)}
+        onOpenSettings={() => setSettingsOpen(true)}
+        onOpenPricing={() => { trackEvent('upgrade_click', { source: 'command_palette' }); window.location.assign('/pricing'); }}
+        onOpenFeedback={() => setFeedbackOpen(true)}
+      />
       <FeedbackModal open={feedbackOpen} section={active} ticker={modalTicker} onClose={() => setFeedbackOpen(false)} />
       {notification && (
         <div
@@ -558,10 +826,24 @@ function RegimeCanvas({ points, range }: { points: RegimePoint[]; range: '6M'|'1
 }
 
 function CotChart({series}:{series:CotSeries}){const canvas=useRef<HTMLCanvasElement>(null);const points=useMemo(()=>series.points.slice(-52),[series]);useEffect(()=>{const el=canvas.current;if(!el)return;const draw=()=>{const rect=el.getBoundingClientRect(),scale=window.devicePixelRatio||1;el.width=rect.width*scale;el.height=rect.height*scale;const ctx=el.getContext('2d');if(!ctx)return;ctx.scale(scale,scale);const w=rect.width,h=rect.height,pad=38;ctx.clearRect(0,0,w,h);ctx.strokeStyle='#242424';ctx.lineWidth=1;for(let i=0;i<=5;i++){const y=pad+(h-pad*2)*i/5;ctx.beginPath();ctx.moveTo(pad,y);ctx.lineTo(w-pad,y);ctx.stroke()}const all=points.flatMap((point)=>series.groups.map((group)=>point.values[group]??0));const max=Math.max(...all.map(Math.abs),1);const colors=['#48a6ff','#ff9840','#43d4a3'];series.groups.forEach((group,groupIndex)=>{ctx.strokeStyle=colors[groupIndex];ctx.lineWidth=2;ctx.beginPath();points.forEach((point,index)=>{const x=pad+(w-pad*2)*(index/Math.max(points.length-1,1));const y=h/2-((point.values[group]??0)/max)*(h/2-pad);if(index)ctx.lineTo(x,y);else ctx.moveTo(x,y)});ctx.stroke()});ctx.strokeStyle='#55606d';ctx.beginPath();ctx.moveTo(pad,h/2);ctx.lineTo(w-pad,h/2);ctx.stroke();ctx.fillStyle='#778596';ctx.font='8px monospace';ctx.fillText(compact(max),4,pad+3);ctx.fillText('0',18,h/2+3);ctx.fillText(compact(-max),4,h-pad+3);if(points.length){ctx.fillText(formatDate(points[0].date),pad,h-10);const end=formatDate(points.at(-1)!.date);ctx.fillText(end,w-pad-46,h-10)}};draw();const ro=new ResizeObserver(draw);ro.observe(el);return()=>ro.disconnect()},[points,series]);return <div className="cot-chart"><div className="cot-legend">{series.groups.map((group,index)=><span key={group}><i className={`line-${index}`}/>{group}</span>)}</div><canvas ref={canvas} aria-label={`${series.label} net positioning by trader type over 52 weeks`}/></div>}
-function CotTable({series}:{series:CotSeries}){const rows=series.points.slice(-6).reverse();return <div className="cot-table"><div className="cot-row cot-head"><span>REPORT</span>{series.groups.map((group)=><span key={group}>{group}</span>)}</div>{rows.map((point,index)=>{const prior=series.points[series.points.length-2-index];return <div className="cot-row" key={point.date}><strong>{formatDate(point.date)}</strong>{series.groups.map((group)=>{const change=prior?(point.values[group]??0)-(prior.values[group]??0):0;return <span key={group}><b>{compact(point.values[group]??0)}</b><small className={change>=0?'positive':'negative'}>{change>=0?'+':''}{compact(change)} WoW</small></span>})}</div>})}</div>}
+function CotTable({series}:{series:CotSeries}){
+  const rows=series.points.slice(-6).reverse();
+  const percentiles=series.groups.map((group)=>{
+    const values=series.points.map((point)=>point.values[group]??0);
+    const latest=values.at(-1)??0;
+    const below=values.filter((value)=>value<=latest).length;
+    return {group, latest, percentile: values.length?Math.round((below/values.length)*100):0};
+  });
+  return <>
+    <div className="cot-percentiles" aria-label="52-week positioning percentile">
+      {percentiles.map((item)=><div key={item.group}><span>{item.group}</span><strong className={item.percentile>=80?'hot':item.percentile<=20?'cool':''}>{item.percentile}TH</strong><small>52W NET POSITION PERCENTILE</small></div>)}
+    </div>
+    <div className="cot-table"><div className="cot-row cot-head"><span>REPORT</span>{series.groups.map((group)=><span key={group}>{group}</span>)}</div>{rows.map((point,index)=>{const prior=series.points[series.points.length-2-index];return <div className="cot-row" key={point.date}><strong>{formatDate(point.date)}</strong>{series.groups.map((group)=>{const change=prior?(point.values[group]??0)-(prior.values[group]??0):0;return <span key={group}><b>{compact(point.values[group]??0)}</b><small className={change>=0?'positive':'negative'}>{change>=0?'+':''}{compact(change)} WoW</small></span>})}</div>})}</div>
+  </>;
+}
 function FeedUnavailable({title,body}:{title:string;body:string}){return <div className="feed-unavailable"><span>CONNECTION STATUS</span><strong>{title}</strong><p>{body}</p></div>}
 
-function Watchlist({watchlist,live,onSelectStock}:{watchlist:Array<{ticker:string;price:number;change:number}>;live:boolean;onSelectStock?:(ticker:string)=>void}) {
+function Watchlist({watchlist,live,onSelectStock,onAdd,onRemove,managed}:{watchlist:Array<{ticker:string;price:number;change:number}>;live:boolean;onSelectStock?:(ticker:string)=>void;onAdd?:(ticker:string)=>void;onRemove?:(ticker:string)=>void;managed?:boolean}) {
   const [showSearch, setShowSearch] = useState(false);
   return (
     <article className="panel watch-panel">
@@ -569,26 +851,17 @@ function Watchlist({watchlist,live,onSelectStock}:{watchlist:Array<{ticker:strin
         <button
           type="button"
           onClick={() => setShowSearch((v) => !v)}
-          className="quiet-button"
-          style={{
-            fontSize: '9px',
-            color: showSearch ? '#48a6ff' : '#778596',
-            border: showSearch ? '1px solid #48a6ff' : '1px solid #233041',
-            background: showSearch ? '#0b1624' : 'transparent',
-            padding: '2px 8px',
-            borderRadius: '2px',
-            cursor: 'pointer',
-            marginLeft: 'auto',
-          }}
+          className="quiet-button watch-add"
+          aria-expanded={showSearch}
         >
           {showSearch ? '✕ CLOSE' : '+ ADD TICKER'}
         </button>
       </PanelHead>
       {showSearch && (
-        <div style={{ padding: '8px', borderBottom: '1px solid var(--line, #1c2635)', background: '#05070a' }}>
+        <div className="watch-search">
           <StockSearch
             onSelect={(stock) => {
-              onSelectStock?.(stock.ticker);
+              onAdd?.(stock.ticker);
               setShowSearch(false);
             }}
             placeholder="Search IDX ticker (e.g. BBCA, ADRO)..."
@@ -596,13 +869,16 @@ function Watchlist({watchlist,live,onSelectStock}:{watchlist:Array<{ticker:strin
         </div>
       )}
       <div className="watch-table table-head"><span>TICKER</span><span>LAST</span><span>1D</span></div>
-      {watchlist.map((stock)=><div className="watch-table" key={stock.ticker} style={{cursor:'pointer'}} onClick={()=>onSelectStock?.(stock.ticker)} title={`Click to view ${stock.ticker} fundamentals`}><strong style={{color:'#48a6ff'}}>{stock.ticker}</strong><span>{stock.price ? stock.price.toLocaleString('en-US',{maximumFractionDigits:2}) : '—'}</span><span className={stock.change>=0?'positive':'negative'}>{signed(stock.change)}%</span></div>)}
-      <PanelFoot left="CLICK TICKER FOR DETAIL" right={live?'LIVE · DAILY':'ILLUSTRATIVE DATA'} />
+      {watchlist.length === 0 && (
+        <p className="watch-empty">No tickers saved yet. Add one to make this your own.</p>
+      )}
+      {watchlist.map((stock)=><div className="watch-table watch-row" key={stock.ticker} style={{cursor:'pointer'}} onClick={()=>onSelectStock?.(stock.ticker)} title={`Click to view ${stock.ticker} fundamentals`}><strong style={{color:'#48a6ff'}}>{stock.ticker}</strong><span>{live && stock.price ? stock.price.toLocaleString('en-US',{maximumFractionDigits:2}) : '—'}</span><span className={!live ? '' : stock.change>=0?'positive':'negative'}>{live ? `${signed(stock.change)}%` : '—'}</span>{managed && <button type="button" className="watch-remove" aria-label={`Remove ${stock.ticker} from watchlist`} onClick={(event) => { event.stopPropagation(); onRemove?.(stock.ticker); }}>×</button>}</div>)}
+      <PanelFoot left={managed ? 'CLICK TICKER FOR DETAIL · × TO REMOVE' : 'STARTER LIST · ADD A TICKER TO PERSONALIZE'} right={managed ? 'SYNCED TO ACCOUNT' : live?'LIVE · DAILY':'FEED OFFLINE'} />
     </article>
   );
 }
 function Calendar({data}:{data:CalendarData|null}){
-  const rows=data?.events.map((event)=>{
+  const rows=(data?.events ?? []).map((event)=>{
     const date=new Date(event.date);
     const valid=!Number.isNaN(date.getTime());
     return {
@@ -614,21 +890,24 @@ function Calendar({data}:{data:CalendarData|null}){
       prior:event.prior,
       status:event.importance>=3?'HIGH':'MED'
     }
-  })??releases.map((event,index)=>({...event,date:index===0?'NEXT RELEASE':'UPCOMING'}));
+  });
   const indonesiaCount=rows.filter((row)=>row.country==='ID').length;
   return <article className="panel calendar-panel">
-    <PanelHead index="02" title="ECONOMIC CALENDAR"><span className="demo-badge">{data?'LIVE':'DEMO'}</span></PanelHead>
-    <div className="date-rule"><strong>NEXT 7 DAYS · WIB</strong><span>{indonesiaCount} INDONESIA · {rows.length} TOTAL</span></div>
-    {rows.slice(0,10).map((r,index)=><div className="release-row" key={`${r.date}-${r.event}-${index}`}>
-      <time><b>{r.date}</b><span>{r.time} WIB</span></time>
-      <span className="country-tag">{r.country}</span>
-      <div><strong>{r.event}</strong><small>FCST {r.forecast} · PRIOR {r.prior}</small></div>
-      <span className={`importance ${r.status.toLowerCase()}`}>{r.status}</span>
-    </div>)}
+    <PanelHead index="02" title="ECONOMIC CALENDAR"><span className={`demo-badge ${data?'':'offline'}`}>{data?'LIVE':'OFFLINE'}</span></PanelHead>
+    {data ? <>
+      <div className="date-rule"><strong>NEXT 7 DAYS · WIB</strong><span>{indonesiaCount} INDONESIA · {rows.length} TOTAL</span></div>
+      {rows.length === 0 && <p className="calendar-empty">No scheduled releases returned for this window.</p>}
+      {rows.slice(0,10).map((r,index)=><div className="release-row" key={`${r.date}-${r.event}-${index}`}>
+        <time><b>{r.date}</b><span>{r.time} WIB</span></time>
+        <span className="country-tag">{r.country}</span>
+        <div><strong>{r.event}</strong><small>FCST {r.forecast} · PRIOR {r.prior}</small></div>
+        <span className={`importance ${r.status.toLowerCase()}`}>{r.status}</span>
+      </div>)}
+    </> : <FeedUnavailable title="CALENDAR FEED UNAVAILABLE" body="No releases are shown until TradingEconomics returns events. We do not seed this panel with example dates." />}
     <PanelFoot left={data?'TRADINGECONOMICS · ID PRIORITIZED':'TRADINGECONOMICS KEY NOT CONFIGURED'} right="DATES + TIMES IN WIB" />
   </article>
 }
-function YieldCurve({values,live}:{values:number[];live:boolean}){const spread=(values[4]-values[2])*100;return <article className="panel curve-panel"><PanelHead index="03" title="US TREASURY CURVE"><span className="curve-status"><i />{spread<0?'INVERTED':'NORMAL'} {signed(spread)} BP</span></PanelHead><div className="curve-chart"><div className="curve-bars">{values.map((point,index)=><div className="curve-column" key={index}><span>{point.toFixed(2)}%</span><i style={{height:`${Math.max(18,34+(point-3)*58)}px`}} /><b>{['3M','1Y','2Y','5Y','10Y','20Y','30Y'][index]}</b></div>)}</div><div className="curve-baseline" /></div><div className="curve-callouts"><div><span>2Y</span><strong>{values[2].toFixed(2)}%</strong></div><div><span>10Y</span><strong>{values[4].toFixed(2)}%</strong></div><div><span>30Y</span><strong>{values[6].toFixed(2)}%</strong></div></div><PanelFoot left="TREASURY CONSTANT MATURITY RATES" right={live?'FRED LIVE':'ILLUSTRATIVE DATA'} /></article>}
+function YieldCurve({values}:{values:number[]}){if(values.length<7)return <article className="panel curve-panel"><FeedUnavailable title="TREASURY CURVE INCOMPLETE" body="FRED returned fewer than seven maturities, so the curve is withheld rather than padded with estimates." /></article>;const spread=(values[4]-values[2])*100;return <article className="panel curve-panel"><PanelHead index="03" title="US TREASURY CURVE"><span className="curve-status"><i />{spread<0?'INVERTED':'NORMAL'} {signed(spread)} BP</span></PanelHead><div className="curve-chart"><div className="curve-bars">{values.map((point,index)=><div className="curve-column" key={index}><span>{point.toFixed(2)}%</span><i style={{height:`${Math.max(18,34+(point-3)*58)}px`}} /><b>{['3M','1Y','2Y','5Y','10Y','20Y','30Y'][index]}</b></div>)}</div><div className="curve-baseline" /></div><div className="curve-callouts"><div><span>2Y</span><strong>{values[2].toFixed(2)}%</strong></div><div><span>10Y</span><strong>{values[4].toFixed(2)}%</strong></div><div><span>30Y</span><strong>{values[6].toFixed(2)}%</strong></div></div><PanelFoot left="TREASURY CONSTANT MATURITY RATES" right="FRED LIVE" /></article>}
 function MetricCard({label,value,condition,implication,source,tone}:{label:string;value:string;condition:string;implication:string;source:string;tone?:string}){return <div className="metric-card"><span>{label}</span><div className="metric-reading"><strong className={tone}>{value}</strong><b>{condition}</b></div><p>{implication}</p><small>{source}</small></div>}
 function PanelHead({index: _index,title,children}:{index:string;title:string;children?:React.ReactNode}){return <header className="panel-head"><div><h2>{title}</h2></div>{children}</header>}
 function PanelFoot({left,right}:{left:string;right:string}){return <footer className="panel-foot"><span>{left}</span><span>{right}</span></footer>}
@@ -637,7 +916,8 @@ function formatNumber(value:number,unit:string){return `${value.toFixed(unit?2:1
 function zTone(z:number){return z>.75?'hot':z>.25?'warm':z<-.25?'cool':'neutral'}
 function heatTone(value:number){const n=Math.abs(value);return value>=0? n>1.5?'up3':n>.6?'up2':'up1':n>1.5?'down3':n>.6?'down2':'down1'}
 function formatDate(date:string){return new Date(date+'T00:00:00Z').toLocaleDateString('en-US',{month:'short',year:'2-digit',timeZone:'UTC'})}
-function regimeLabel(point:RegimePoint){return point.growth < 0 && point.inflation > 0 ? 'STAGFLATION' : point.growth > 0 && point.inflation > 0 ? 'OVERHEAT' : point.growth < 0 ? 'DEFLATION' : 'REFLATION'}
+function regimeLabel(point:RegimePoint){if(!point.date) return 'UNKNOWN';return point.growth < 0 && point.inflation > 0 ? 'STAGFLATION' : point.growth > 0 && point.inflation > 0 ? 'OVERHEAT' : point.growth < 0 ? 'DEFLATION' : 'REFLATION'}
+function feedStatus(payload:{status?:string}|null):'live'|'partial'|'stale'|'unavailable'{if(!payload)return'unavailable';if(payload.status==='live')return'live';if(payload.status==='partial')return'partial';return'stale'}
 function spreadLabel(spread:number){return spread < -25 ? 'DEEPLY INVERTED' : spread < 0 ? 'SLIGHTLY INVERTED' : spread < 50 ? 'NORMAL · FLAT' : 'STEEPENING'}
 function relativeLabel(last:number,average:number,name:string){if(!last||!average)return `${name} CONTEXT PENDING`;const gap=(last/average-1)*100;return gap>2?`ABOVE 20D AVG · ${signed(gap)}%`:gap<-2?`BELOW 20D AVG · ${signed(gap)}%`:`NEAR 20D AVG · ${signed(gap)}%`}
 function countryCode(country:string){const value=country.toLowerCase();return value.includes('indonesia')?'ID':value.includes('china')?'CN':value.includes('united states')?'US':country.slice(0,2).toUpperCase()}

@@ -8,6 +8,19 @@ const ALLOWED_EVENTS = new Set([
   'weekly_picks_view',
   'research_paper_open',
   'stock_detail_open',
+  'onboarding_start',
+  'onboarding_complete',
+  'watchlist_add',
+  'watchlist_remove',
+  'portfolio_save',
+  'note_save',
+  'preferences_save',
+  'pricing_view',
+  'upgrade_click',
+  'command_palette_open',
+  'news_save',
+  'paper_search',
+  'seasonality_export',
 ])
 
 export async function POST(request: NextRequest) {
