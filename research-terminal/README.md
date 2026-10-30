@@ -81,7 +81,7 @@ exists. To also suppress hard bounces and complaints, point a Resend webhook at
 
 ### Rate limits
 
-`/api/v1`, stock detail, search, analytics events, and feedback use a shared
+`/api/v1`, stock detail, search, quantamental, analytics events, and feedback use a shared
 Postgres limiter (`jarvis_rate_limit_hit`). Buckets are hashed, expire
 automatically, and fall back to a per-instance limiter if the database is
 unavailable during a deployment. The migration in
@@ -121,6 +121,28 @@ signed-in client can otherwise write its own rows directly through PostgREST and
 skip the API checks. If the watchlist write fails, the row is reverted rather
 than left looking saved and the panel footer reports local-only state instead of
 claiming the account is in sync.
+
+### Quantamental stock map
+
+`QUANTAMENTAL` is a decision-support scatter of the curated IDX universe. It
+ranks each stock against the median of its sector on a valuation basis chosen by
+its financial profile, then plots that peer-relative gap against six-month price
+momentum (three months when six is unavailable). Financials use P/B per ROE
+point, profitable non-financials use trailing P/E, loss-makers use market cap
+divided by revenue, and P/B is the fallback when no earnings multiple is
+available or ROE is near zero. Positive gap
+means cheaper than peers. Bubbles are sized by market cap; shape encodes the
+valuation basis; faded bubbles are thinly traded (ten-day turnover below IDR
+5bn). Stocks without a comparable valuation or momentum are never assigned zero:
+they move to an explicit "no valuation" list or the no-momentum strip.
+
+`GET /api/quantamental` is authenticated and rate limited. It fetches the whole
+universe in one TradingView scanner request, caches the result for 15 minutes,
+returns `status: "partial"` when the scanner omits names, and falls back to a
+`status: "stale"` map rather than mixing old and new values. With no successful
+map it returns `503` and `status: "unavailable"`. The model and its thresholds
+live in `lib/quantamental.ts`; the chart is
+`components/QuantamentalMap.tsx`.
 
 ### Plans and pricing
 

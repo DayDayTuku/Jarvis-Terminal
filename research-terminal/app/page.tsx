@@ -7,6 +7,7 @@ import StockSearch from '../components/StockSearch';
 import PanelBoundary from '../components/PanelBoundary';
 import NewsIntelligence from '../components/NewsIntelligence';
 import QuantLab from '../components/QuantLab';
+import QuantamentalMap from '../components/QuantamentalMap';
 import PortfolioStressLab from '../components/PortfolioStressLab';
 import FeedbackModal from '../components/FeedbackModal';
 import FeedbackInbox from '../components/FeedbackInbox';
@@ -27,7 +28,7 @@ import { trackEvent } from '../lib/analytics-client';
 const StockDetailModal = dynamic(() => import('../components/StockDetailModal'), { ssr: false });
 
 
-type Section = 'OVERVIEW' | 'MACRO' | 'MARKETS' | 'NEWS' | 'QUANT LAB' | 'PORTFOLIO' | 'RISK MAP' | 'RESEARCH PAPERS' | 'SEASONALITY' | 'MARKET PARTICIPANT';
+type Section = 'OVERVIEW' | 'MACRO' | 'MARKETS' | 'NEWS' | 'QUANT LAB' | 'QUANTAMENTAL' | 'PORTFOLIO' | 'RISK MAP' | 'RESEARCH PAPERS' | 'SEASONALITY' | 'MARKET PARTICIPANT';
 type RegimePoint = { date: string; growth: number; inflation: number };
 type FredData = { status: string; freshness: string; indicators: Array<{ name: string; actual: number; mean: number; z: number; unit: string }>; yields: Array<{ maturity: string; value: number }>; regime: RegimePoint[] };
 type Constituent = { ticker: string; price: number; daily: number | null; weekly: number | null };
@@ -45,6 +46,7 @@ const navigation = [
   { label: 'MARKETS', icon: '◇', group: 'MONITOR' },
   { label: 'NEWS', icon: '◫', group: 'MONITOR' },
   { label: 'QUANT LAB', icon: 'Σ', group: 'DECIDE' },
+  { label: 'QUANTAMENTAL', icon: '◉', group: 'DECIDE' },
   { label: 'PORTFOLIO', icon: '◈', group: 'DECIDE' },
   { label: 'RISK MAP', icon: '⌖', group: 'DECIDE' },
   { label: 'RESEARCH PAPERS', icon: '▤', group: 'RESEARCH' },
@@ -57,15 +59,16 @@ const navDesc: Record<(typeof navigation)[number]['label'], string> = {
   MARKETS: 'Daily & weekly performance',
   NEWS: 'Ranked by decision impact',
   'QUANT LAB': 'Cross-asset & IDX signals',
+  QUANTAMENTAL: 'Valuation vs momentum map',
   PORTFOLIO: 'Exposure and stress',
   'RISK MAP': 'Chokepoints, conflict, hazards',
   'RESEARCH PAPERS': 'Institutional library',
   SEASONALITY: 'Monthly return tendencies',
   'MARKET PARTICIPANT': 'CFTC positioning',
 };
-const navBadge = (label: Section) => (label === 'QUANT LAB' ? 'SETUPS · BETA' : label === 'NEWS' || label === 'PORTFOLIO' ? `${label} · BETA` : label);
+const navBadge = (label: Section) => (label === 'QUANT LAB' ? 'SETUPS · BETA' : label === 'QUANTAMENTAL' ? 'QUANTAMENTAL · BETA' : label === 'NEWS' || label === 'PORTFOLIO' ? `${label} · BETA` : label);
 /** Number-key shortcut for a nav slot: 1..9, then 0 for the tenth. */
-const navShortcut = (index: number) => (index === 9 ? '0' : String(index + 1));
+const navShortcut = (index: number) => (index === 9 ? '0' : index < 9 ? String(index + 1) : '—');
 
 function sectionSlug(section: Section) {
   return section.toLowerCase().replace(/\s+/g, "-");
@@ -784,6 +787,8 @@ export default function Home() {
 
         {active === 'QUANT LAB' && <QuantLab markets={markets} fred={fred} onSelectStock={openStockDetail} />}
 
+        {active === 'QUANTAMENTAL' && <QuantamentalMap onSelectStock={openStockDetail} />}
+
         {active === 'PORTFOLIO' && <PortfolioStressLab />}
 
         {active === 'RISK MAP' && <RiskMap />}
@@ -1012,4 +1017,4 @@ function countryCode(country:string){const value=country.toLowerCase();return va
 function monthName(month:number){return ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'][month-1]}
 function compact(value:number){const absolute=Math.abs(value);const sign=value<0?'-':'';return absolute>=1_000_000?`${sign}${(absolute/1_000_000).toFixed(1)}M`:absolute>=1_000?`${sign}${(absolute/1_000).toFixed(1)}K`:`${Math.round(value)}`}
 function titleCase(value:string){return value.toLowerCase().replace(/\b\w/g,(x)=>x.toUpperCase())}
-function sectionDescription(section:Section){return ({OVERVIEW:'The readings that need attention before the next research session.',MACRO:'Live FRED signals for growth, inflation and the Treasury curve.',MARKETS:'Daily and weekly market performance with the IDX watchlist.',NEWS:'Beta · IDX, macro, and commodity coverage ranked by decision impact.','QUANT LAB':'Beta · Transparent cross-asset and IDX breadth signals.',PORTFOLIO:'Beta · Personal factor exposure, concentration, and scenario stress testing.','RISK MAP':'Where the world is fragile: market-moving chokepoints, active conflict zones and live hazard pins.','RESEARCH PAPERS':'Institutional research library with admin-managed publication.',SEASONALITY:'Historical monthly return tendencies across selected IDX names and the benchmark.','MARKET PARTICIPANT':'Weekly CFTC positioning by trader category for major futures markets.'})[section]}
+function sectionDescription(section:Section){return ({OVERVIEW:'The readings that need attention before the next research session.',MACRO:'Live FRED signals for growth, inflation and the Treasury curve.',MARKETS:'Daily and weekly market performance with the IDX watchlist.',NEWS:'Beta · IDX, macro, and commodity coverage ranked by decision impact.','QUANT LAB':'Beta · Transparent cross-asset and IDX breadth signals.','QUANTAMENTAL':'Beta · Peer-relative valuation against six-month momentum, with every missing input shown explicitly.',PORTFOLIO:'Beta · Personal factor exposure, concentration, and scenario stress testing.','RISK MAP':'Where the world is fragile: market-moving chokepoints, active conflict zones and live hazard pins.','RESEARCH PAPERS':'Institutional research library with admin-managed publication.',SEASONALITY:'Historical monthly return tendencies across selected IDX names and the benchmark.','MARKET PARTICIPANT':'Weekly CFTC positioning by trader category for major futures markets.'})[section]}
