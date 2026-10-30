@@ -51,14 +51,19 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Enter a valid IDX ticker.' }, { status: 400 });
     }
 
-    const { count, error: countError } = await supabase
+    const { data: saved, error: countError } = await supabase
       .from('jarvis_watchlist')
-      .select('ticker', { count: 'exact', head: true })
+      .select('ticker')
       .eq('user_id', user.id);
     if (countError) {
       return NextResponse.json({ error: 'Watchlist storage is not configured yet.' }, { status: 503 });
     }
-    if ((count ?? 0) >= MAX_WATCHLIST_TICKERS) {
+    const savedTickers = saved ?? [];
+    // Re-saving a ticker is an idempotent success, even at the cap.
+    if (savedTickers.some((row) => row.ticker === ticker)) {
+      return NextResponse.json({ ok: true, ticker });
+    }
+    if (savedTickers.length >= MAX_WATCHLIST_TICKERS) {
       return NextResponse.json(
         { error: `A watchlist can hold at most ${MAX_WATCHLIST_TICKERS} tickers.` },
         { status: 409 },
@@ -70,6 +75,13 @@ export async function POST(request: NextRequest) {
       .insert({ user_id: user.id, ticker });
 
     // 23505 means the ticker is already saved; that is an idempotent success.
+    // 23514 is the database-side cap firing after a concurrent insert won the race.
+    if (error && error.code === '23514') {
+      return NextResponse.json(
+        { error: `A watchlist can hold at most ${MAX_WATCHLIST_TICKERS} tickers.` },
+        { status: 409 },
+      );
+    }
     if (error && error.code !== '23505') {
       console.error('Watchlist insert failed:', error.message);
       return NextResponse.json({ error: 'Unable to add ticker.' }, { status: 500 });

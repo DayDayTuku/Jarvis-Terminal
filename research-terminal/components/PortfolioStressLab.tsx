@@ -143,7 +143,7 @@ export default function PortfolioStressLab() {
         credentials: "same-origin",
         body: JSON.stringify({ positions }),
       })
-        .then((response) => { if (response.ok) setSyncStatus("synced"); })
+        .then((response) => setSyncStatus(response.ok ? "synced" : "local"))
         .catch(() => setSyncStatus("local"));
       const response = await fetch("/api/portfolio-stress", {
         method: "POST",

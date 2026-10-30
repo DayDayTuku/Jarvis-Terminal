@@ -108,12 +108,19 @@ terminal still works.
 Authenticated workspace endpoints:
 
 - `GET/POST/DELETE /api/watchlist`
+- `GET /api/watchlist/quotes` (prices for saved tickers; private, uncached)
 - `GET/PUT /api/portfolio`
 - `GET/POST/DELETE /api/notes`
 - `GET/PUT /api/preferences`
 
 Writes are rate limited. Notes are capped at 2,000 characters, portfolios at 50
-positions, and watchlists at 50 tickers.
+positions, and watchlists at 50 tickers. The caps for watchlists, portfolio
+payloads, visit snapshots, and event metadata are also enforced in Postgres by
+`supabase/migrations/20261026000000_harden_workspace_constraints.sql`, because a
+signed-in client can otherwise write its own rows directly through PostgREST and
+skip the API checks. If the watchlist write fails, the row is reverted rather
+than left looking saved and the panel footer reports local-only state instead of
+claiming the account is in sync.
 
 ### Plans and pricing
 

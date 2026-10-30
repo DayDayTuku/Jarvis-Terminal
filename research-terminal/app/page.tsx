@@ -1,6 +1,6 @@
 'use client';
 
-import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Image from 'next/image';
 import dynamic from 'next/dynamic';
 import StockSearch from '../components/StockSearch';
@@ -285,6 +285,27 @@ export default function Home() {
   const [notification, setNotification] = useState<string | null>(null);
   const [modalTicker, setModalTicker] = useState<string | null>(null);
   const [customWatchlist, setCustomWatchlist] = useState<Array<{ ticker: string; price: number; change: number }>>([]);
+  const [watchlistSync, setWatchlistSync] = useState<'idle' | 'syncing' | 'synced' | 'local'>('idle');
+
+  // Saved tickers outside the fixed starter list have no price until this
+  // endpoint answers. Failures are left as "unavailable", never as zero.
+  const refreshWatchQuotes = useCallback(async () => {
+    try {
+      const response = await fetch('/api/watchlist/quotes', { credentials: 'same-origin' });
+      if (!response.ok) return;
+      const data = await response.json() as { quotes?: Array<{ ticker: string; price: number; change: number }> };
+      const quotes = Array.isArray(data.quotes) ? data.quotes : [];
+      if (!quotes.length) return;
+      const byTicker = new Map<string, { ticker: string; price: number; change: number }>();
+      for (const quote of quotes) {
+        const ticker = normalizeTicker(quote.ticker);
+        if (ticker) byTicker.set(ticker, quote);
+      }
+      setCustomWatchlist((current) => current.map((item) => byTicker.get(item.ticker) ?? item));
+    } catch {
+      // Quotes are optional; each row shows an explicit unavailable state.
+    }
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -305,6 +326,7 @@ export default function Home() {
       .then((response) => (response.ok ? response.json() : Promise.reject()))
       .then(async (data: { tickers?: string[] }) => {
         let tickers = Array.isArray(data.tickers) ? data.tickers : [];
+        let sync: 'synced' | 'local' = 'synced';
         if (!tickers.length && localTickers.length) {
           // One-time migration from the browser-only watchlist. Keep the local
           // copy if any write fails so a partial migration cannot lose data.
@@ -317,6 +339,8 @@ export default function Home() {
           tickers = localTickers;
           if (writes.every((write) => write.status === 'fulfilled' && write.value.ok)) {
             try { localStorage.removeItem('jarvis_watchlist'); } catch {}
+          } else {
+            sync = 'local';
           }
         }
         if (!cancelled) {
@@ -325,6 +349,8 @@ export default function Home() {
             setWatchlistManaged(true);
             try { localStorage.setItem('jarvis_watchlist_managed', '1'); } catch {}
           }
+          setWatchlistSync(sync);
+          if (tickers.length && sync === 'synced') void refreshWatchQuotes();
         }
       })
       .catch(() => {
@@ -334,11 +360,12 @@ export default function Home() {
             setWatchlistManaged(true);
             try { localStorage.setItem('jarvis_watchlist_managed', '1'); } catch {}
           }
+          setWatchlistSync('local');
         }
       });
 
     return () => { cancelled = true; };
-  }, []);
+  }, [refreshWatchQuotes]);
 
   const openStockDetail = (ticker: string) => {
     if (!modalTicker) {
@@ -384,6 +411,10 @@ export default function Home() {
       announce('INVALID TICKER');
       return;
     }
+    if (customWatchlist.some((item) => item.ticker === ticker)) {
+      announce(`${ticker} IS ALREADY IN YOUR WATCHLIST`);
+      return;
+    }
     setWatchlistManaged(true);
     try { localStorage.setItem('jarvis_watchlist_managed', '1'); } catch {}
     setCustomWatchlist((prev) => {
@@ -392,6 +423,7 @@ export default function Home() {
       mirrorWatchlist(updated);
       return updated;
     });
+    setWatchlistSync('syncing');
     announce(`ADDED ${ticker} TO WATCHLIST`);
     trackEvent('watchlist_add', { ticker });
     void fetch('/api/watchlist', {
@@ -399,12 +431,31 @@ export default function Home() {
       headers: { 'Content-Type': 'application/json' },
       credentials: 'same-origin',
       body: JSON.stringify({ ticker }),
-    }).catch(() => undefined);
+    })
+      .then(async (response) => {
+        if (!response.ok) {
+          const payload = await response.json().catch(() => null) as { error?: string } | null;
+          throw new Error(payload?.error ?? 'Watchlist add rejected');
+        }
+        setWatchlistSync('synced');
+        void refreshWatchQuotes();
+      })
+      .catch((reason: unknown) => {
+        // Do not leave a ticker that only exists on this device looking saved.
+        setCustomWatchlist((prev) => {
+          const updated = prev.filter((item) => item.ticker !== ticker);
+          mirrorWatchlist(updated);
+          return updated;
+        });
+        setWatchlistSync('local');
+        announce(reason instanceof Error ? reason.message.toUpperCase() : `COULD NOT SAVE ${ticker}`);
+      });
   };
 
   const removeWatchlistTicker = (rawTicker: string) => {
     const ticker = normalizeTicker(rawTicker);
     if (!ticker) return;
+    const removed = customWatchlist.find((item) => item.ticker === ticker);
     setWatchlistManaged(true);
     try { localStorage.setItem('jarvis_watchlist_managed', '1'); } catch {}
     setCustomWatchlist((prev) => {
@@ -412,12 +463,29 @@ export default function Home() {
       mirrorWatchlist(updated);
       return updated;
     });
+    setWatchlistSync('syncing');
     announce(`REMOVED ${ticker} FROM WATCHLIST`);
     trackEvent('watchlist_remove', { ticker });
     void fetch(`/api/watchlist?ticker=${encodeURIComponent(ticker)}`, {
       method: 'DELETE',
       credentials: 'same-origin',
-    }).catch(() => undefined);
+    })
+      .then((response) => {
+        if (!response.ok) throw new Error('Watchlist remove rejected');
+        setWatchlistSync('synced');
+      })
+      .catch(() => {
+        if (removed) {
+          setCustomWatchlist((prev) => {
+            if (prev.some((item) => item.ticker === ticker)) return prev;
+            const updated = [...prev, removed];
+            mirrorWatchlist(updated);
+            return updated;
+          });
+        }
+        setWatchlistSync('local');
+        announce(`COULD NOT REMOVE ${ticker} · CHANGE REVERTED`);
+      });
   };
 
   const handleAddToWatchlist = (rawTicker: string) => {
@@ -708,9 +776,9 @@ export default function Home() {
 
         {active === 'MARKETS' && (markets ? <section className="dashboard-grid markets-grid">
           <article className="panel heatmap-panel"><PanelHead index="01" title="IDX SECTOR HEATMAP"><div className="range-switcher">{(['1D','1W'] as const).map((item) => <button key={item} onClick={() => setHeatPeriod(item)} className={heatPeriod === item ? 'active' : ''}>{item}</button>)}</div></PanelHead><div className="heatmap">{heatmap.map((item, index) => { const value = heatPeriod === '1D' ? item.daily : item.weekly; return <button key={item.label} onClick={() => setSelectedSector(item.label)} className={`heat-tile ${['xl','lg','md','lg','sm','sm','md','sm','md','lg','md'][index]} ${value === null ? 'no-data' : heatTone(value)} ${item.confidence === 'low' ? 'low-confidence' : ''} ${selectedHeat?.label === item.label ? 'selected' : ''}`}><span>{item.label}</span><strong>{value === null ? '—' : `${signed(value)}%`}</strong><small>{item.confidence === 'low' ? `LOW CONFIDENCE · ${item.validCount ?? 0}/${item.memberCount ?? 0} VALID` : 'VIEW MEMBERS →'}</small></button>; })}</div>{selectedHeat && <div className="heat-drilldown"><div><span>SELECTED SECTOR</span><strong>{selectedHeat.label}</strong><small>SIMPLE AVG · {selectedHeat.validCount ?? selectedHeat.constituents.length}/{selectedHeat.memberCount ?? selectedHeat.constituents.length} VALID</small></div>{selectedHeat.constituents.length ? selectedHeat.constituents.map((stock) => { const value = heatPeriod === '1D' ? stock.daily : stock.weekly; return <div key={stock.ticker} onClick={() => openStockDetail(stock.ticker)} style={{cursor:'pointer'}} title={`Click to view ${stock.ticker} fundamentals`}><span>{stock.ticker}</span><strong>{stock.price.toLocaleString('en-US',{maximumFractionDigits:2})}</strong><small className={value === null ? '' : value >= 0 ? 'positive' : 'negative'}>{value === null ? 'NO VALID RETURN' : `${signed(value)}%`}</small></div>}) : <p>Constituent feed unavailable for this sector.</p>}</div>}<PanelFoot left="SIMPLE AVERAGE OF VALID IDX-IC CONSTITUENT BASKETS" right={`${markets.status.toUpperCase()} · YAHOO UPSTREAM`} /></article>
-          <Watchlist watchlist={watchlist} live onSelectStock={(t) => openStockDetail(t)} onAdd={addWatchlistTicker} onRemove={removeWatchlistTicker} managed={watchlistManaged || customWatchlist.length > 0} />
+          <Watchlist watchlist={watchlist} live onSelectStock={(t) => openStockDetail(t)} onAdd={addWatchlistTicker} onRemove={removeWatchlistTicker} managed={watchlistManaged || customWatchlist.length > 0} syncState={watchlistSync} />
           <Calendar data={calendar} />
-        </section> : <section className="dashboard-grid markets-grid"><article className="panel wide-panel"><FeedUnavailable title="IDX MARKET FEED UNAVAILABLE" body="The market upstream did not return sector or price data. Price cells are withheld so stale or synthetic values cannot be mistaken for live quotes." /></article><Watchlist watchlist={watchlist} live={false} onSelectStock={(t) => openStockDetail(t)} onAdd={addWatchlistTicker} onRemove={removeWatchlistTicker} managed={watchlistManaged || customWatchlist.length > 0} /><Calendar data={calendar} /></section>)}
+        </section> : <section className="dashboard-grid markets-grid"><article className="panel wide-panel"><FeedUnavailable title="IDX MARKET FEED UNAVAILABLE" body="The market upstream did not return sector or price data. Price cells are withheld so stale or synthetic values cannot be mistaken for live quotes." /></article><Watchlist watchlist={watchlist} live={false} onSelectStock={(t) => openStockDetail(t)} onAdd={addWatchlistTicker} onRemove={removeWatchlistTicker} managed={watchlistManaged || customWatchlist.length > 0} syncState={watchlistSync} /><Calendar data={calendar} /></section>)}
 
         {active === 'NEWS' && <NewsIntelligence />}
 
@@ -843,8 +911,17 @@ function CotTable({series}:{series:CotSeries}){
 }
 function FeedUnavailable({title,body}:{title:string;body:string}){return <div className="feed-unavailable"><span>CONNECTION STATUS</span><strong>{title}</strong><p>{body}</p></div>}
 
-function Watchlist({watchlist,live,onSelectStock,onAdd,onRemove,managed}:{watchlist:Array<{ticker:string;price:number;change:number}>;live:boolean;onSelectStock?:(ticker:string)=>void;onAdd?:(ticker:string)=>void;onRemove?:(ticker:string)=>void;managed?:boolean}) {
+function Watchlist({watchlist,live,onSelectStock,onAdd,onRemove,managed,syncState}:{watchlist:Array<{ticker:string;price:number;change:number}>;live:boolean;onSelectStock?:(ticker:string)=>void;onAdd?:(ticker:string)=>void;onRemove?:(ticker:string)=>void;managed?:boolean;syncState?:'idle'|'syncing'|'synced'|'local'}) {
   const [showSearch, setShowSearch] = useState(false);
+  const syncLabel = !managed
+    ? (live ? 'LIVE · DAILY' : 'FEED OFFLINE')
+    : syncState === 'synced'
+      ? 'SYNCED TO ACCOUNT'
+      : syncState === 'syncing'
+        ? 'SYNCING TO ACCOUNT'
+        : syncState === 'local'
+          ? 'LOCAL ONLY · NOT SYNCED'
+          : 'CHECKING ACCOUNT SYNC';
   return (
     <article className="panel watch-panel">
       <PanelHead index="01" title="IDX WATCHLIST">
@@ -872,8 +949,19 @@ function Watchlist({watchlist,live,onSelectStock,onAdd,onRemove,managed}:{watchl
       {watchlist.length === 0 && (
         <p className="watch-empty">No tickers saved yet. Add one to make this your own.</p>
       )}
-      {watchlist.map((stock)=><div className="watch-table watch-row" key={stock.ticker} style={{cursor:'pointer'}} onClick={()=>onSelectStock?.(stock.ticker)} title={`Click to view ${stock.ticker} fundamentals`}><strong style={{color:'#48a6ff'}}>{stock.ticker}</strong><span>{live && stock.price ? stock.price.toLocaleString('en-US',{maximumFractionDigits:2}) : '—'}</span><span className={!live ? '' : stock.change>=0?'positive':'negative'}>{live ? `${signed(stock.change)}%` : '—'}</span>{managed && <button type="button" className="watch-remove" aria-label={`Remove ${stock.ticker} from watchlist`} onClick={(event) => { event.stopPropagation(); onRemove?.(stock.ticker); }}>×</button>}</div>)}
-      <PanelFoot left={managed ? 'CLICK TICKER FOR DETAIL · × TO REMOVE' : 'STARTER LIST · ADD A TICKER TO PERSONALIZE'} right={managed ? 'SYNCED TO ACCOUNT' : live?'LIVE · DAILY':'FEED OFFLINE'} />
+      {watchlist.map((stock) => {
+        const quoted = live && stock.price > 0;
+        const unavailable = quoted ? undefined : 'No live quote for this ticker yet — it may still be loading or unavailable upstream';
+        return (
+          <div className="watch-table watch-row" key={stock.ticker} style={{cursor:'pointer'}} onClick={()=>onSelectStock?.(stock.ticker)} title={`Click to view ${stock.ticker} fundamentals`}>
+            <strong style={{color:'#48a6ff'}}>{stock.ticker}</strong>
+            <span title={unavailable} aria-label={unavailable}>{quoted ? stock.price.toLocaleString('en-US',{maximumFractionDigits:2}) : '—'}</span>
+            <span className={quoted ? (stock.change >= 0 ? 'positive' : 'negative') : ''} title={unavailable}>{quoted ? `${signed(stock.change)}%` : '—'}</span>
+            {managed && <button type="button" className="watch-remove" aria-label={`Remove ${stock.ticker} from watchlist`} onClick={(event) => { event.stopPropagation(); onRemove?.(stock.ticker); }}>×</button>}
+          </div>
+        );
+      })}
+      <PanelFoot left={managed ? 'CLICK TICKER FOR DETAIL · × TO REMOVE' : 'STARTER LIST · ADD A TICKER TO PERSONALIZE'} right={syncLabel} />
     </article>
   );
 }

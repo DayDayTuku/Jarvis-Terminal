@@ -86,6 +86,11 @@ export async function proxy(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser();
 
   if (!user) {
+    // API clients need a real 401. A redirect to the access page would be
+    // followed by fetch() and returned as HTML 200, which looks like success.
+    if (path.startsWith('/api/')) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
     const destination = request.nextUrl.clone();
     destination.pathname = '/access';
     destination.searchParams.set('returnTo', path);
