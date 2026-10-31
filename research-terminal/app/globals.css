@@ -1278,8 +1278,15 @@ html[data-theme=light] .paper-upload input[type='file']::file-selector-button:ho
     flex: 0 0 20px;
     text-align: center;
   }
-  .nav-label {
+  /* The base `.side-nav nav button span` icon rule is more specific than a
+     bare `.nav-label`, so it would render every label at 18px and overflow
+     the rail. Match its specificity to keep labels at the terminal size. */
+  .side-nav nav button .nav-label,
+  .side-tools button .nav-label,
+  .sidebar-feedback .nav-label {
     display: inline;
+    flex: 1 1 auto;
+    min-width: 0;
     overflow: hidden;
     color: currentColor;
     font: 650 8px/1.2 var(--font-geist-mono), monospace;
@@ -1342,7 +1349,7 @@ html[data-theme=light] .paper-upload input[type='file']::file-selector-button:ho
 .data-status-bar > small { color: #536171; font-size: 7px; letter-spacing: .06em; white-space: nowrap; }
 
 .visit-strip { display: grid; grid-template-columns: 1.2fr repeat(3, minmax(0, 1fr)); border: 1px solid var(--line-strong); background: #070a0f; margin: 0 0 12px; }
-.visit-stamp, .visit-delta { padding: 11px 13px; border-right: 1px solid var(--line); min-width: 0; }
+.visit-stamp, .visit-delta { padding: 11px 13px; border-right: 1px solid var(--line); min-width: 0; background: transparent; }
 .visit-delta:last-child { border-right: 0; }
 .visit-stamp span, .visit-delta span { display: block; color: var(--muted); font-size: 7px; letter-spacing: .09em; }
 .visit-stamp strong { display: block; margin-top: 4px; color: var(--blue); font-size: 12px; }
@@ -1598,3 +1605,301 @@ html[data-theme=light] .paper-upload input[type='file']::file-selector-button:ho
   .qm-chart-hint { font-size: 6.5px; }
   .qm-key-quads { grid-template-columns: 1fr; }
 }
+
+/* Light theme: navigation, decision brief, and new surfaces.
+   ThemeToggle owns the generic light variables; these target the components
+   added after that base so dark-only utility classes cannot leak through. */
+html[data-theme=light] .side-nav nav button.active {
+  color: var(--blue) !important;
+  background: #e6f1f8 !important;
+  border-left-color: var(--blue) !important;
+}
+html[data-theme=light] .side-nav nav button:hover,
+html[data-theme=light] .side-nav nav button:focus-visible {
+  color: var(--text) !important;
+  background: var(--panel-raised) !important;
+}
+html[data-theme=light] .visit-strip {
+  background: var(--panel) !important;
+  border-color: var(--line-strong) !important;
+}
+html[data-theme=light] .visit-stamp,
+html[data-theme=light] .visit-delta { border-color: var(--line) !important; }
+html[data-theme=light] .visit-delta.neutral strong { color: var(--muted) !important; }
+html[data-theme=light] .data-status-bar {
+  background: var(--panel) !important;
+  border-color: var(--line) !important;
+  border-left-color: var(--positive) !important;
+}
+html[data-theme=light] .data-status-bar.degraded {
+  background: #fff7ed !important;
+  border-left-color: var(--orange) !important;
+}
+html[data-theme=light] .data-status-feed {
+  background: var(--panel-raised) !important;
+  border-color: var(--line) !important;
+  color: var(--muted) !important;
+}
+html[data-theme=light] .data-status-bar > small { color: var(--muted) !important; }
+html[data-theme=light] .watch-search {
+  background: var(--panel-raised) !important;
+  border-color: var(--line) !important;
+}
+html[data-theme=light] .watch-add:hover,
+html[data-theme=light] .watch-add[aria-expanded='true'] {
+  background: #e6f1f8 !important;
+  color: var(--blue) !important;
+}
+html[data-theme=light] .watch-remove:hover {
+  background: #fdebed !important;
+  color: var(--negative) !important;
+}
+html[data-theme=light] .command-trigger {
+  background: var(--panel) !important;
+  border-color: var(--line) !important;
+  color: var(--muted) !important;
+}
+html[data-theme=light] .command-trigger:hover {
+  background: #e6f1f8 !important;
+  color: var(--blue) !important;
+}
+
+/* Quantamental map: light chart palette and rail surfaces. */
+.qm-panel {
+  --qm-canvas: #050505;
+  --qm-grid: #19212a;
+  --qm-grid-strong: #33404f;
+  --qm-axis: #778596;
+  --qm-label: #6f7d8d;
+  --qm-muted: #5c6878;
+  --qm-point: #aab6c4;
+  --qm-ink: #e8edf3;
+  --qm-strip: #0a0f14;
+  --qm-strip-line: #242424;
+}
+html[data-theme=light] .qm-panel {
+  --qm-canvas: #fffefa;
+  --qm-grid: #e8e5dd;
+  --qm-grid-strong: #b9b4a9;
+  --qm-axis: #65717d;
+  --qm-label: #65717d;
+  --qm-muted: #7a8794;
+  --qm-point: #526173;
+  --qm-ink: #18222d;
+  --qm-strip: #f4f2ec;
+  --qm-strip-line: #c5bfb3;
+}
+html[data-theme=light] .qm-readout,
+html[data-theme=light] .qm-key,
+html[data-theme=light] .qm-method,
+html[data-theme=light] .qm-unplotted {
+  background: var(--panel-raised) !important;
+  border-color: var(--line) !important;
+  color: var(--text) !important;
+}
+html[data-theme=light] .qm-readout dl { background: var(--line) !important; }
+html[data-theme=light] .qm-readout dl > div { background: var(--panel-raised) !important; }
+html[data-theme=light] .qm-method p,
+html[data-theme=light] .qm-unplotted p { color: var(--muted) !important; }
+html[data-theme=light] .qm-notice {
+  background: #e6f1f8 !important;
+  color: var(--blue) !important;
+  border-color: var(--line) !important;
+}
+html[data-theme=light] .qm-warning {
+  background: #fff7ed !important;
+  border-left-color: var(--orange) !important;
+  color: #8a5518 !important;
+}
+html[data-theme=light] .qm-region-card {
+  background: #fffefaee !important;
+  color: var(--text) !important;
+  border-color: var(--blue) !important;
+  box-shadow: 0 10px 30px #1f29371f !important;
+}
+html[data-theme=light] .qm-region-card p { color: var(--muted) !important; }
+html[data-theme=light] .qm-region-card button {
+  background: var(--panel) !important;
+  color: var(--text) !important;
+  border-color: var(--line-strong) !important;
+}
+html[data-theme=light] .qm-actions button:hover {
+  background: var(--panel-raised) !important;
+  border-color: var(--blue) !important;
+  color: var(--blue) !important;
+}
+html[data-theme=light] .qm-actions button.active {
+  background: var(--blue) !important;
+  border-color: var(--blue) !important;
+  color: #ffffff !important;
+}
+html[data-theme=light] .qm-panel .quiet-button {
+  background: var(--panel-raised) !important;
+  border-color: var(--line-strong) !important;
+  color: var(--text) !important;
+}
+html[data-theme=light] .qm-tone-muted { color: var(--muted) !important; }
+html[data-theme=light] .qm-status-stale {
+  color: var(--orange) !important;
+  border-color: color-mix(in srgb, var(--orange) 42%, transparent) !important;
+}
+
+/* --------------------------------------------------------------------------
+   Light theme audit: residual dark-only surfaces and low-contrast text.
+   These components were authored against the dark palette and are not
+   covered by ThemeToggle's generic panel rules.
+   -------------------------------------------------------------------------- */
+html[data-theme=light] :is(.top-actions button,.quiet-button) {
+  background: var(--panel-raised) !important;
+  border-color: var(--line-strong) !important;
+  color: var(--text) !important;
+}
+html[data-theme=light] :is(.top-actions button,.quiet-button):hover {
+  background: #e6f1f8 !important;
+  border-color: var(--blue) !important;
+  color: var(--blue) !important;
+}
+html[data-theme=light] .nav-strip {
+  background: color-mix(in srgb, var(--panel) 92%, transparent) !important;
+  border-color: var(--line) !important;
+}
+html[data-theme=light] .nav-strip button { color: var(--muted) !important; }
+html[data-theme=light] .nav-strip button:hover { color: var(--text) !important; }
+html[data-theme=light] .nav-strip button.active {
+  color: var(--blue) !important;
+  background: linear-gradient(to top, #1267a81a, transparent) !important;
+}
+
+/* Low-contrast copy that hardcodes a near-white grey */
+html[data-theme=light] :is(.metric-card p,.thesis-content p,.season-summary p,
+  .connection-list span,.matrix-title p,.relationship-note p,.release-row time span,
+  .onboarding-note,.onboarding-actions>span,.onboarding-step p,
+  .plan-summary small,.plan-note,.pricing-note,.pricing-footer,
+  .pricing-hero p,.pricing-card>header p,.pricing-faq p,.pricing-card li,
+  .risk-popup>p,.risk-block-note) {
+  color: var(--muted) !important;
+}
+html[data-theme=light] :is(.watch-table strong,.date-rule strong,.release-row time b,.risk-quake span) {
+  color: var(--text) !important;
+}
+html[data-theme=light] .relationship-note > b { color: var(--positive) !important; }
+
+/* News */
+html[data-theme=light] :is(.news-search,.season-export) {
+  background: var(--panel) !important;
+  border-color: var(--line-strong) !important;
+  color: var(--text) !important;
+}
+html[data-theme=light] .news-item { border-color: var(--line) !important; }
+html[data-theme=light] .news-item:hover { background: var(--panel-raised) !important; }
+html[data-theme=light] .news-save { border-left-color: var(--line) !important; color: var(--muted) !important; }
+html[data-theme=light] .news-save:hover,
+html[data-theme=light] .news-save.saved { color: var(--orange) !important; background: #fff7ed !important; }
+
+/* Onboarding */
+html[data-theme=light] .onboarding-card {
+  background: var(--panel) !important;
+  border-color: var(--line-strong) !important;
+  box-shadow: 0 34px 100px #1f293733 !important;
+}
+html[data-theme=light] .onboarding-head {
+  background: linear-gradient(130deg, #f4f8fb, #eef2f5) !important;
+  border-color: var(--line) !important;
+}
+html[data-theme=light] .onboarding-progress i { background: var(--line-strong) !important; }
+html[data-theme=light] :is(.onboarding-tickers button,.onboarding-footer button) {
+  background: var(--panel-raised) !important;
+  border-color: var(--line-strong) !important;
+  color: var(--text) !important;
+}
+html[data-theme=light] .onboarding-tickers button span { color: var(--muted) !important; }
+html[data-theme=light] .onboarding-tickers button.selected {
+  background: #e6f1f8 !important;
+  border-color: var(--blue) !important;
+  color: var(--blue) !important;
+}
+html[data-theme=light] .onboarding-tickers button.selected span { color: var(--positive) !important; }
+html[data-theme=light] .onboarding-footer { background: var(--panel-raised) !important; }
+html[data-theme=light] .onboarding-footer .primary-button {
+  background: var(--blue) !important;
+  border-color: var(--blue) !important;
+  color: #ffffff !important;
+}
+
+/* Command palette */
+html[data-theme=light] .command-palette {
+  background: var(--panel) !important;
+  border-color: var(--line-strong) !important;
+  box-shadow: 0 34px 100px #1f293733 !important;
+}
+html[data-theme=light] .command-results button.active { background: #e6f1f8 !important; }
+html[data-theme=light] :is(.command-input-row kbd,.command-footer kbd) {
+  border-color: var(--line-strong) !important;
+  color: var(--muted) !important;
+}
+html[data-theme=light] .command-results button b { color: var(--muted) !important; }
+
+/* Plan + pricing */
+html[data-theme=light] .plan-summary {
+  background: var(--panel) !important;
+  border-color: var(--line) !important;
+}
+html[data-theme=light] .plan-badge { border-color: var(--line-strong) !important; }
+html[data-theme=light] .plan-link:hover { background: #e6f1f8 !important; }
+html[data-theme=light] .pricing-shell {
+  background: radial-gradient(circle at 12% 0%, #dcebf7, transparent 34%), var(--bg) !important;
+  color: var(--text) !important;
+}
+html[data-theme=light] .pricing-card {
+  background: var(--panel) !important;
+  border-color: var(--line) !important;
+}
+html[data-theme=light] .pricing-card.pro {
+  background: linear-gradient(160deg, #e6f1f8, #fffefa 60%) !important;
+  border-color: var(--blue) !important;
+  box-shadow: 0 0 40px #1267a80f !important;
+}
+html[data-theme=light] .pricing-promise span { border-color: var(--line-strong) !important; }
+html[data-theme=light] .pricing-cta { border-color: var(--line-strong) !important; color: var(--text) !important; }
+html[data-theme=light] .pricing-cta:hover:not(:disabled) { background: #e6f1f8 !important; color: var(--blue) !important; }
+html[data-theme=light] .pricing-cta.primary { background: var(--blue) !important; border-color: var(--blue) !important; color: #ffffff !important; }
+html[data-theme=light] .pricing-cta.primary:hover:not(:disabled) { background: #0f5c96 !important; color: #ffffff !important; }
+html[data-theme=light] .pricing-cta:disabled { color: var(--muted) !important; border-color: var(--line) !important; }
+html[data-theme=light] .pricing-faq { background: var(--line) !important; border-color: var(--line) !important; }
+html[data-theme=light] .pricing-faq > div { background: var(--panel) !important; }
+
+/* Risk map chrome (basemap tiles stay dark by design) */
+html[data-theme=light] .risk-map-tools button {
+  background: var(--panel-raised) !important;
+  border-color: var(--line-strong) !important;
+  color: var(--muted) !important;
+}
+html[data-theme=light] .risk-map-tools button.active {
+  background: #e6f1f8 !important;
+  color: var(--blue) !important;
+  border-color: var(--blue) !important;
+}
+html[data-theme=light] .risk-map-legend,
+html[data-theme=light] .risk-map-filter button,
+html[data-theme=light] .risk-map-reset {
+  background: #fffefaee !important;
+  color: var(--text) !important;
+  border-color: var(--line-strong) !important;
+  box-shadow: 0 8px 24px #1f29371f !important;
+}
+html[data-theme=light] .risk-map-filter button.active {
+  background: #e6f1f8 !important;
+  color: var(--blue) !important;
+  border-color: var(--blue) !important;
+}
+html[data-theme=light] .risk-map-notice { background: #fffefaf2 !important; }
+html[data-theme=light] .risk-tabs button.active { background: #e6f1f8 !important; border-color: var(--line-strong) !important; }
+html[data-theme=light] .risk-item:hover,
+html[data-theme=light] .risk-region:hover,
+html[data-theme=light] .risk-quake:hover { background: var(--panel-raised) !important; }
+html[data-theme=light] .risk-item.selected,
+html[data-theme=light] .risk-quake.selected { background: #e6f1f8 !important; }
+html[data-theme=light] .risk-item-tags i,
+html[data-theme=light] .risk-popup-tags i { color: var(--muted) !important; border-color: var(--line) !important; }
+html[data-theme=light] .risk-region-bar { background: var(--line) !important; }
+html[data-theme=light] .risk-quake { border-top-color: var(--line) !important; }

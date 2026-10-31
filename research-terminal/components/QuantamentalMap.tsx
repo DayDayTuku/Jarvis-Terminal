@@ -30,10 +30,10 @@ const X_TICKS = [-50, -20, -10, -5, -2, 0, 2, 5, 10, 20, 50];
 const Y_TICKS = [-50, -25, 0, 25, 50, 100, 150, 200];
 
 const TONE_COLOR = {
-  positive: "#43d4a3",
-  negative: "#ff6678",
-  blue: "#48a6ff",
-  muted: "#8b98a8",
+  positive: "var(--positive)",
+  negative: "var(--negative)",
+  blue: "var(--blue)",
+  muted: "var(--qm-muted)",
 } as const;
 
 const QUADRANT_FILL = {
@@ -93,7 +93,7 @@ function metricText(stock: QuantamentalStock) {
   return `${stock.metric.toFixed(1)}×`;
 }
 
-function BasisMark({ basis, color = "#8b98a8", size = 11 }: {
+function BasisMark({ basis, color = "var(--qm-muted, #8b98a8)", size = 11 }: {
   basis: QuantamentalBasis;
   color?: string;
   size?: number;
@@ -305,7 +305,28 @@ export default function QuantamentalMap({ onSelectStock }: Props) {
     const svg = svgRef.current;
     if (!svg) return;
     try {
-      const source = new XMLSerializer().serializeToString(svg);
+      const computed = getComputedStyle(svg);
+      const clone = svg.cloneNode(true) as SVGSVGElement;
+      for (const token of [
+        "--qm-canvas",
+        "--qm-grid",
+        "--qm-grid-strong",
+        "--qm-axis",
+        "--qm-label",
+        "--qm-muted",
+        "--qm-point",
+        "--qm-ink",
+        "--qm-strip",
+        "--qm-strip-line",
+        "--positive",
+        "--negative",
+        "--blue",
+        "--orange",
+      ]) {
+        const value = computed.getPropertyValue(token).trim();
+        if (value) clone.style.setProperty(token, value);
+      }
+      const source = new XMLSerializer().serializeToString(clone);
       const url = URL.createObjectURL(new Blob([source], { type: "image/svg+xml;charset=utf-8" }));
       const image = new Image();
       await new Promise<void>((resolve, reject) => {
@@ -319,7 +340,7 @@ export default function QuantamentalMap({ onSelectStock }: Props) {
       canvas.height = H * scale;
       const context = canvas.getContext("2d");
       if (!context) throw new Error("Canvas unavailable");
-      context.fillStyle = "#050505";
+      context.fillStyle = computed.getPropertyValue("--qm-canvas").trim() || "#050505";
       context.fillRect(0, 0, canvas.width, canvas.height);
       context.drawImage(image, 0, 0, canvas.width, canvas.height);
       URL.revokeObjectURL(url);
@@ -452,7 +473,7 @@ export default function QuantamentalMap({ onSelectStock }: Props) {
                 </clipPath>
               </defs>
 
-              <rect x={0} y={0} width={W} height={H} fill="#050505" />
+              <rect x={0} y={0} width={W} height={H} fill="var(--qm-canvas, #050505)" />
 
               <g pointerEvents="none">
                 {quadrants.map((quadrant) => {
@@ -469,7 +490,7 @@ export default function QuantamentalMap({ onSelectStock }: Props) {
                       <text x={quadrant.labelX} y={quadrant.labelY} textAnchor={quadrant.anchor} fontSize={9} letterSpacing={1.1} fill={TONE_COLOR[meta.tone]} opacity={0.92}>
                         {meta.label}
                       </text>
-                      <text x={quadrant.labelX} y={quadrant.labelY + 13} textAnchor={quadrant.anchor} fontSize={8} fill="#6f7d8d">
+                      <text x={quadrant.labelX} y={quadrant.labelY + 13} textAnchor={quadrant.anchor} fontSize={8} fill="var(--qm-label, #6f7d8d)">
                         {data.quadrantCounts[quadrant.key]} STOCKS
                       </text>
                     </g>
@@ -485,10 +506,10 @@ export default function QuantamentalMap({ onSelectStock }: Props) {
                       x2={gapX(tick)}
                       y1={M.top}
                       y2={PLOT_BOTTOM}
-                      stroke={tick === 0 ? "#33404f" : "#19212a"}
+                      stroke={tick === 0 ? "var(--qm-grid-strong, #33404f)" : "var(--qm-grid, #19212a)"}
                       strokeDasharray={tick === 0 ? "4 4" : undefined}
                     />
-                    <text x={gapX(tick)} y={PLOT_BOTTOM + 18} textAnchor="middle" fontSize={8} fill="#778596">
+                    <text x={gapX(tick)} y={PLOT_BOTTOM + 18} textAnchor="middle" fontSize={8} fill="var(--qm-axis, #778596)">
                       {tick === 0 ? "0" : `${tick > 0 ? "+" : ""}${tick}%`}
                     </text>
                   </g>
@@ -500,10 +521,10 @@ export default function QuantamentalMap({ onSelectStock }: Props) {
                       y2={momentumY(tick)}
                       x1={M.left}
                       x2={M.left + PLOT_W}
-                      stroke={tick === 0 ? "#33404f" : "#19212a"}
+                      stroke={tick === 0 ? "var(--qm-grid-strong, #33404f)" : "var(--qm-grid, #19212a)"}
                       strokeDasharray={tick === 0 ? "4 4" : undefined}
                     />
-                    <text x={M.left - 9} y={momentumY(tick) + 3} textAnchor="end" fontSize={8} fill="#778596">
+                    <text x={M.left - 9} y={momentumY(tick) + 3} textAnchor="end" fontSize={8} fill="var(--qm-axis, #778596)">
                       {tick > 0 ? `+${tick}%` : `${tick}%`}
                     </text>
                   </g>
@@ -511,13 +532,13 @@ export default function QuantamentalMap({ onSelectStock }: Props) {
               </g>
 
               <g pointerEvents="none">
-                <line x1={cheapEdge} x2={cheapEdge} y1={M.top} y2={PLOT_BOTTOM} stroke="#2b3745" strokeDasharray="2 4" />
-                <line x1={richEdge} x2={richEdge} y1={M.top} y2={PLOT_BOTTOM} stroke="#2b3745" strokeDasharray="2 4" />
-                <line x1={M.left} x2={M.left + PLOT_W} y1={zeroY} y2={zeroY} stroke="#3a4654" strokeDasharray="4 4" />
-                <text x={M.left + PLOT_W / 2} y={M.top - 15} textAnchor="middle" fontSize={8} letterSpacing={1} fill="#5f6d7d">
+                <line x1={cheapEdge} x2={cheapEdge} y1={M.top} y2={PLOT_BOTTOM} stroke="var(--qm-grid-strong, #2b3745)" strokeDasharray="2 4" />
+                <line x1={richEdge} x2={richEdge} y1={M.top} y2={PLOT_BOTTOM} stroke="var(--qm-grid-strong, #2b3745)" strokeDasharray="2 4" />
+                <line x1={M.left} x2={M.left + PLOT_W} y1={zeroY} y2={zeroY} stroke="var(--qm-grid-strong, #3a4654)" strokeDasharray="4 4" />
+                <text x={M.left + PLOT_W / 2} y={M.top - 15} textAnchor="middle" fontSize={8} letterSpacing={1} fill="var(--qm-muted, #5f6d7d)">
                   BUBBLE SIZE ≈ MARKET CAP · SHAPE = VALUATION BASIS · FADED = THINLY TRADED
                 </text>
-                <text x={M.left + PLOT_W / 2} y={H - 17} textAnchor="middle" fontSize={8} letterSpacing={1} fill="#778596">
+                <text x={M.left + PLOT_W / 2} y={H - 17} textAnchor="middle" fontSize={8} letterSpacing={1} fill="var(--qm-axis, #778596)">
                   PEER-RELATIVE VALUATION GAP · CHEAPER ← → RICHER
                 </text>
                 <text
@@ -527,7 +548,7 @@ export default function QuantamentalMap({ onSelectStock }: Props) {
                   textAnchor="middle"
                   fontSize={8}
                   letterSpacing={1}
-                  fill="#778596"
+                  fill="var(--qm-axis, #778596)"
                 >
                   6M PRICE MOMENTUM
                 </text>
@@ -564,9 +585,9 @@ export default function QuantamentalMap({ onSelectStock }: Props) {
                     >
                       <circle cx={gx} cy={gy} r={Math.max(12, radius + 4)} fill="transparent" />
                       <BubbleShape shape={shape} cx={gx} cy={gy} r={radius} fill={color} />
-                      {isActive && <circle cx={gx} cy={gy} r={radius + 4} fill="none" stroke="#e8edf3" strokeWidth={1.2} />}
+                      {isActive && <circle cx={gx} cy={gy} r={radius + 4} fill="none" stroke="var(--qm-ink, #e8edf3)" strokeWidth={1.2} />}
                       {(stock.offScaleX || stock.offScaleY) && (
-                        <text x={gx} y={gy - radius - 3} textAnchor="middle" fontSize={8} fill="#ff9840" pointerEvents="none">▲</text>
+                        <text x={gx} y={gy - radius - 3} textAnchor="middle" fontSize={8} fill="var(--orange, #ff9840)" pointerEvents="none">▲</text>
                       )}
                     </g>
                   );
@@ -589,7 +610,7 @@ export default function QuantamentalMap({ onSelectStock }: Props) {
                         y={gy + 3}
                         textAnchor={rightSide ? "start" : "end"}
                         fontSize={8.5}
-                        fill={isActive ? "#e8edf3" : "#aab6c4"}
+                        fill={isActive ? "var(--qm-ink, #e8edf3)" : "var(--qm-point, #aab6c4)"}
                       >
                         {stock.ticker}
                       </text>
@@ -598,11 +619,11 @@ export default function QuantamentalMap({ onSelectStock }: Props) {
               </g>
 
               <g>
-                <rect x={STRIP_X} y={M.top} width={STRIP_W} height={PLOT_H} fill="#0a0f14" stroke="#242424" strokeDasharray="4 4" />
-                <text x={STRIP_X + STRIP_W / 2} y={M.top + 20} textAnchor="middle" fontSize={8.5} letterSpacing={0.9} fill="#8b98a8">
+                <rect x={STRIP_X} y={M.top} width={STRIP_W} height={PLOT_H} fill="var(--qm-strip, #0a0f14)" stroke="var(--qm-strip-line, #242424)" strokeDasharray="4 4" />
+                <text x={STRIP_X + STRIP_W / 2} y={M.top + 20} textAnchor="middle" fontSize={8.5} letterSpacing={0.9} fill="var(--qm-muted, #8b98a8)">
                   NO MOMENTUM SIGNAL
                 </text>
-                <text x={STRIP_X + STRIP_W / 2} y={M.top + 34} textAnchor="middle" fontSize={8} fill="#5c6878">
+                <text x={STRIP_X + STRIP_W / 2} y={M.top + 34} textAnchor="middle" fontSize={8} fill="var(--qm-muted, #5c6878)">
                   {noMomentumStocks.length} NAMES
                 </text>
                 {noMomentumStocks.map((stock, index) => {
@@ -633,8 +654,8 @@ export default function QuantamentalMap({ onSelectStock }: Props) {
                       }}
                     >
                       <circle cx={x} cy={y} r={Math.max(9, radius + 4)} fill="transparent" />
-                      <BubbleShape shape={BASIS_META[stock.basis].shape} cx={x} cy={y} r={radius} fill={isActive ? "#e8edf3" : "#8b98a8"} />
-                      <text x={x + radius + 5} y={y + 3} fontSize={7} fill={isActive ? "#e8edf3" : "#8492a3"} pointerEvents="none">
+                      <BubbleShape shape={BASIS_META[stock.basis].shape} cx={x} cy={y} r={radius} fill={isActive ? "var(--qm-ink, #e8edf3)" : "var(--qm-muted, #8b98a8)"} />
+                      <text x={x + radius + 5} y={y + 3} fontSize={7} fill={isActive ? "var(--qm-ink, #e8edf3)" : "var(--qm-point, #8492a3)"} pointerEvents="none">
                         {stock.ticker}
                       </text>
                     </g>
@@ -662,8 +683,9 @@ export default function QuantamentalMap({ onSelectStock }: Props) {
                     y={Math.min(box.y1, box.y2)}
                     width={Math.abs(box.x2 - box.x1)}
                     height={Math.abs(box.y2 - box.y1)}
-                    fill="#48a6ff14"
-                    stroke="#48a6ff"
+                    fill="var(--blue, #48a6ff)"
+                    fillOpacity={0.08}
+                    stroke="var(--blue, #48a6ff)"
                     strokeDasharray="4 3"
                     pointerEvents="none"
                   />
@@ -723,7 +745,7 @@ export default function QuantamentalMap({ onSelectStock }: Props) {
               {(Object.keys(BASIS_META) as QuantamentalBasis[]).filter((basis) => basis !== "none").map((basis) => (
                 <div key={basis}><BasisMark basis={basis} /><span>{BASIS_META[basis].short}</span><small>{BASIS_META[basis].label}</small></div>
               ))}
-              <div><BasisMark basis="pe" color="#5c6878" /><span>FADED</span><small>Thinly traded · turnover under IDR 5bn</small></div>
+              <div><BasisMark basis="pe" color="var(--qm-muted, #5c6878)" /><span>FADED</span><small>Thinly traded · turnover under IDR 5bn</small></div>
               <div className="qm-key-quads">
                 {(Object.keys(QUADRANT_META) as Array<keyof typeof QUADRANT_META>).filter((key) => key !== "no-momentum" && key !== "no-valuation").map((key) => (
                   <p key={key}><i style={{ background: TONE_COLOR[QUADRANT_META[key].tone] }} />{QUADRANT_META[key].label}<b>{data.quadrantCounts[key as keyof typeof data.quadrantCounts]}</b></p>
