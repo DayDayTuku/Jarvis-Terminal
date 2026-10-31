@@ -1256,49 +1256,32 @@ html[data-theme=light] .paper-upload input[type='file']::file-selector-button:ho
    -------------------------------------------------------------------------- */
 .nav-label { display: none; }
 
+/* Desktop keeps the compact icon rail so the sidebar width matches the logo.
+   Labels stay hidden; each icon reveals its name/description on hover or
+   focus through the tooltip rules above. */
 @media (min-width: 901px) {
-  .terminal-shell { grid-template-columns: 196px minmax(0, 1fr); }
-  .side-nav nav { padding: 12px 10px; gap: 3px; }
+  .terminal-shell { grid-template-columns: 64px minmax(0, 1fr); }
+  .side-nav nav { padding: 12px 8px; gap: 4px; }
   .side-nav nav button,
-  .side-tools button,
-  .sidebar-feedback {
-    width: 100%;
-    height: 40px;
-    display: flex;
-    align-items: center;
-    justify-content: flex-start;
-    gap: 11px;
-    padding: 0 11px;
+  .side-tools button {
+    width: 46px;
+    height: 42px;
+    display: grid;
+    place-items: center;
+    gap: 0;
+    padding: 0;
     border-left: 2px solid transparent;
-    text-align: left;
-  }
-  .side-nav nav button span:first-child,
-  .side-tools button span:first-child,
-  .sidebar-feedback span:first-child {
-    flex: 0 0 20px;
     text-align: center;
   }
-  /* The base `.side-nav nav button span` icon rule is more specific than a
-     bare `.nav-label`, so it would render every label at 18px and overflow
-     the rail. Match its specificity to keep labels at the terminal size. */
-  .side-nav nav button .nav-label,
-  .side-tools button .nav-label,
-  .sidebar-feedback .nav-label {
-    display: inline;
-    flex: 1 1 auto;
-    min-width: 0;
-    overflow: hidden;
-    color: currentColor;
-    font: 650 8px/1.2 var(--font-geist-mono), monospace;
-    letter-spacing: .07em;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+  .nav-label { display: none; }
+  .side-tools { justify-items: center; padding: 10px 8px; }
+  .sidebar-feedback {
+    align-self: center;
+    width: 42px;
+    min-height: 44px;
+    margin: 8px 0 14px;
+    border-radius: 4px;
   }
-  .side-nav nav button::after,
-  .side-tools button::after,
-  .sidebar-feedback::after { display: none; }
-  .side-tools { justify-items: stretch; padding: 10px; }
-  .sidebar-feedback { align-self: stretch; min-height: 40px; margin: 4px 10px 14px; width: calc(100% - 20px); border-radius: 0; }
 }
 
 .command-trigger {
