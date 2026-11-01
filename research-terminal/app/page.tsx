@@ -13,7 +13,8 @@ import FeedbackInbox from '../components/FeedbackInbox';
 import ResearchPapers from '../components/ResearchPapers';
 import SettingsLogout from '../components/SettingsLogout';
 import WeeklyDigestOptIn from '../components/WeeklyDigestOptIn';
-import RiskMap from '../components/RiskMap';
+import WorldMonitor from '../components/RiskMap';
+import MarketExplorer from '../components/discover/MarketExplorer';
 import DataStatusBar from '../components/DataStatusBar';
 import OnboardingModal from '../components/OnboardingModal';
 import PlanCard from '../components/PlanCard';
@@ -34,6 +35,7 @@ import { useDialogFocus } from '../lib/use-dialog-focus';
 import { normalizeTicker } from '../lib/workspace';
 import { buildVisitSnapshot, describeVisitDelta, parseVisitSnapshot, visitAgeLabel, type VisitSnapshot } from '../lib/visit-snapshot';
 import { trackEvent } from '../lib/analytics-client';
+import { homeMarketPulse } from '../lib/market-explorer';
 
 const StockDetailModal = dynamic(() => import('../components/StockDetailModal'), { ssr: false });
 
@@ -53,8 +55,6 @@ export default function Home() {
   const lastSectionByPillar = useRef<Partial<Record<Pillar, Section>>>({});
   const [now, setNow] = useState<Date | null>(null);
   const [range, setRange] = useState<'6M' | '1Y' | '3Y'>('1Y');
-  const [heatPeriod, setHeatPeriod] = useState<'1D' | '1W'>('1D');
-  const [selectedSector, setSelectedSector] = useState('ENERGY');
   const [seasonTicker, setSeasonTicker] = useState('BUMI'); const [seasonality, setSeasonality] = useState<SeasonalityData|null>(null);
   const [cot, setCot] = useState<CotData|null>(null); const [cotAsset, setCotAsset] = useState('USD');
   const [notesOpen, setNotesOpen] = useState(false); const [settingsOpen, setSettingsOpen] = useState(false); const [feedbackOpen, setFeedbackOpen] = useState(false);
@@ -478,12 +478,10 @@ export default function Home() {
     baseWatchlist.forEach((item) => map.set(item.ticker, item));
     return customWatchlist.map((item) => map.get(item.ticker) ?? item);
   }, [baseWatchlist, customWatchlist, watchlistManaged]);
-  const heatmap = markets?.heatmap ?? [];
   const marketChange = (name: string) => { const values = markets?.assets.find((item) => item.name === name)?.closes.filter((x): x is number => x !== null) ?? []; const last = values.at(-1) ?? 0; const prior = values.at(-2) ?? last; const recent = values.slice(-20); const average = recent.length ? recent.reduce((sum, value) => sum + value, 0) / recent.length : 0; return { last, average, change: prior ? ((last / prior) - 1) * 100 : 0 }; };
   const dxy = marketChange('DXY'); const oil = marketChange('OIL');
   const liveCount = [fred, markets, gdelt, calendar, cot].filter((payload) => Boolean(payload) && (payload?.status === 'live' || payload?.status === 'partial')).length;
   const currentRegime = (fred?.regime ?? []).at(-1) ?? { date: '', growth: 0, inflation: 0 };
-  const selectedHeat = heatmap.find((item) => item.label === selectedSector) ?? heatmap[0];
   const selectedCot = cot?.series.find((item) => item.key === cotAsset) ?? cot?.series[0] ?? null;
 
   const validSectorMoves = (markets?.heatmap ?? [])
@@ -493,6 +491,7 @@ export default function Home() {
   const breadthAverage = validSectorMoves.length
     ? validSectorMoves.reduce((sum, value) => sum + value, 0) / validSectorMoves.length
     : null;
+  const homePulse = homeMarketPulse(markets?.heatmap, 3);
   const curveSpread = fred && yields.length > 1 ? yields[yields.length - 1] - yields[0] : null;
   const thesisEvidence: string[] = [];
 
@@ -722,9 +721,64 @@ export default function Home() {
               <header className="brief-section-head"><h3 id="actions-title">NEXT RESEARCH MOVE</h3><span>CHOOSE A SURFACE</span></header>
               <div className="decision-current-thesis"><span>CURRENT THESIS</span><h4>{thesisHeadline}</h4><p>{savedNote || 'No thesis saved yet. Open Research Notes and write down what would disprove your current read.'}</p><button type="button" className="inline-link" onClick={() => setNotesOpen(true)}>OPEN RESEARCH NOTES →</button></div>
               <button className="decision-link" onClick={() => changeSection('QUANT LAB')}><span><strong>OPEN WEEKLY PICKS</strong><small>Review V5 selections and portfolio actions</small></span><span aria-hidden="true">→</span></button>
-              <button className="decision-link" onClick={() => changeSection('MARKETS')}><span><strong>CHECK MARKET STRUCTURE</strong><small>Breadth, sectors, and watchlist detail</small></span><span aria-hidden="true">→</span></button>
+              <button className="decision-link" onClick={() => changeSection('MARKETS')}><span><strong>CHECK MARKET STRUCTURE</strong><small>Sector structure, movers, and the IDX screener</small></span><span aria-hidden="true">→</span></button>
               <button className="decision-link" onClick={() => changeSection('PORTFOLIO')}><span><strong>STRESS THE PORTFOLIO</strong><small>Check concentration before adding risk</small></span><span aria-hidden="true">→</span></button>
             </aside>
+          </div>
+
+          <div className="home-grid">
+            <article className="panel home-pulse">
+              <header className="panel-head">
+                <div><h2>MARKET OVERVIEW</h2></div>
+                <button type="button" className="quiet-button" onClick={() => changeSection('MARKETS')}>OPEN MARKET EXPLORER →</button>
+              </header>
+              {markets ? (
+                <>
+                  <div className="home-pulse-summary">
+                    <div><span>SECTORS POSITIVE</span><strong>{validSectorMoves.length ? `${positiveSectors}/${validSectorMoves.length}` : '—'}</strong></div>
+                    <div><span>AVERAGE MOVE</span><strong className={breadthAverage === null ? '' : breadthAverage >= 0 ? 'positive' : 'negative'}>{breadthAverage === null ? '—' : `${signed(breadthAverage)}%`}</strong></div>
+                    <div><span>COVERAGE</span><strong>{homePulse.coverage ? `${homePulse.coverage} NAMES` : '—'}</strong></div>
+                    <div><span>FEED</span><strong>{markets.status.toUpperCase()}</strong></div>
+                  </div>
+                  <div className="home-movers">
+                    <div>
+                      <span className="home-movers-head">TOP GAINERS</span>
+                      {homePulse.gainers.length ? homePulse.gainers.map((move) => (
+                        <button key={move.ticker} type="button" className="home-mover" onClick={() => openStockDetail(move.ticker)}>
+                          <span><strong>{move.ticker}</strong><small>{move.sector}</small></span>
+                          <b className="positive">{signed(move.daily as number)}%</b>
+                        </button>
+                      )) : <small className="home-mover-empty">No positive index-basket names.</small>}
+                    </div>
+                    <div>
+                      <span className="home-movers-head">TOP LOSERS</span>
+                      {homePulse.losers.length ? homePulse.losers.map((move) => (
+                        <button key={move.ticker} type="button" className="home-mover" onClick={() => openStockDetail(move.ticker)}>
+                          <span><strong>{move.ticker}</strong><small>{move.sector}</small></span>
+                          <b className="negative">{signed(move.daily as number)}%</b>
+                        </button>
+                      )) : <small className="home-mover-empty">No negative index-basket names.</small>}
+                    </div>
+                  </div>
+                  <footer className="panel-foot">
+                    <span>IDX-IC CONSTITUENT BASKETS · YAHOO UPSTREAM</span>
+                    <span>NOT FULL-MARKET BREADTH</span>
+                  </footer>
+                </>
+              ) : (
+                <FeedUnavailable title="MARKET OVERVIEW UNAVAILABLE" body="No sector or constituent values are shown while the market feed is offline." />
+              )}
+            </article>
+
+            <Watchlist
+              watchlist={watchlist}
+              live
+              onSelectStock={(ticker) => openStockDetail(ticker)}
+              onAdd={addWatchlistTicker}
+              onRemove={removeWatchlistTicker}
+              managed={watchlistManaged || customWatchlist.length > 0}
+              syncState={watchlistSync}
+            />
           </div>
         </section>}
 
@@ -734,11 +788,7 @@ export default function Home() {
           <YieldCurve values={yields} />
         </section> : <section className="dashboard-grid macro-grid"><article className="panel wide-panel"><FeedUnavailable title="MACRO FEED UNAVAILABLE" body="FRED did not return a valid regime or Treasury series. No illustrative macro values are shown because they could be mistaken for live data." /></article></section>)}
 
-        {active === 'MARKETS' && (markets ? <section className="dashboard-grid markets-grid">
-          <article className="panel heatmap-panel"><PanelHead index="01" title="IDX SECTOR HEATMAP"><div className="range-switcher">{(['1D','1W'] as const).map((item) => <button key={item} onClick={() => setHeatPeriod(item)} className={heatPeriod === item ? 'active' : ''}>{item}</button>)}</div></PanelHead><div className="heatmap">{heatmap.map((item, index) => { const value = heatPeriod === '1D' ? item.daily : item.weekly; return <button key={item.label} onClick={() => setSelectedSector(item.label)} className={`heat-tile ${['xl','lg','md','lg','sm','sm','md','sm','md','lg','md'][index]} ${value === null ? 'no-data' : heatTone(value)} ${item.confidence === 'low' ? 'low-confidence' : ''} ${selectedHeat?.label === item.label ? 'selected' : ''}`}><span>{item.label}</span><strong>{value === null ? '—' : `${signed(value)}%`}</strong><small>{item.confidence === 'low' ? `LOW CONFIDENCE · ${item.validCount ?? 0}/${item.memberCount ?? 0} VALID` : 'VIEW MEMBERS →'}</small></button>; })}</div>{selectedHeat && <div className="heat-drilldown"><div><span>SELECTED SECTOR</span><strong>{selectedHeat.label}</strong><small>SIMPLE AVG · {selectedHeat.validCount ?? selectedHeat.constituents.length}/{selectedHeat.memberCount ?? selectedHeat.constituents.length} VALID</small></div>{selectedHeat.constituents.length ? selectedHeat.constituents.map((stock) => { const value = heatPeriod === '1D' ? stock.daily : stock.weekly; return <div key={stock.ticker} onClick={() => openStockDetail(stock.ticker)} style={{cursor:'pointer'}} title={`Click to view ${stock.ticker} fundamentals`}><span>{stock.ticker}</span><strong>{stock.price.toLocaleString('en-US',{maximumFractionDigits:2})}</strong><small className={value === null ? '' : value >= 0 ? 'positive' : 'negative'}>{value === null ? 'NO VALID RETURN' : `${signed(value)}%`}</small></div>}) : <p>Constituent feed unavailable for this sector.</p>}</div>}<PanelFoot left="SIMPLE AVERAGE OF VALID IDX-IC CONSTITUENT BASKETS" right={`${markets.status.toUpperCase()} · YAHOO UPSTREAM`} /></article>
-          <Watchlist watchlist={watchlist} live onSelectStock={(t) => openStockDetail(t)} onAdd={addWatchlistTicker} onRemove={removeWatchlistTicker} managed={watchlistManaged || customWatchlist.length > 0} syncState={watchlistSync} />
-          <Calendar data={calendar} />
-        </section> : <section className="dashboard-grid markets-grid"><article className="panel wide-panel"><FeedUnavailable title="IDX MARKET FEED UNAVAILABLE" body="The market upstream did not return sector or price data. Price cells are withheld so stale or synthetic values cannot be mistaken for live quotes." /></article><Watchlist watchlist={watchlist} live={false} onSelectStock={(t) => openStockDetail(t)} onAdd={addWatchlistTicker} onRemove={removeWatchlistTicker} managed={watchlistManaged || customWatchlist.length > 0} syncState={watchlistSync} /><Calendar data={calendar} /></section>)}
+        {active === 'MARKETS' && <MarketExplorer markets={markets} calendar={<Calendar data={calendar} />} onSelectStock={openStockDetail} />}
 
         {active === 'NEWS' && <NewsIntelligence />}
 
@@ -748,7 +798,7 @@ export default function Home() {
 
         {active === 'PORTFOLIO' && <PortfolioStressLab />}
 
-        {active === 'RISK MAP' && <RiskMap />}
+        {active === 'RISK MAP' && <WorldMonitor />}
 
         {active === 'RESEARCH PAPERS' && <ResearchPapers />}
 

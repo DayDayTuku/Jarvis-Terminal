@@ -52,8 +52,8 @@ const SECTION_COPY: Record<Section, { short: string; description: string; badge?
     description: 'Live FRED signals for growth, inflation and the Treasury curve.',
   },
   MARKETS: {
-    short: 'Markets',
-    description: 'Daily and weekly market performance with the IDX watchlist.',
+    short: 'Market Explorer',
+    description: 'Sector heatmap, market movers and a filterable view of the scanned IDX universe.',
   },
   NEWS: {
     short: 'News',
@@ -77,9 +77,9 @@ const SECTION_COPY: Record<Section, { short: string; description: string; badge?
     badge: 'BETA',
   },
   'RISK MAP': {
-    short: 'Risk Map',
+    short: 'World Monitor',
     description:
-      'World Monitor precursor · market-moving chokepoints, conflict descriptors and live hazard pins.',
+      'Confirmed hazards, wildfires, static chokepoints and conflict references, plus news-derived disruption reports.',
   },
   'RESEARCH PAPERS': {
     short: 'Research Papers',

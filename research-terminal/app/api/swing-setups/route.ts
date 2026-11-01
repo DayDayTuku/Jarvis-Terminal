@@ -80,6 +80,9 @@ export async function GET() {
       scanned: Array.isArray(payload?.data) ? payload.data.length : 0,
       methodology: "End-of-day swing setups for an estimated 3–20 trading-day horizon.",
       setups,
+      // Additive payload for Market Explorer: every scanned row, not only the
+      // rows that qualify as a setup. Existing consumers read `setups` only.
+      quotes: features,
     });
   } catch (error) {
     return NextResponse.json({
@@ -89,6 +92,7 @@ export async function GET() {
       scanned: 0,
       methodology: "End-of-day swing setups for an estimated 3–20 trading-day horizon.",
       setups: [],
+      quotes: [],
       message: error instanceof Error ? error.message : "Scanner unavailable",
     }, { status: 503 });
   }
