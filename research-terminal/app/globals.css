@@ -1892,3 +1892,209 @@ html[data-theme=light] .risk-item-tags i,
 html[data-theme=light] .risk-popup-tags i { color: var(--muted) !important; border-color: var(--line) !important; }
 html[data-theme=light] .risk-region-bar { background: var(--line) !important; }
 html[data-theme=light] .risk-quake { border-top-color: var(--line) !important; }
+
+/* --------------------------------------------------------------------------
+   Four-pillar application shell
+   --------------------------------------------------------------------------
+   Phase 1 adds pillar navigation without changing any section, API or data
+   behavior. The desktop rail stays compact (matching the logo); each pillar is
+   named, and the secondary section tabs live in the shared PageHeader. */
+
+.pillar-nav { align-content: start; }
+
+.side-nav .pillar-nav .pillar-button {
+  width: 48px;
+  height: 52px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 0;
+  border-left: 2px solid transparent;
+  border-radius: 0;
+  color: var(--muted);
+  background: transparent;
+}
+
+.side-nav .pillar-nav .pillar-button:hover,
+.side-nav .pillar-nav .pillar-button:focus-visible {
+  color: var(--text);
+  background: var(--panel-raised);
+}
+
+.side-nav .pillar-nav .pillar-button.active {
+  color: var(--blue);
+  background: color-mix(in srgb, var(--blue) 12%, transparent);
+  border-left-color: var(--blue);
+}
+
+.side-nav .pillar-nav .pillar-icon {
+  color: currentColor;
+  font: 500 16px/1 var(--font-geist-sans);
+}
+
+.side-nav .pillar-nav .pillar-label {
+  display: block;
+  max-width: 46px;
+  overflow: hidden;
+  color: currentColor;
+  font: 650 6px/1 var(--font-geist-mono), monospace;
+  letter-spacing: .01em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Primary tooltip: pillar name plus responsibility. */
+.side-nav .pillar-nav .pillar-button::after {
+  content: attr(data-label) "\A" attr(data-desc);
+  min-width: 128px;
+  font-size: 8px;
+  line-height: 1.7;
+  white-space: pre-line;
+}
+
+/* Shared page heading + secondary navigation. */
+.view-heading.page-header {
+  min-height: 0;
+  display: grid;
+  align-items: stretch;
+  justify-content: stretch;
+  gap: 0;
+  padding: 18px 0 0;
+  border-bottom: 1px solid var(--line-strong);
+}
+
+.page-heading-main {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 28px;
+  padding-bottom: 15px;
+}
+
+.page-heading-main > div { min-width: 0; }
+
+.page-heading-main .page-breadcrumb {
+  color: var(--blue);
+  font-size: 7px;
+  letter-spacing: .1em;
+}
+
+.page-breadcrumb b {
+  margin: 0 5px;
+  color: var(--line-strong);
+  font-weight: 400;
+}
+
+.page-heading-main h2 {
+  margin: 6px 0 0;
+  color: var(--text);
+  font: 600 20px var(--font-geist-sans);
+}
+
+.page-heading-main p {
+  width: min(440px, 45%);
+  margin: 0;
+  color: var(--muted);
+  font: 400 11px/1.55 var(--font-geist-sans);
+  text-align: right;
+}
+
+.section-tabs {
+  display: flex;
+  gap: 2px;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+}
+
+.section-tabs::-webkit-scrollbar { display: none; }
+
+.section-tabs button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 38px;
+  padding: 0 12px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--muted);
+  font: 650 8px/1 var(--font-geist-mono), monospace;
+  letter-spacing: .07em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.section-tabs button span { color: inherit; font-size: inherit; }
+
+.section-tabs button small {
+  padding: 2px 4px;
+  border: 1px solid var(--line);
+  color: var(--orange);
+  font-size: 6px;
+  line-height: 1;
+  letter-spacing: .05em;
+}
+
+.section-tabs button:hover,
+.section-tabs button:focus-visible {
+  color: var(--text);
+  background: var(--panel-raised);
+}
+
+.section-tabs button.active {
+  color: var(--blue);
+  border-bottom-color: var(--blue);
+  background: color-mix(in srgb, var(--blue) 8%, transparent);
+}
+
+html[data-theme=light] .section-tabs button.active {
+  background: #e6f1f8;
+  border-bottom-color: var(--blue);
+}
+
+/* ThemeToggle injects `!important` sidebar resets; re-assert the pillar state. */
+html[data-theme=light] .side-nav .pillar-nav .pillar-button.active {
+  color: var(--blue) !important;
+  background: #e6f1f8 !important;
+  border-left-color: var(--blue) !important;
+}
+
+html[data-theme=light] .side-nav .pillar-nav .pillar-button:hover {
+  color: var(--text) !important;
+  background: var(--panel-raised) !important;
+}
+
+@media (max-width: 900px) {
+  .page-heading-main { align-items: flex-start; flex-direction: column; gap: 9px; }
+  .page-heading-main p { width: 100%; text-align: left; }
+}
+
+@media (max-width: 720px) {
+  .view-heading.page-header { padding-top: 13px; }
+  .page-heading-main { padding-bottom: 11px; }
+  .section-tabs button { padding: 0 10px; }
+  .terminal-shell .pillar-nav { flex: 1 1 auto; }
+  .terminal-shell .side-nav .pillar-nav .pillar-button {
+    width: auto;
+    flex: 1 1 0;
+    height: 56px;
+    gap: 5px;
+    border-left: 0;
+    border-bottom: 2px solid transparent;
+  }
+  .terminal-shell .side-nav .pillar-nav .pillar-button.active {
+    border-left: 0;
+    border-bottom-color: var(--blue);
+  }
+  .terminal-shell .side-nav .pillar-nav .pillar-icon { font-size: 15px; }
+  .terminal-shell .side-nav .pillar-nav .pillar-label {
+    max-width: 100%;
+    font-size: 6px;
+    letter-spacing: .03em;
+  }
+  .terminal-shell .side-nav .pillar-nav .pillar-button::after { display: none; }
+}

@@ -1,7 +1,6 @@
 'use client';
 
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import Image from 'next/image';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
 import StockSearch from '../components/StockSearch';
 import PanelBoundary from '../components/PanelBoundary';
@@ -17,8 +16,19 @@ import WeeklyDigestOptIn from '../components/WeeklyDigestOptIn';
 import RiskMap from '../components/RiskMap';
 import DataStatusBar from '../components/DataStatusBar';
 import OnboardingModal from '../components/OnboardingModal';
-import CommandPalette from '../components/CommandPalette';
 import PlanCard from '../components/PlanCard';
+import AppShell from '../components/shell/AppShell';
+import Sidebar from '../components/shell/Sidebar';
+import PageHeader from '../components/shell/PageHeader';
+import GlobalCommandPalette from '../components/shell/GlobalCommandPalette';
+import {
+  sectionFromHash,
+  sectionSlug,
+  pillarDefinition,
+  pillarForSection,
+  type Pillar,
+  type Section,
+} from '../lib/navigation';
 import { SCHEMES, formatNoteTimestamp, isScheme, parseSavedNote, type Scheme } from '../lib/preferences';
 import { useDialogFocus } from '../lib/use-dialog-focus';
 import { normalizeTicker } from '../lib/workspace';
@@ -28,7 +38,6 @@ import { trackEvent } from '../lib/analytics-client';
 const StockDetailModal = dynamic(() => import('../components/StockDetailModal'), { ssr: false });
 
 
-type Section = 'OVERVIEW' | 'MACRO' | 'MARKETS' | 'NEWS' | 'QUANT LAB' | 'QUANTAMENTAL' | 'PORTFOLIO' | 'RISK MAP' | 'RESEARCH PAPERS' | 'SEASONALITY' | 'MARKET PARTICIPANT';
 type RegimePoint = { date: string; growth: number; inflation: number };
 type FredData = { status: string; freshness: string; indicators: Array<{ name: string; actual: number; mean: number; z: number; unit: string }>; yields: Array<{ maturity: string; value: number }>; regime: RegimePoint[] };
 type Constituent = { ticker: string; price: number; daily: number | null; weekly: number | null };
@@ -39,49 +48,9 @@ type SeasonalityData = { status: string; ticker: string; symbol: string; years: 
 type CotSeries = { key: string; label: string; groups: string[]; latest: string; points: Array<{ date: string; values: Record<string,number> }> };
 type CotData = { status: string; source: string; freshness: string; series: CotSeries[]; failures: string[] };
 
-type NavGroup = 'MONITOR' | 'DECIDE' | 'RESEARCH';
-const navigation = [
-  { label: 'OVERVIEW', icon: '⌂', group: 'MONITOR' },
-  { label: 'MACRO', icon: '∿', group: 'MONITOR' },
-  { label: 'MARKETS', icon: '◇', group: 'MONITOR' },
-  { label: 'NEWS', icon: '◫', group: 'MONITOR' },
-  { label: 'QUANT LAB', icon: 'Σ', group: 'DECIDE' },
-  { label: 'QUANTAMENTAL', icon: '◉', group: 'DECIDE' },
-  { label: 'PORTFOLIO', icon: '◈', group: 'DECIDE' },
-  { label: 'RISK MAP', icon: '⌖', group: 'DECIDE' },
-  { label: 'RESEARCH PAPERS', icon: '▤', group: 'RESEARCH' },
-  { label: 'SEASONALITY', icon: '▦', group: 'RESEARCH' },
-  { label: 'MARKET PARTICIPANT', icon: '≋', group: 'RESEARCH' },
-] as const satisfies ReadonlyArray<{ label: Section; icon: string; group: NavGroup }>;
-const navDesc: Record<(typeof navigation)[number]['label'], string> = {
-  OVERVIEW: 'What needs attention now',
-  MACRO: 'Growth, inflation, curve',
-  MARKETS: 'Daily & weekly performance',
-  NEWS: 'Ranked by decision impact',
-  'QUANT LAB': 'Cross-asset & IDX signals',
-  QUANTAMENTAL: 'Valuation vs momentum map',
-  PORTFOLIO: 'Exposure and stress',
-  'RISK MAP': 'Chokepoints, conflict, hazards',
-  'RESEARCH PAPERS': 'Institutional library',
-  SEASONALITY: 'Monthly return tendencies',
-  'MARKET PARTICIPANT': 'CFTC positioning',
-};
-const navBadge = (label: Section) => (label === 'QUANT LAB' ? 'SETUPS · BETA' : label === 'QUANTAMENTAL' ? 'QUANTAMENTAL · BETA' : label === 'NEWS' || label === 'PORTFOLIO' ? `${label} · BETA` : label);
-/** Number-key shortcut for a nav slot: 1..9, then 0 for the tenth. */
-const navShortcut = (index: number) => (index === 9 ? '0' : index < 9 ? String(index + 1) : '—');
-
-function sectionSlug(section: Section) {
-  return section.toLowerCase().replace(/\s+/g, "-");
-}
-function sectionFromHash(): Section {
-  if (typeof window === "undefined") return "OVERVIEW";
-  const slug = window.location.hash.replace(/^#/, "").toLowerCase();
-  return navigation.find((item) => sectionSlug(item.label) === slug)?.label ?? "OVERVIEW";
-}
-
 export default function Home() {
   const [active, setActive] = useState<Section>('OVERVIEW');
-  const navRefs = useRef<Record<string, HTMLButtonElement | null>>({});
+  const lastSectionByPillar = useRef<Partial<Record<Pillar, Section>>>({});
   const [now, setNow] = useState<Date | null>(null);
   const [range, setRange] = useState<'6M' | '1Y' | '3Y'>('1Y');
   const [heatPeriod, setHeatPeriod] = useState<'1D' | '1W'>('1D');
@@ -101,11 +70,6 @@ export default function Home() {
   const modalOpenRef = useRef(false);
   // Keep the global shortcut handler aware of overlays without re-binding it every render.
   useEffect(() => { modalOpenRef.current = notesOpen || settingsOpen || feedbackOpen || onboardingOpen || commandOpen; }, [notesOpen, settingsOpen, feedbackOpen, onboardingOpen, commandOpen]);
-  // On the mobile bottom bar, keep the active section scrolled into view.
-  useEffect(() => {
-    if (!window.matchMedia('(max-width: 720px)').matches) return;
-    navRefs.current[active]?.scrollIntoView({ block: 'nearest', inline: 'center', behavior: 'smooth' });
-  }, [active]);
   const [scheme, setScheme] = useState<Scheme>('default'); const [note, setNote] = useState('');
   const [savedNote, setSavedNote] = useState('');
   const [savedNoteAt, setSavedNoteAt] = useState<string | null>(null);
@@ -259,28 +223,36 @@ export default function Home() {
     };
   }, []);
 
-  const changeSection = (section: Section) => {
+  const activePillar = pillarForSection(active);
+  useEffect(() => { lastSectionByPillar.current[activePillar] = active; }, [active, activePillar]);
+
+  const changeSection = useCallback((section: Section) => {
     const nextHash = `#${sectionSlug(section)}`;
     if (window.location.hash !== nextHash) {
       window.history.pushState({ ...window.history.state, jarvisSection: section }, "", nextHash);
     }
+    lastSectionByPillar.current[pillarForSection(section)] = section;
     setActive(section);
     window.scrollTo({ top: 0, behavior: "smooth" });
-  };
+  }, []);
 
-  // Number keys jump between sections: 1..9 for the first nine slots, 0 for the tenth.
-  // Declared after changeSection so the closure is past its initialiser.
+  const changePillar = useCallback((pillar: Pillar) => {
+    const next = lastSectionByPillar.current[pillar] ?? pillarDefinition(pillar).defaultSection;
+    changeSection(next);
+  }, [changeSection]);
+
+  // Number keys jump between the secondary sections inside the active pillar.
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (modalOpenRef.current) return;
       if (!/^[0-9]$/.test(event.key) || event.metaKey || event.ctrlKey || event.altKey) return;
       if ((event.target as HTMLElement | null)?.closest('textarea, input, select, [contenteditable="true"]')) return;
-      const item = navigation[event.key === '0' ? 9 : Number(event.key) - 1];
+      const item = pillarDefinition(activePillar).sections[event.key === '0' ? 9 : Number(event.key) - 1];
       if (item) changeSection(item.label);
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, []);
+  }, [activePillar, changeSection]);
   const wibDay = now?.toLocaleDateString("en-US", { weekday: "short", timeZone: "Asia/Jakarta" }).toUpperCase() ?? "—";
   const wibDate = now?.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Jakarta" }).toUpperCase() ?? "LOADING";
   const wibTime = now?.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "Asia/Jakarta" }) ?? "—";
@@ -670,36 +642,20 @@ export default function Home() {
   };
 
   return (
-    <main className="terminal-shell" data-scheme={scheme}>
-      <aside className="side-nav">
-        <div className="side-brand" aria-label="Jarvis"><Image src="/jarvis-logo-128.png" alt="" width={128} height={128} /></div>
-        <nav aria-label="Research sections">
-          {navigation.map((item, index) => {
-            const badge = navBadge(item.label);
-            const startsGroup = index === 0 || navigation[index - 1].group !== item.group;
-            return (
-              <Fragment key={item.label}>
-                {index > 0 && startsGroup && <span className="side-sep" aria-hidden="true" />}
-                <button
-                  ref={(node) => { navRefs.current[item.label] = node; }}
-                  aria-label={item.label}
-                  data-label={badge}
-                  data-desc={navDesc[item.label]}
-                  data-key={navShortcut(index)}
-                  title={badge}
-                  onClick={() => changeSection(item.label)}
-                  aria-current={active === item.label ? 'page' : undefined}
-                  className={active === item.label ? 'active' : ''}
-                ><span aria-hidden="true">{item.icon}</span><span className="nav-label">{badge}</span></button>
-              </Fragment>
-            );
-          })}
-        </nav>
-        <div className="side-tools"><button aria-label="Notes" data-label="NOTES" title="Notes" onClick={() => setNotesOpen(true)}><span aria-hidden="true">✎</span><span className="nav-label">NOTES</span></button><button aria-label="Settings" data-label="SETTINGS" title="Settings" onClick={() => setSettingsOpen(true)}><span aria-hidden="true">⚙</span><span className="nav-label">SETTINGS</span></button></div>
-        <button className="sidebar-feedback" aria-label="Send feedback" data-label="FEEDBACK" title="Send feedback" onClick={() => setFeedbackOpen(true)}><span aria-hidden="true">?</span><span className="nav-label">FEEDBACK</span></button>
-      </aside>
-
-      <div className="app-column">
+    <>
+    <AppShell
+      scheme={scheme}
+      pillar={activePillar}
+      sidebar={
+        <Sidebar
+          active={activePillar}
+          onSelectPillar={changePillar}
+          onOpenNotes={() => setNotesOpen(true)}
+          onOpenSettings={() => setSettingsOpen(true)}
+          onOpenFeedback={() => setFeedbackOpen(true)}
+        />
+      }
+      topBar={
         <header className="topbar global-bar">
           <StockSearch
             placeholder="Search IDX tickers, companies (e.g. ABMM, BBCA)..."
@@ -712,9 +668,9 @@ export default function Home() {
           <div className="global-date" aria-label={`Current time ${wibDate} ${wibTime} WIB`}><span>{wibDay}</span><strong>{wibDate}</strong><b>{wibTime} WIB</b></div>
           <button className="feedback-trigger" type="button" onClick={() => setFeedbackOpen(true)}><span aria-hidden="true">✦</span><strong>SEND FEEDBACK</strong><small>HELP IMPROVE JARVIS</small></button>
         </header>
-
-        <DataStatusBar feeds={feedReadings} checkedAt={lastLoadedAt ? new Date(lastLoadedAt).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jakarta' }) + ' WIB' : null} />
-
+      }
+      statusBar={<DataStatusBar feeds={feedReadings} checkedAt={lastLoadedAt ? new Date(lastLoadedAt).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jakarta' }) + ' WIB' : null} />}
+      signalStrip={
         <section className="signal-strip" aria-label="Key readings">
           <MetricCard label="MACRO REGIME" value={regimeLabel(currentRegime)} tone="orange" condition={currentRegime.date ? 'GROWTH–INFLATION PRESSURE' : 'NO VALID READING'} implication={fred ? 'Defensive tilt; avoid paying for fragile growth.' : 'No synthetic regime is shown while FRED is unavailable.'} source={fred ? (fred.status === 'live' ? 'FRED LIVE' : 'FRED STALE') : 'FEED OFFLINE'} />
           <MetricCard label="GPR COMPOSITE" value={gdelt ? 'PARTIAL' : '—'} condition={gdelt ? `FREQUENCY ${gdelt.frequencyScore.toFixed(1)} · LIVE` : 'FEED OFFLINE'} implication={gdelt ? 'Goldstein severity is still required for a valid composite.' : 'The composite is withheld rather than estimated.'} source={gdelt ? 'GDELT KEYWORD FEED LIVE' : 'FEED OFFLINE'} />
@@ -722,10 +678,11 @@ export default function Home() {
           <MetricCard label="DXY" value={markets && dxy.last ? dxy.last.toFixed(2) : '—'} condition={markets ? relativeLabel(dxy.last, dxy.average, 'DOLLAR') : 'FEED OFFLINE'} implication="Firm USD is a headwind for EM risk and commodities." source={markets && dxy.last ? `${signed(dxy.change)}% · ${markets.status.toUpperCase()}` : 'FEED OFFLINE'} />
           <MetricCard label="WTI CRUDE" value={markets && oil.last ? '$' + oil.last.toFixed(2) : '—'} condition={markets ? relativeLabel(oil.last, oil.average, 'ENERGY') : 'FEED OFFLINE'} implication="Supports the energy complex; coal equities benefit indirectly." source={markets && oil.last ? `${signed(oil.change)}% · ${markets.status.toUpperCase()}` : 'FEED OFFLINE'} />
         </section>
-
-        <div className="view-heading"><div><span>RESEARCH / {active}</span><h2>{active === 'OVERVIEW' ? 'Daily Research Overview' : titleCase(active)}</h2></div><p>{sectionDescription(active)}</p></div>
-
-        <PanelBoundary label={active} resetKey={active}>
+      }
+      pageHeader={<PageHeader pillar={activePillar} section={active} onSelectSection={changeSection} />}
+      footer={<footer className="terminal-footer"><span>JARVIS / RESEARCH USE ONLY</span><span>Unavailable feeds retain explicit connection labels.</span><span>v1.2</span></footer>}
+    >
+      <PanelBoundary label={active} resetKey={active}>
         {active === 'OVERVIEW' && <section className="decision-home">
           <header className="decision-intro">
             <span className="decision-kicker">JARVIS / DECISION BRIEF</span>
@@ -799,9 +756,7 @@ export default function Home() {
 
         {active === 'MARKET PARTICIPANT' && <section className="dashboard-grid cot-grid"><article className="panel cot-panel"><PanelHead index="01" title="CFTC COT POSITIONING"><div className="ticker-switcher">{['USD','GOLD','US10Y','BTC'].map((asset)=><button key={asset} onClick={()=>setCotAsset(asset)} className={cotAsset===asset?'active':''} disabled={!cot?.series.some((item)=>item.key===asset)}>{asset}</button>)}</div></PanelHead>{selectedCot ? <><div className="cot-summary"><div><span>CONTRACT</span><strong>{selectedCot.label}</strong></div><div><span>LATEST REPORT</span><strong>{formatDate(selectedCot.latest)}</strong></div><div><span>FREQUENCY</span><strong>WEEKLY · CFTC</strong></div></div><CotChart series={selectedCot} /><CotTable series={selectedCot} /><PanelFoot left="NET POSITION = LONG CONTRACTS − SHORT CONTRACTS" right={`UPDATED WEEKLY · THROUGH ${formatDate(selectedCot.latest)}`} /></> : <FeedUnavailable title="CFTC CONNECTION FAILED" body="No positioning values are shown because the public COT dataset did not return a valid series." />}</article></section>}
         </PanelBoundary>
-
-        <footer className="terminal-footer"><span>JARVIS / RESEARCH USE ONLY</span><span>Unavailable feeds retain explicit connection labels.</span><span>v1.2</span></footer>
-      </div>
+    </AppShell>
 
       {notesOpen && <div className="overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) setNotesOpen(false); }}><section ref={notesDialogRef} tabIndex={-1} className="drawer" role="dialog" aria-modal="true" aria-label="Research notes"><div className="drawer-head"><div><span>RESEARCH LOG</span><h2>UPDATE CURRENT THESIS</h2></div><button onClick={() => setNotesOpen(false)}>ESC</button></div><label htmlFor="note">NEW NOTE</label><textarea id="note" autoFocus value={note} maxLength={2000} onChange={(e) => setNote(e.target.value)} placeholder="What changed in the data, and what would disprove your read?" /><div className="prompt-line"><span>Keep the claim testable. Notes sync to your account.</span><span>{note.length} / 2000</span></div><div className="drawer-actions"><button onClick={() => setNotesOpen(false)}>CANCEL</button><button className="primary-button" onClick={saveNote}>SAVE NOTE</button></div><div className="recent-note"><span>LATEST ENTRY</span><p>{savedNote || 'No thesis saved yet.'}</p><small>{savedNoteLabel}</small></div>{noteHistory.length > 1 && <div className="note-history"><span>THESIS HISTORY</span>{noteHistory.slice(0, 6).map((entry) => <div key={entry.id}><small>{new Date(entry.created_at).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'Asia/Jakarta' }).toUpperCase()}</small><p>{entry.body}</p></div>)}</div>}</section></div>}
       {settingsOpen && <div className="overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) setSettingsOpen(false); }}><section ref={settingsDialogRef} tabIndex={-1} className="drawer" role="dialog" aria-modal="true" aria-label="Terminal settings"><div className="drawer-head"><div><span>TERMINAL</span><h2>SETTINGS</h2></div><button onClick={() => setSettingsOpen(false)}>ESC</button></div><div className="setting-block"><h3>COLOR ACCESSIBILITY</h3><p>Choose a signal palette that keeps gains and losses distinct.</p><div className="scheme-list">{SCHEMES.map((item) => <button key={item} className={scheme===item?'selected':''} onClick={() => changeScheme(item)}><i /><span>{item.toUpperCase()}</span><b>{scheme===item?'ON':''}</b></button>)}</div></div><div className="setting-block"><h3>DATA CONNECTIONS</h3><p>Technical feed detail is kept here so the daily view stays focused on decisions.</p><div className="settings-health connection-list"><p><i className={fred ? 'live' : ''} /><strong>FRED</strong><span>{fred ? `Updated ${fred.freshness}` : 'FRED_API_KEY not configured or upstream unavailable'}</span></p><p><i className={markets ? 'live' : ''} /><strong>IDX + SEASONALITY</strong><span>{markets ? `${markets.status} · Yahoo upstream` : 'Live request failed · panel withheld, no synthetic values'}</span></p><p><i className={gdelt ? 'live' : ''} /><strong>GDELT DOC</strong><span>{gdelt ? 'Keyword-frequency series live · Goldstein pending' : 'Live request failed'}</span></p><p><i className={cot ? 'live' : ''} /><strong>CFTC COT</strong><span>{cot ? `${cot.status} · weekly public reports` : 'Public dataset request failed'}</span></p><p><i className={calendar ? 'live' : ''} /><strong>TRADINGECONOMICS</strong><span>{calendar ? 'Calendar connected' : 'TRADING_ECONOMICS_API_KEY required'}</span></p></div></div><PlanCard /><WeeklyDigestOptIn /><FeedbackInbox active={settingsOpen} /><div className="setting-block"><h3>ONBOARDING</h3><p>Revisit the starter watchlist, thesis prompt, and notification setup.</p><button type="button" className="quiet-button" onClick={() => { setSettingsOpen(false); setOnboardingOpen(true); trackEvent('onboarding_start', { source: 'settings' }); }}>{onboardingComplete ? 'REPLAY ONBOARDING' : 'FINISH SETUP'}</button></div><SettingsLogout /><button className="primary-button full" onClick={() => setSettingsOpen(false)}>APPLY SETTINGS</button></section></div>}
@@ -819,14 +774,10 @@ export default function Home() {
         onOpenNotes={() => { completeOnboarding(); setNotesOpen(true); }}
         onOpenSettings={() => { completeOnboarding(); setSettingsOpen(true); }}
       />
-      <CommandPalette
+      <GlobalCommandPalette
         open={commandOpen}
         onOpenChange={setCommandOpen}
-        sections={navigation.map((item) => ({ label: item.label, description: navDesc[item.label] }))}
-        onNavigate={(label) => {
-          const item = navigation.find((entry) => entry.label === label);
-          if (item) changeSection(item.label);
-        }}
+        onNavigate={changeSection}
         onOpenStock={openStockDetail}
         onOpenNotes={() => setNotesOpen(true)}
         onOpenSettings={() => setSettingsOpen(true)}
@@ -888,7 +839,7 @@ export default function Home() {
           )}
         />
       )}
-    </main>
+    </>
   );
 }
 
@@ -1016,5 +967,3 @@ function relativeLabel(last:number,average:number,name:string){if(!last||!averag
 function countryCode(country:string){const value=country.toLowerCase();return value.includes('indonesia')?'ID':value.includes('china')?'CN':value.includes('united states')?'US':country.slice(0,2).toUpperCase()}
 function monthName(month:number){return ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'][month-1]}
 function compact(value:number){const absolute=Math.abs(value);const sign=value<0?'-':'';return absolute>=1_000_000?`${sign}${(absolute/1_000_000).toFixed(1)}M`:absolute>=1_000?`${sign}${(absolute/1_000).toFixed(1)}K`:`${Math.round(value)}`}
-function titleCase(value:string){return value.toLowerCase().replace(/\b\w/g,(x)=>x.toUpperCase())}
-function sectionDescription(section:Section){return ({OVERVIEW:'The readings that need attention before the next research session.',MACRO:'Live FRED signals for growth, inflation and the Treasury curve.',MARKETS:'Daily and weekly market performance with the IDX watchlist.',NEWS:'Beta · IDX, macro, and commodity coverage ranked by decision impact.','QUANT LAB':'Beta · Transparent cross-asset and IDX breadth signals.','QUANTAMENTAL':'Beta · Peer-relative valuation against six-month momentum, with every missing input shown explicitly.',PORTFOLIO:'Beta · Personal factor exposure, concentration, and scenario stress testing.','RISK MAP':'Where the world is fragile: market-moving chokepoints, active conflict zones and live hazard pins.','RESEARCH PAPERS':'Institutional research library with admin-managed publication.',SEASONALITY:'Historical monthly return tendencies across selected IDX names and the benchmark.','MARKET PARTICIPANT':'Weekly CFTC positioning by trader category for major futures markets.'})[section]}
