@@ -286,7 +286,13 @@ button:focus-visible, textarea:focus-visible { outline: 1px solid var(--blue); o
 .sidebar-health i.partial,.compact-health i.partial { background: var(--orange); box-shadow: 0 0 7px color-mix(in srgb, var(--orange) 70%, transparent); }
 .sidebar-health i.good,.compact-health i.good,.connection-list i.live { background: var(--positive); box-shadow: 0 0 7px color-mix(in srgb, var(--positive) 70%, transparent); }
 .app-column { min-width: 0; padding: 0 18px 26px; }
-.global-bar { grid-template-columns: minmax(260px, 1fr) auto auto; gap: 28px; height: 58px; align-items: center; }
+/* Search · commands · clock · feedback. The right padding reserves room for
+   the fixed theme toggle so the last control never sits underneath it. */
+.global-bar { grid-template-columns: minmax(260px, 1fr) auto auto auto; gap: 20px; height: 58px; align-items: center; padding-right: 46px; }
+@media (max-width: 1200px) { .global-bar { grid-template-columns: minmax(0, 1fr) auto auto auto; gap: 12px; } }
+@media (max-width: 1050px) { .global-bar { grid-template-columns: minmax(0, 1fr) auto auto; } }
+@media (max-width: 720px) { .global-bar { grid-template-columns: minmax(0, 1fr) auto auto; gap: 8px; padding-right: 42px; } }
+@media (max-width: 520px) { .global-bar { grid-template-columns: minmax(0, 1fr) auto; } .feedback-trigger { display: none; } }
 .global-search { height: 34px; max-width: 460px; position: relative; width: 100%; }
 .stock-search-wrap { position: relative; width: 100%; max-width: 460px; }
 .stock-search-bar { display: flex; align-items: center; height: 34px; background: #05070a; border: 1px solid var(--line-strong); border-radius: 2px; transition: border-color 0.15s ease, box-shadow 0.15s ease; cursor: text; }
