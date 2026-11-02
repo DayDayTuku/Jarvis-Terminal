@@ -24,6 +24,7 @@ test("every existing section is reachable exactly once", () => {
       "MACRO",
       "MARKETS",
       "NEWS",
+      "RESEARCH DESK",
       "QUANT LAB",
       "QUANTAMENTAL",
       "PORTFOLIO",
@@ -52,7 +53,7 @@ test("legacy section hashes keep working", () => {
 test("pillar hashes resolve to their default section", () => {
   assert.equal(sectionFromHashValue("#home"), "OVERVIEW");
   assert.equal(sectionFromHashValue("#discover"), "MARKETS");
-  assert.equal(sectionFromHashValue("#intelligence"), "QUANT LAB");
+  assert.equal(sectionFromHashValue("#intelligence"), "RESEARCH DESK");
   assert.equal(sectionFromHashValue("#portfolio"), "PORTFOLIO");
 });
 

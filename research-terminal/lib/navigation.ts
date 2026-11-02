@@ -14,6 +14,7 @@ export type Section =
   | 'MACRO'
   | 'MARKETS'
   | 'NEWS'
+  | 'RESEARCH DESK'
   | 'QUANT LAB'
   | 'QUANTAMENTAL'
   | 'PORTFOLIO'
@@ -51,6 +52,10 @@ const SECTION_COPY: Record<Section, { short: string; description: string; badge?
     short: 'Macro',
     description: 'Live FRED signals for growth, inflation and the Treasury curve.',
   },
+  'RESEARCH DESK': {
+    short: 'Research Desk',
+    description: 'One queue that combines scanner setups with peer-relative valuation outliers and the latest papers.',
+  },
   MARKETS: {
     short: 'Market Explorer',
     description: 'Sector heatmap, market movers and a filterable view of the scanned IDX universe.',
@@ -66,7 +71,7 @@ const SECTION_COPY: Record<Section, { short: string; description: string; badge?
     badge: 'BETA',
   },
   QUANTAMENTAL: {
-    short: 'Quantamental',
+    short: 'Valuation Map',
     description:
       'Beta · Peer-relative valuation against six-month momentum, with every missing input shown explicitly.',
     badge: 'BETA',
@@ -82,7 +87,7 @@ const SECTION_COPY: Record<Section, { short: string; description: string; badge?
       'Confirmed hazards, wildfires, static chokepoints and conflict references, plus news-derived disruption reports.',
   },
   'RESEARCH PAPERS': {
-    short: 'Research Papers',
+    short: 'Research Library',
     description: 'Institutional research library with admin-managed publication.',
   },
   SEASONALITY: {
@@ -98,6 +103,7 @@ const SECTION_COPY: Record<Section, { short: string; description: string; badge?
 const SECTION_ICONS: Record<Section, string> = {
   OVERVIEW: '⌂',
   MACRO: '∿',
+  'RESEARCH DESK': '▤',
   MARKETS: '◇',
   NEWS: '◫',
   'QUANT LAB': 'Σ',
@@ -146,8 +152,8 @@ export const PILLARS: readonly PillarDefinition[] = [
     slug: 'intelligence',
     icon: '◉',
     description: 'Research, quant and valuation',
-    defaultSection: 'QUANT LAB',
-    sections: [section('QUANT LAB'), section('QUANTAMENTAL'), section('RESEARCH PAPERS')],
+    defaultSection: 'RESEARCH DESK',
+    sections: [section('RESEARCH DESK'), section('QUANT LAB'), section('QUANTAMENTAL'), section('RESEARCH PAPERS')],
   },
   {
     id: 'PORTFOLIO',

@@ -15,6 +15,7 @@ import SettingsLogout from '../components/SettingsLogout';
 import WeeklyDigestOptIn from '../components/WeeklyDigestOptIn';
 import WorldMonitor from '../components/RiskMap';
 import MarketExplorer from '../components/discover/MarketExplorer';
+import ResearchDesk from '../components/intelligence/ResearchDesk';
 import DataStatusBar from '../components/DataStatusBar';
 import OnboardingModal from '../components/OnboardingModal';
 import PlanCard from '../components/PlanCard';
@@ -791,6 +792,8 @@ export default function Home() {
         {active === 'MARKETS' && <MarketExplorer markets={markets} calendar={<Calendar data={calendar} />} onSelectStock={openStockDetail} />}
 
         {active === 'NEWS' && <NewsIntelligence />}
+
+        {active === 'RESEARCH DESK' && <ResearchDesk onSelectStock={openStockDetail} onNavigate={changeSection} />}
 
         {active === 'QUANT LAB' && <QuantLab markets={markets} fred={fred} onSelectStock={openStockDetail} />}
 
