@@ -18,6 +18,7 @@ export type Section =
   | 'QUANT LAB'
   | 'QUANTAMENTAL'
   | 'PORTFOLIO'
+  | 'MODEL PORTFOLIO'
   | 'RISK MAP'
   | 'RESEARCH PAPERS'
   | 'SEASONALITY'
@@ -77,9 +78,13 @@ const SECTION_COPY: Record<Section, { short: string; description: string; badge?
     badge: 'BETA',
   },
   PORTFOLIO: {
-    short: 'Portfolio',
-    description: 'Beta · Personal factor exposure, concentration, and scenario stress testing.',
+    short: 'My Portfolio',
+    description: 'Beta · Your saved holdings, concentration, factor exposure, and scenario stress testing.',
     badge: 'BETA',
+  },
+  'MODEL PORTFOLIO': {
+    short: 'Model Portfolio',
+    description: 'Weekly model picks and the published track record. A hypothetical research model, not your holdings.',
   },
   'RISK MAP': {
     short: 'World Monitor',
@@ -109,6 +114,7 @@ const SECTION_ICONS: Record<Section, string> = {
   'QUANT LAB': 'Σ',
   QUANTAMENTAL: '◉',
   PORTFOLIO: '◈',
+  'MODEL PORTFOLIO': '▣',
   'RISK MAP': '⌖',
   'RESEARCH PAPERS': '▤',
   SEASONALITY: '▦',
@@ -121,8 +127,8 @@ function section(label: Section): SectionDefinition {
 
 /**
  * Phase 1 keeps every existing section exactly where it works today; only the
- * grouping changes. Phase 2 will promote the World Monitor experience inside
- * DISCOVER and Phase 4 will add holdings-aware surfaces to PORTFOLIO.
+ * grouping changes. Phase 4 splits PORTFOLIO into the user's own saved holdings
+ * and a clearly separate model portfolio with its published track record.
  */
 export const PILLARS: readonly PillarDefinition[] = [
   {
@@ -161,7 +167,7 @@ export const PILLARS: readonly PillarDefinition[] = [
     icon: '◈',
     description: 'Holdings, risk and model portfolios',
     defaultSection: 'PORTFOLIO',
-    sections: [section('PORTFOLIO')],
+    sections: [section('PORTFOLIO'), section('MODEL PORTFOLIO')],
   },
 ] as const;
 

@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { IDX_UNIVERSE } from "@/lib/idx-universe";
 import { normalizeTicker } from "@/lib/workspace";
 import { trackEvent } from "@/lib/analytics-client";
+import type { Section } from "@/lib/navigation";
 
 type InputRow = { id: string; ticker: string; value: string };
 type StressData = {
@@ -56,7 +57,13 @@ const money = (value: number) => {
   return `${sign}Rp${abs.toLocaleString("id-ID", { maximumFractionDigits: 0 })}`;
 };
 
-export default function PortfolioStressLab() {
+export default function PortfolioStressLab({
+  onSelectStock,
+  onNavigate,
+}: {
+  onSelectStock?: (ticker: string) => void;
+  onNavigate?: (section: Section) => void;
+} = {}) {
   const [rows, setRows] = useState<InputRow[]>([newRow()]);
   const [data, setData] = useState<StressData | null>(null);
   const [loading, setLoading] = useState(false);
@@ -175,9 +182,24 @@ export default function PortfolioStressLab() {
 
   return (
     <section className="portfolio-lab">
+      <header className="panel portfolio-identity">
+        <div>
+          <span>PORTFOLIO / MY PORTFOLIO</span>
+          <h2>Your saved holdings, not a model portfolio.</h2>
+          <p>
+            Current position values are stored on your account and used for concentration and scenario
+            stress. Cost basis and realised or unrealised P/L are not stored, so Jarvis does not show them.
+          </p>
+        </div>
+        <div className="portfolio-identity-actions">
+          <span>COST BASIS &amp; P/L<b>NOT STORED</b></span>
+          {onNavigate && <button type="button" className="quiet-button" onClick={() => onNavigate("MODEL PORTFOLIO")}>MODEL PORTFOLIO →</button>}
+        </div>
+      </header>
+
       <article className="panel portfolio-builder">
         <div className="suite-head">
-          <div><span>PORTFOLIO STRESS LAB · BETA</span><h3>Find what can break the portfolio.</h3><p>Enter current market value—not cost basis. Saved to your account with a browser fallback.</p></div>
+          <div><span>MY PORTFOLIO · STRESS LAB · BETA</span><h3>Find what can break your portfolio.</h3><p>Enter current market value—not cost basis. Saved to your account with a browser fallback.</p></div>
           <strong>{validRows.length}/8 POSITIONS · {syncStatus === "synced" ? "SYNCED" : syncStatus === "loading" ? "CHECKING" : "LOCAL"}</strong>
         </div>
         <div className="portfolio-input-head"><span>TICKER</span><span>CURRENT VALUE (IDR)</span><span /></div>
@@ -245,16 +267,27 @@ export default function PortfolioStressLab() {
 
           <div className="portfolio-detail-grid">
             <article className="panel">
-              <div className="mini-head">POSITION RISK MAP</div>
+              <div className="mini-head"><span>POSITION RISK MAP</span><small>CLICK A POSITION FOR STOCK DETAIL</small></div>
               <div className="risk-map-row risk-map-labels"><span>TICKER</span><span>WEIGHT</span><span>VOL</span><span>β IDX</span><span>β FX</span><span>β OIL</span></div>
-              {data.positions.map((position) => <div className="risk-map-row" key={position.ticker}><strong>{position.shortTicker}</strong><span>{pct(position.weight, 0)}</span><span>{pct(position.annualVolatility)}</span><span>{position.betas.JKSE?.toFixed(2) ?? "—"}</span><span>{position.betas.USDIDR?.toFixed(2) ?? "—"}</span><span>{position.betas.OIL?.toFixed(2) ?? "—"}</span></div>)}
+              {data.positions.map((position) => (
+                <button
+                  type="button"
+                  className="risk-map-row risk-map-select"
+                  key={position.ticker}
+                  onClick={() => onSelectStock?.(position.shortTicker)}
+                  disabled={!onSelectStock}
+                  title={onSelectStock ? `Open ${position.shortTicker} stock detail` : undefined}
+                >
+                  <strong>{position.shortTicker}</strong><span>{pct(position.weight, 0)}</span><span>{pct(position.annualVolatility)}</span><span>{position.betas.JKSE?.toFixed(2) ?? "—"}</span><span>{position.betas.USDIDR?.toFixed(2) ?? "—"}</span><span>{position.betas.OIL?.toFixed(2) ?? "—"}</span>
+                </button>
+              ))}
             </article>
             <article className="panel">
               <div className="mini-head">CONCENTRATION</div>
               {[...data.sectorWeights.map((item) => ({ label: item.sector, value: item.weight, type: "SECTOR" })), ...data.riskContributions.slice(0, 3).map((item) => ({ label: item.ticker, value: item.contribution, type: "RISK" }))].map((item, index) => <div className="concentration-row" key={item.type + item.label + index}><div><span>{item.type}</span><strong>{item.label}</strong></div><div><i style={{ width: `${Math.min(100, item.value * 100)}%` }} /></div><b>{pct(item.value, 0)}</b></div>)}
             </article>
           </div>
-          <div className="suite-method">{data.methodology} Coverage {data.coverage.analyzed}/{data.coverage.requested}; failed symbols are excluded rather than imputed.</div>
+          <div className="suite-method">{data.methodology} Coverage {data.coverage.analyzed}/{data.coverage.requested}; failed symbols are excluded rather than imputed. Position values are current market values; cost basis and P/L are not stored.</div>
         </>
       )}
     </section>

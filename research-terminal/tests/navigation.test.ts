@@ -28,6 +28,7 @@ test("every existing section is reachable exactly once", () => {
       "QUANT LAB",
       "QUANTAMENTAL",
       "PORTFOLIO",
+      "MODEL PORTFOLIO",
       "RISK MAP",
       "RESEARCH PAPERS",
       "SEASONALITY",
@@ -54,6 +55,14 @@ test("pillar hashes resolve to their default section", () => {
   assert.equal(sectionFromHashValue("#home"), "OVERVIEW");
   assert.equal(sectionFromHashValue("#discover"), "MARKETS");
   assert.equal(sectionFromHashValue("#intelligence"), "RESEARCH DESK");
+  assert.equal(sectionFromHashValue("#portfolio"), "PORTFOLIO");
+});
+
+test("portfolio keeps personal holdings and the model separate", () => {
+  const portfolio = PILLARS.find((pillar) => pillar.id === "PORTFOLIO");
+  assert.deepEqual(portfolio?.sections.map((item) => item.label), ["PORTFOLIO", "MODEL PORTFOLIO"]);
+  assert.equal(portfolio?.defaultSection, "PORTFOLIO");
+  assert.equal(sectionFromHashValue("#model-portfolio"), "MODEL PORTFOLIO");
   assert.equal(sectionFromHashValue("#portfolio"), "PORTFOLIO");
 });
 

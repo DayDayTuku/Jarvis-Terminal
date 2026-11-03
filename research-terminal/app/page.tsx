@@ -8,6 +8,7 @@ import NewsIntelligence from '../components/NewsIntelligence';
 import QuantLab from '../components/QuantLab';
 import QuantamentalMap from '../components/QuantamentalMap';
 import PortfolioStressLab from '../components/PortfolioStressLab';
+import ModelPortfolio from '../components/portfolio/ModelPortfolio';
 import FeedbackModal from '../components/FeedbackModal';
 import FeedbackInbox from '../components/FeedbackInbox';
 import ResearchPapers from '../components/ResearchPapers';
@@ -799,7 +800,9 @@ export default function Home() {
 
         {active === 'QUANTAMENTAL' && <QuantamentalMap onSelectStock={openStockDetail} />}
 
-        {active === 'PORTFOLIO' && <PortfolioStressLab />}
+        {active === 'PORTFOLIO' && <PortfolioStressLab onSelectStock={openStockDetail} onNavigate={changeSection} />}
+
+        {active === 'MODEL PORTFOLIO' && <ModelPortfolio onNavigate={changeSection} />}
 
         {active === 'RISK MAP' && <WorldMonitor />}
 
