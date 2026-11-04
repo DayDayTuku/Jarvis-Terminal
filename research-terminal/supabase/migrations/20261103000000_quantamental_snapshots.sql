@@ -25,3 +25,4 @@ create index if not exists jarvis_quantamental_snapshots_date_idx
 alter table public.jarvis_quantamental_snapshots enable row level security;
 revoke all on public.jarvis_quantamental_snapshots from anon, authenticated;
 grant all on public.jarvis_quantamental_snapshots to service_role;
+grant usage, select on sequence public.jarvis_quantamental_snapshots_id_seq to service_role;
