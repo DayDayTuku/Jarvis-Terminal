@@ -118,8 +118,9 @@ async function main(): Promise<void> {
     { label: "control: always 50%", policy: { holdThroughDrops: true, costPct: 0.4, macro: () => 0.5 } },
   ];
 
-  // The live model now uses the fitted score, so the baseline is the fitted
-  // variant. The legacy row keeps the old hand-tuned score visible for contrast.
+  // The live model uses the fitted score re-trained on ribbon features, so the
+  // baseline is the fitted variant. The legacy row keeps the transparent
+  // heuristic visible for contrast.
   variants.push({ label: "legacy score", policy: {}, scoreWith: (setup) => setup.legacyScore });
 
   const runs = variants.map((variant) => ({ label: variant.label, result: runBacktest({ scanDates, barsByTicker, marketBars: calendar, macroBars, sectors, shortEligible, policy: variant.policy, scoreWith: variant.scoreWith }) }));

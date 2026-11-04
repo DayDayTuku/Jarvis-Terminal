@@ -190,6 +190,31 @@ an outline encodes revision direction when it is known. Missing inputs are never
 zero-filled: names without a comparable gap or score appear in explicit
 "no gap" / "no score" lists.
 
+### Swing setup engine
+
+The live scanner (`GET /api/swing-setups`) reads price through the **EMA25/EMA50
+ribbon**, not the old 20/50/200 stack. The ribbon is `bull` (price above EMA25
+above EMA50), `bear` (below both), `recovery` (above both but EMA25 still below
+EMA50), `rollover` (below both but EMA25 still above EMA50) or `compression`
+(price inside the band). The nearest EMA below price is the base support and the
+nearest above is the base resistance, so the same band flips between support and
+resistance as price moves. Structural stops use EMA25.
+
+The 200-day average is kept as a **long-term risk filter**, not a trend read:
+breakouts and pullbacks require price above SMA200, momentum needs a bull ribbon
+above SMA200, and shorts require price below SMA200. A missing SMA200 leaves the
+filter unavailable rather than blocking the setup. Pullbacks are limited to
+−2.5%…+1.5% around EMA25 with RSI 45–60, and momentum is capped at 12% above
+EMA25 to avoid chasing.
+
+The setup score is a ridge model re-fitted on the ribbon features with
+`pnpm fit-score -- --years=3 --limit=100`. On the 2026 out-of-sample slice
+(802 candidates) it separates the best quintile (R ≈ 0.00) from the worst
+(R ≈ −0.43); a 60-name replay over 2026 returned +7.2% with a 1.64 profit factor
+and −2.4% max drawdown, versus +1.0%, 1.04 and −2.8% for the pre-ribbon model.
+That is one market regime and a small sample, not a promise of future returns.
+The transparent heuristic remains available as `legacyScore` for comparison.
+
 ### Weekly Picks
 
 The weekly module applies the JARVIS integrated framework to the setups that
@@ -205,10 +230,9 @@ catalysts & positioning 15%** (`lib/weekly-intelligence.ts`).
   EMA50), `rollover` (below both but EMA25 still above EMA50) or `compression`
   (price inside the band). EMA25 is the first support in a stacked uptrend and
   EMA50 the base support; below both, they become the resistance a recovery must
-  clear. The 20/50/200-day trend read is not used in this layer. The old fitted
-  score was trained on those retired features, so it is switched off
-  (`USE_FITTED_SCORE = false`) until a ribbon-based re-fit is validated; the live
-  score is the transparent ribbon heuristic.
+  clear. This weekly layer does not reuse the scanner's old 20/50 trend read; the
+  scanner keeps the ribbon plus SMA200 as a long-term risk filter. The setup score
+  is the ribbon re-fit described in the Swing setup engine section.
 - **Fundamental** reuses the Quantamental fundamental-momentum score and its
   sector profile; **valuation** reuses the peer gap and own-history percentile.
 - **Quantitative** uses 3M/6M price momentum, volume anomaly, session move and

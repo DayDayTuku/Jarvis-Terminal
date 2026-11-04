@@ -24,13 +24,12 @@ export function isShortSetup(item: { setup?: string } | null | undefined): boole
 }
 
 /**
- * The fitted score was trained on EMA20/EMA50/SMA200 features. The live engine
- * now uses the EMA25/EMA50 ribbon, so keeping the old weights would apply a model
- * to inputs it was never fitted on. The fitted path is therefore retired here
- * until a ribbon-based re-fit exists; `legacyScore` still records the transparent
- * ribbon heuristic that is now the active score.
+ * When true, a setup's `score` is the fitted model's prediction (lib/score-model)
+ * instead of the transparent ribbon heuristic; `legacyScore` keeps the heuristic
+ * for comparison. The shipped model was re-fitted on the EMA25/EMA50 ribbon
+ * features with `npm run fit-score -- --years=3 --limit=100`.
  */
-export const USE_FITTED_SCORE = false;
+export const USE_FITTED_SCORE = true;
 
 export type SetupKey = "breakout" | "pullback" | "momentum" | "reversal" | "short_breakdown";
 export type Regime = "RISK ON" | "EMERGING" | "NEUTRAL" | "RISK OFF";
@@ -246,6 +245,7 @@ export function classify(features: SetupFeatures, ctx: { shortEligible: Set<stri
   const ema20 = features.ema20;
   const ema25 = features.ema25 ?? null;
   const ema50 = features.ema50;
+  const sma200 = features.sma200;
   const high1m = features.high1m;
   const low1m = features.low1m;
   const recommendation = features.recommendation;
@@ -276,13 +276,16 @@ export function classify(features: SetupFeatures, ctx: { shortEligible: Set<stri
     else ribbonState = "compression";
   }
   const trend = ribbonState === "bull";
-  const aboveLongTrend = ema50 !== null && close >= ema50;
+  // The ribbon is the trend/S/R read, but the 200-day average stays as a
+  // long-term risk filter. A missing SMA200 does not block a setup; it simply
+  // leaves the filter unavailable.
+  const aboveLongTrend = sma200 === null || close >= sma200;
   const nearHigh = high1m ? close >= high1m * 0.965 : false;
   const nearLow = low1m ? close <= low1m * 1.12 : false;
 
   const ticker = features.ticker.replace("IDX:", "");
   const shortTrend = ribbonState === "bear";
-  const belowLongTrend = ema50 !== null && close < ema50;
+  const belowLongTrend = sma200 !== null && close < sma200;
   const shortBreakdown =
     ctx.shortEligible.has(ticker) &&
     nearLow &&
@@ -318,8 +321,8 @@ export function classify(features: SetupFeatures, ctx: { shortEligible: Set<stri
     nearLow,
   };
 
-  // The fitted model's input shape is retained for the offline tooling, but the
-  // live score now uses the ribbon heuristic below (USE_FITTED_SCORE is off).
+  // The fitted model's input shape (lib/score-model) is shared by the live
+  // scanner and the offline fit, so the two cannot drift.
   const signals = (setup: SetupKey) => ({ relativeVolume, rsi, distance20, change, trend, aboveLongTrend, nearHigh, nearLow, setup });
   const activeScore = (setup: SetupKey, heuristic: number) => (USE_FITTED_SCORE ? scoreSignals(signals(setup)) : clamp(heuristic));
 
@@ -342,7 +345,7 @@ export function classify(features: SetupFeatures, ctx: { shortEligible: Set<stri
   let reasons: string[];
   let caution: string;
 
-  if (nearHigh && (relativeVolume ?? 0) >= 1.15 && (rsi ?? 50) >= 52 && (rsi ?? 50) <= 76) {
+  if (aboveLongTrend && nearHigh && (relativeVolume ?? 0) >= 1.15 && (rsi ?? 50) >= 52 && (rsi ?? 50) <= 76) {
     setup = "breakout";
     const ribbonBonus = ribbonState === "bull" ? 20 : ribbonState === "recovery" ? 14 : ribbonState === "compression" ? 10 : 0;
     score = 58 + Math.min(18, ((relativeVolume ?? 1) - 1) * 18) + ribbonBonus + (aboveLongTrend ? 8 : 0);
@@ -358,7 +361,7 @@ export function classify(features: SetupFeatures, ctx: { shortEligible: Set<stri
             : "Momentum is strengthening",
     ];
     caution = (rsi ?? 0) > 70 ? "Momentum is already stretched; avoid chasing a large gap." : "A close back below the ribbon weakens this setup.";
-  } else if (fast && ema50 && close >= ema50 && distance25 !== null && distance25 >= -3.5 && distance25 <= 2.5 && (rsi ?? 50) >= 40 && (rsi ?? 50) <= 62) {
+  } else if (fast && ema50 && close >= ema50 && aboveLongTrend && distance25 !== null && distance25 >= -2.5 && distance25 <= 1.5 && (rsi ?? 50) >= 45 && (rsi ?? 50) <= 60) {
     setup = "pullback";
     score = 62 + Math.max(0, 12 - Math.abs(distance25) * 3) + (fast >= ema50 ? 14 : 6) + (aboveLongTrend ? 7 : 0);
     reasons = [
@@ -367,7 +370,7 @@ export function classify(features: SetupFeatures, ctx: { shortEligible: Set<stri
       (relativeVolume ?? 1) < 1 ? "Selling volume is relatively controlled" : "Trading activity remains healthy",
     ];
     caution = "The setup is invalid if price closes decisively below the EMA50 base.";
-  } else if (ribbonState === "bull" && aboveLongTrend && (rsi ?? 0) >= 54 && (rsi ?? 100) <= 72 && (recommendation ?? 0) >= 0.1) {
+  } else if (ribbonState === "bull" && aboveLongTrend && distance25 !== null && distance25 <= 12 && (rsi ?? 0) >= 54 && (rsi ?? 100) <= 72 && (recommendation ?? 0) >= 0.1) {
     setup = "momentum";
     score = 60 + Math.min(14, ((rsi ?? 54) - 54) * 1.2) + Math.min(12, Math.max(0, (relativeVolume ?? 1) - 1) * 12) + 10;
     reasons = ["Price is above the EMA25/EMA50 ribbon", "EMA25 leads EMA50 and the base is rising", "Momentum is positive without being extremely overbought"];

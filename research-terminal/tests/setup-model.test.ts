@@ -43,10 +43,10 @@ test("classify: a breakout scores and plans exactly as before", () => {
   const setup = classify(base, { shortEligible });
   assert.ok(setup);
   assert.equal(setup.setup, "breakout");
-  // The active score is the transparent EMA25/EMA50 ribbon heuristic; the
-  // retired fitted percentile is no longer applied to ribbon inputs.
+  // `legacyScore` keeps the transparent ribbon heuristic; the active score is
+  // the fitted model re-trained on the ribbon features.
   assert.equal(setup.legacyScore, 95); // 58 + 9 + 20 ribbon + 8 above base
-  assert.equal(setup.score, 95);
+  assert.ok(setup.score >= 0 && setup.score <= 100);
   assert.equal(setup.ema25, 980);
   assert.equal(setup.ema50, 960);
   assert.equal(setup.ribbonState, "bull");
@@ -79,6 +79,7 @@ test("ribbon: EMA25/EMA50 acts as support above and resistance below", () => {
     ema20: 930,
     ema25: 930,
     ema50: 950,
+    sma200: 1_050,
     high1m: 1_000,
     low1m: 950,
     averageVolume: 30_000_000,

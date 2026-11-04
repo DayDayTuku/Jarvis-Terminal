@@ -160,8 +160,11 @@ test("runBacktest replays a weekly scan end to end and is deterministic", () => 
   const scanDates = dates.filter((_, index) => index % 5 === 4 && index > 60);
   const sectors = new Map(tickers.map((ticker) => [ticker, "Tech"]));
 
-  const first = runBacktest({ scanDates, barsByTicker, sectors });
-  const second = runBacktest({ scanDates, barsByTicker, sectors });
+  // These tests cover replay mechanics, not score ranking: pin a high score so
+  // the selection gates do not depend on the current fitted model.
+  const scoreWith = () => 90;
+  const first = runBacktest({ scanDates, barsByTicker, sectors, scoreWith });
+  const second = runBacktest({ scanDates, barsByTicker, sectors, scoreWith });
 
   assert.deepEqual(first.summary, second.summary);
   assert.equal(first.scanDates.length, scanDates.length);
@@ -191,7 +194,7 @@ test("hold-through-drops never reports a weekly DROPPED exit", () => {
   const scanDates = dates.filter((_, index) => index % 5 === 4 && index > 60);
   const sectors = new Map(tickers.map((ticker) => [ticker, "Tech"]));
 
-  const held = runBacktest({ scanDates, barsByTicker, sectors, policy: { holdThroughDrops: true } });
+  const held = runBacktest({ scanDates, barsByTicker, sectors, policy: { holdThroughDrops: true }, scoreWith: () => 90 });
   assert.ok(held.trades.length > 0);
   assert.equal(held.trades.filter((trade) => trade.exitReason === "DROPPED").length, 0);
 });
@@ -263,8 +266,9 @@ test("runBacktest: a macro overlay scales the week's new-pick weights", () => {
   const scanDates = dates.filter((_, index) => index % 5 === 4 && index > 60);
   const sectors = new Map(tickers.map((ticker) => [ticker, "Tech"]));
 
-  const full = runBacktest({ scanDates, barsByTicker, sectors, policy: { costPct: 0.4 } });
-  const half = runBacktest({ scanDates, barsByTicker, sectors, policy: { costPct: 0.4, macro: () => 0.5 } });
+  const scoreWith = () => 90;
+  const full = runBacktest({ scanDates, barsByTicker, sectors, policy: { costPct: 0.4 }, scoreWith });
+  const half = runBacktest({ scanDates, barsByTicker, sectors, policy: { costPct: 0.4, macro: () => 0.5 }, scoreWith });
 
   assert.ok(full.trades.length > 0);
   // Same trades either way; only the weekly contribution is scaled down. The
