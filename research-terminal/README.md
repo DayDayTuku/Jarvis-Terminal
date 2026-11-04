@@ -124,25 +124,71 @@ claiming the account is in sync.
 
 ### Quantamental stock map
 
-`QUANTAMENTAL` is a decision-support scatter of the curated IDX universe. It
-ranks each stock against the median of its sector on a valuation basis chosen by
-its financial profile, then plots that peer-relative gap against six-month price
-momentum (three months when six is unavailable). Financials use P/B per ROE
-point, profitable non-financials use trailing P/E, loss-makers use market cap
-divided by revenue, and P/B is the fallback when no earnings multiple is
-available or ROE is near zero. Positive gap
-means cheaper than peers. Bubbles are sized by market cap; shape encodes the
-valuation basis; faded bubbles are thinly traded (ten-day turnover below IDR
-5bn). Stocks without a comparable valuation or momentum are never assigned zero:
-they move to an explicit "no valuation" list or the no-momentum strip.
+`QUANTAMENTAL` is a decision-support scatter of the curated IDX universe. The
+horizontal axis is the peer-relative valuation gap (positive means cheaper); the
+vertical axis is a 0–100 **fundamental momentum score**. Price momentum is shown
+separately and never enters the score or the quadrant.
 
-`GET /api/quantamental` is authenticated and rate limited. It fetches the whole
-universe in one TradingView scanner request, caches the result for 15 minutes,
-returns `status: "partial"` when the scanner omits names, and falls back to a
-`status: "stale"` map rather than mixing old and new values. With no successful
-map it returns `503` and `status: "unavailable"`. The model and its thresholds
-live in `lib/quantamental.ts`; the chart is
-`components/QuantamentalMap.tsx`.
+**Fundamental momentum** (`lib/quantamental.ts`, `buildFundamentalMomentum`)
+weights earnings growth 25%, revenue growth 20%, margin expansion 20%, ROE/ROIC
+improvement 15%, FCF improvement 10% and balance-sheet improvement 10%. Each
+component scores 0–100 from a fixed input band, and the final score is
+`Σ(componentScore × weight) ÷ Σ(availableWeight)`, so contributions add up to the
+score. A component with no input is removed from the denominator, not treated as
+zero. A score needs at least two components and ≥50% weight coverage; otherwise
+it is `null` and the name is listed as "no fundamental score" rather than plotted
+at zero.
+
+**Growth basis.** The upstream scanner exposes latest fiscal year, latest quarter
+and TTM statements, but no prior-year column, so true YoY growth is unavailable.
+Growth is computed as the latest-quarter run-rate versus the latest fiscal year
+(`fq × 4 ÷ fy − 1`), or TTM versus the latest FY as a fallback, and is labelled
+exactly that way in the UI and score detail. EPS growth blends this with forward
+consensus EPS versus TTM EPS (45% weight) when a forward estimate exists.
+
+**Sector logic.** `sectorProfileFor` selects a model: banks use net margin, ROE
+and equity/assets (deposits are funding, not leverage, so D/E is not used);
+mining uses EBITDA margin, revenue and net leverage; consumer prefers gross
+margin where reported, then net margin; holding companies use consolidated
+measures with NAV discount exposed as provider-ready `null` because no holdings
+feed exists; everything else uses the general mix.
+
+**Valuation engine.** Per name it computes trailing P/E, forward P/E, P/BV,
+P/B ÷ ROE, EV/EBITDA, EV/EBIT, dividend yield and P/S, each with its period basis
+and peer median. The plotted gap uses the basis implied by the financial profile:
+financials use P/B per ROE point, profitable non-financials use trailing P/E,
+loss-makers use P/S on TTM revenue, and P/B is the fallback. P/B ÷ ROE peer
+medians are restricted to financials so industrial names cannot move a bank
+median. NAV discount is provider-ready only and is never estimated.
+
+**Classification.** Four quadrants split on score 50 and gap 0: Undervalued +
+Improving, Expensive + Improving, Cheap + Deteriorating, Expensive + Deteriorating.
+A ±5% fair band is drawn as a visual guide; names inside it classify as improving
+or drifting rather than as a strong mispricing. Every stock carries its
+classification reasons.
+
+**Freshness and history.** `GET /api/quantamental` is authenticated and rate
+limited. It fetches the universe in one TradingView scanner request and caches
+for 15 minutes. `?refresh=1` bypasses the cache; `?date=YYYY-MM-DD` returns a
+stored point-in-time snapshot, never a recomputation. `asOf` is when the response
+was built and `dataAsOf` is the newest fundamental disclosure date in the
+payload. A failed refresh keeps the last successful map and labels it `stale`;
+with no successful map it returns `503`.
+
+Snapshots are stored in `jarvis_quantamental_snapshots` (service-role only,
+unique per `trade_date` + `methodology_version`), created by
+`supabase/migrations/20261103000000_quantamental_snapshots.sql`. The cron
+`/api/cron/quantamental` runs at 10:30 UTC (17:30 WIB) Monday–Friday and requires
+`CRON_SECRET`; it refuses to store a snapshot when the scan fails. History powers
+the own-history valuation percentile (needs ≥5 observations), estimate-revision
+direction (needs ≥2 stored estimate snapshots — otherwise `null`, never
+inferred), and the WHAT CHANGED diff against the prior snapshot.
+
+Bubbles are sized by market cap; shape encodes the valuation basis; opacity
+encodes liquidity (liquid, thin, or unknown — unknown is not rendered as liquid);
+an outline encodes revision direction when it is known. Missing inputs are never
+zero-filled: names without a comparable gap or score appear in explicit
+"no gap" / "no score" lists.
 
 ### Plans and pricing
 
@@ -176,6 +222,13 @@ The cron route calls the production scanner at
 `https://jarvisfinance.my.id/api/swing-setups` using
 `JARVIS_READONLY_API_KEY`. A `?dryRun=1` request returns the scan result without
 writing a run or sending email.
+
+`/api/cron/quantamental` runs at **10:30 UTC, Monday–Friday** (17:30 WIB), after
+the IDX close. It uses the same `CRON_SECRET` bearer check, builds the map from
+the live scanner, and upserts one snapshot per trade date and methodology
+version so history accumulates even on days nobody opens the module.
+`?dryRun=1` builds the map without writing. If the scan fails or the snapshot
+cannot be stored it reports an error instead of fabricating a row.
 
 ## Environment variables
 

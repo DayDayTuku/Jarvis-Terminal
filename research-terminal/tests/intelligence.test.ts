@@ -157,12 +157,12 @@ test("candidateNote explains where a name came from", () => {
   assert.equal(candidateNote(byTicker.get("AAAA")!), "Setup scanner only");
   assert.equal(candidateNote(byTicker.get("BBBB")!), "Setup and valuation signal");
   const lone = mergeResearchCandidates([], [valuation({ ticker: "CCCC", quadrant: "value-trap" })])[0];
-  assert.equal(candidateNote(lone), "Valuation · VALUE TRAP");
+  assert.equal(candidateNote(lone), "Valuation · CHEAP · DETERIORATING");
 });
 
 test("quadrant labels fall back to a readable form for unknown states", () => {
-  assert.equal(quadrantLabel("re-rating"), "RE-RATING");
-  assert.equal(quadrantLabel("value-trap"), "VALUE TRAP");
+  assert.equal(quadrantLabel("re-rating"), "UNDERVALUED · IMPROVING");
+  assert.equal(quadrantLabel("value-trap"), "CHEAP · DETERIORATING");
   assert.equal(quadrantLabel("no-momentum"), "NO MOMENTUM");
   assert.equal(quadrantLabel(null), "—");
 });

@@ -28,6 +28,7 @@ export type ValuationInput = {
   quadrant: string;
   gap: number | null;
   momentum: number | null;
+  fundamentalScore?: number | null;
   momentumBasis?: string | null;
   basis?: string | null;
   thin?: boolean;
@@ -44,18 +45,19 @@ export type ResearchCandidate = {
   quadrant: string | null;
   gap: number | null;
   momentum: number | null;
+  fundamentalScore?: number | null;
   thin: boolean;
 };
 
 export type ResearchQueueFilter = "all" | "both" | "setup" | "valuation";
 
 export const QUADRANT_LABELS: Record<string, string> = {
-  "re-rating": "RE-RATING",
-  "value-trap": "VALUE TRAP",
-  "priced-in": "PRICED IN",
-  "de-rating": "DE-RATING",
-  improving: "IMPROVING",
-  drifting: "DRIFTING",
+  "re-rating": "UNDERVALUED · IMPROVING",
+  "value-trap": "CHEAP · DETERIORATING",
+  "priced-in": "EXPENSIVE · IMPROVING",
+  "de-rating": "EXPENSIVE · DETERIORATING",
+  improving: "FAIR · IMPROVING",
+  drifting: "FAIR · DETERIORATING",
 };
 
 const QUADRANT_ORDER = ["re-rating", "priced-in", "value-trap", "de-rating", "improving", "drifting"] as const;
@@ -102,6 +104,7 @@ export function mergeResearchCandidates(
       quadrant: null,
       gap: null,
       momentum: null,
+      fundamentalScore: null,
       thin: false,
     };
     byTicker.set(ticker, created);
@@ -126,6 +129,7 @@ export function mergeResearchCandidates(
     candidate.quadrant = text(valuation.quadrant) || candidate.quadrant;
     candidate.gap = finite(valuation.gap);
     candidate.momentum = finite(valuation.momentum);
+    candidate.fundamentalScore = finite(valuation.fundamentalScore);
     candidate.thin = valuation.thin === true;
   }
 
@@ -248,6 +252,7 @@ export function coerceValuationRows(payload: unknown): ValuationInput[] {
       quadrant,
       gap: finite(raw.gap),
       momentum: finite(raw.momentum),
+      fundamentalScore: finite(raw.fundamentalScore),
       momentumBasis: text(raw.momentumBasis) || null,
       basis: text(raw.basis) || null,
       thin: raw.thin === true,

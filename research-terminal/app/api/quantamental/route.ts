@@ -1,115 +1,39 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "../../../utils/supabase/server";
 import { checkRateLimit, rateLimitHeaders } from "@/lib/rate-limit";
-import { fetchUpstream } from "@/lib/upstream";
 import {
-  QUANTAMENTAL_COLUMNS,
-  buildQuantamentalMap,
-  buildQuantamentalUniverse,
-  tradingViewSymbol,
-  type QuantamentalMap,
-  type QuantamentalRaw,
-} from "@/lib/quantamental";
+  buildLiveQuantamentalMap,
+  jakartaDate,
+  loadQuantamentalHistory,
+  type QuantamentalHistory,
+} from "@/lib/quantamental-server";
+import type { QuantamentalMap } from "@/lib/quantamental";
 
 /**
  * One batch request to the TradingView Indonesia scanner covers the whole map.
  * The route is authenticated and rate limited so it cannot be used as a free
- * scanner proxy. A failed refresh keeps the last successful map and labels it
- * stale rather than mixing old and new values silently.
+ * scanner proxy.
+ *
+ * Freshness contract:
+ * - `asOf` is when this response was built.
+ * - `dataAsOf` is the newest fundamental disclosure date in the payload.
+ * - `historyDates` lists stored snapshots so the UI can select a prior map.
+ * - `?refresh=1` bypasses the in-memory cache.
+ * - `?date=YYYY-MM-DD` returns that stored snapshot, never a recomputation.
+ * - A failed refresh returns the last successful map with `status: "stale"`.
  */
 
-const SCANNER_URL = "https://scanner.tradingview.com/indonesia/scan";
+export const maxDuration = 30;
+
 const CACHE_TTL_MS = 15 * 60 * 1000;
-const SCANNER_TIMEOUT_MS = 15_000;
 
 let cache: { at: number; map: QuantamentalMap } | null = null;
 
-type ScannerRow = { s?: unknown; d?: unknown[] };
-
-const COLUMN_INDEX = new Map<string, number>(
-  QUANTAMENTAL_COLUMNS.map((column, index) => [column, index] as const),
-);
-
-function value(row: ScannerRow, column: (typeof QUANTAMENTAL_COLUMNS)[number]): unknown {
-  const index = COLUMN_INDEX.get(column);
-  if (index === undefined || !Array.isArray(row.d)) return null;
-  return row.d[index] ?? null;
+function privateHeaders(maxAge: number) {
+  return { "cache-control": `private, max-age=${maxAge}` };
 }
 
-function numberValue(row: ScannerRow, column: (typeof QUANTAMENTAL_COLUMNS)[number]): number | null {
-  const raw = value(row, column);
-  return typeof raw === "number" && Number.isFinite(raw) ? raw : null;
-}
-
-function stringValue(row: ScannerRow, column: (typeof QUANTAMENTAL_COLUMNS)[number]): string | null {
-  const raw = value(row, column);
-  return typeof raw === "string" && raw.trim() ? raw.trim() : null;
-}
-
-function tickerFromSymbol(symbol: unknown): string | null {
-  if (typeof symbol !== "string") return null;
-  const ticker = symbol.split(":").at(-1)?.replace(/\.JK$/i, "").trim().toUpperCase();
-  return ticker ? ticker : null;
-}
-
-async function fetchScannerRows(): Promise<QuantamentalRaw[]> {
-  const universe = buildQuantamentalUniverse();
-  const response = await fetchUpstream(SCANNER_URL, {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      accept: "application/json",
-      "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0 Safari/537.36",
-    },
-    body: JSON.stringify({
-      symbols: {
-        tickers: universe.map((entry) => tradingViewSymbol(entry.ticker)),
-        query: { types: [] },
-      },
-      columns: [...QUANTAMENTAL_COLUMNS],
-    }),
-    cache: "no-store",
-    timeoutMs: SCANNER_TIMEOUT_MS,
-    attempts: 2,
-  });
-
-  if (!response.ok) {
-    throw new Error(`TradingView scanner returned ${response.status}`);
-  }
-
-  const payload = await response.json() as { data?: ScannerRow[] };
-  const rows = Array.isArray(payload.data) ? payload.data : [];
-  const byTicker = new Map<string, QuantamentalRaw>();
-
-  for (const row of rows) {
-    const ticker = tickerFromSymbol(row.s);
-    if (!ticker) continue;
-    const entry = universe.find((item) => item.ticker === ticker);
-    if (!entry) continue;
-
-    byTicker.set(ticker, {
-      ticker,
-      name: entry.name,
-      sector: entry.sector,
-      tvSector: stringValue(row, "sector"),
-      close: numberValue(row, "close"),
-      change: numberValue(row, "change"),
-      marketCap: numberValue(row, "market_cap_basic"),
-      pb: numberValue(row, "price_book_fq"),
-      pe: numberValue(row, "price_earnings_ttm"),
-      roe: numberValue(row, "return_on_equity_fq"),
-      revenue: numberValue(row, "total_revenue"),
-      netIncome: numberValue(row, "net_income"),
-      perf3m: numberValue(row, "Perf.3M"),
-      perf6m: numberValue(row, "Perf.6M"),
-      avgVolume10d: numberValue(row, "average_volume_10d_calc"),
-    });
-  }
-
-  return [...byTicker.values()];
-}
-
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
     const supabase = await createClient();
     const { data: { user } } = await supabase.auth.getUser();
@@ -130,50 +54,93 @@ export async function GET() {
       );
     }
 
-    const now = Date.now();
-    if (cache && now - cache.at < CACHE_TTL_MS) {
-      return NextResponse.json(cache.map, {
-        headers: { "cache-control": "private, max-age=300" },
-      });
+    const search = request.nextUrl.searchParams;
+    const targetDate = search.get("date");
+    const forceRefresh = search.get("refresh") === "1";
+
+    if (targetDate) {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(targetDate)) {
+        return NextResponse.json({ error: "Date must be YYYY-MM-DD." }, { status: 400 });
+      }
+      const history = await loadQuantamentalHistory({ targetDate });
+      if (!history.snapshot) {
+        return NextResponse.json(
+          {
+            error: history.available
+              ? `No stored Quantamental snapshot exists for ${targetDate}.`
+              : "Snapshot storage is not configured, so historical maps are unavailable.",
+            historyAvailable: history.available,
+          },
+          { status: 404, headers: privateHeaders(0) },
+        );
+      }
+      return NextResponse.json(
+        {
+          ...history.snapshot,
+          status: "stale" as const,
+          selectedDate: targetDate,
+          historyAvailable: true,
+        },
+        { headers: privateHeaders(60) },
+      );
     }
 
-    try {
-      const rows = await fetchScannerRows();
-      if (!rows.length) throw new Error("The scanner returned no usable rows");
+    const now = Date.now();
+    if (!forceRefresh && cache && now - cache.at < CACHE_TTL_MS) {
+      return NextResponse.json(
+        { ...cache.map, cached: true, snapshotSaved: null },
+        { headers: privateHeaders(300) },
+      );
+    }
 
-      const universe = buildQuantamentalUniverse();
-      const map = buildQuantamentalMap(rows, {
+    let history: QuantamentalHistory | null = null;
+    try {
+      history = await loadQuantamentalHistory({ before: jakartaDate() });
+      const { map, snapshotSaved, snapshotError } = await buildLiveQuantamentalMap({
         asOf: new Date().toISOString(),
-        status: rows.length === universe.length ? "live" : "partial",
-        universeSize: universe.length,
+        history,
       });
 
       cache = { at: now, map };
-      return NextResponse.json(map, {
-        headers: { "cache-control": "private, max-age=300" },
-      });
+      return NextResponse.json(
+        {
+          ...map,
+          cached: false,
+          snapshotSaved,
+          snapshotError,
+          historyAvailable: history.available,
+        },
+        { headers: privateHeaders(300) },
+      );
     } catch (error) {
       if (cache) {
         console.error("Quantamental refresh failed; serving stale map:", error);
         return NextResponse.json(
-          { ...cache.map, status: "stale" as const },
-          { headers: { "cache-control": "private, no-store" } },
+          {
+            ...cache.map,
+            status: "stale" as const,
+            cached: true,
+            refreshError: error instanceof Error ? error.message : "Refresh failed.",
+            snapshotSaved: false,
+            historyAvailable: history?.available ?? false,
+          },
+          { headers: privateHeaders(0) },
         );
       }
       console.error("Quantamental feed unavailable:", error);
       return NextResponse.json(
         {
           status: "unavailable",
-          error: "The Indonesian scanner did not return valuation or momentum data.",
+          error: "The Indonesian scanner did not return valuation or fundamental data.",
         },
-        { status: 503, headers: { "cache-control": "private, no-store" } },
+        { status: 503, headers: privateHeaders(0) },
       );
     }
   } catch (error) {
     console.error("Quantamental route failed:", error);
     return NextResponse.json(
       { status: "unavailable", error: "Unable to build the quantamental map." },
-      { status: 500, headers: { "cache-control": "private, no-store" } },
+      { status: 500, headers: privateHeaders(0) },
     );
   }
 }

@@ -280,8 +280,8 @@ export default function ResearchDesk({
                 <small>PEER GAP</small>
               </span>
               <span className="desk-numbers">
-                <b className={candidate.momentum === null ? "" : candidate.momentum >= 0 ? "positive" : "negative"}>{signed(candidate.momentum)}</b>
-                <small>MOMENTUM</small>
+                <b className={candidate.fundamentalScore == null ? "" : candidate.fundamentalScore >= 50 ? "positive" : "negative"}>{candidate.fundamentalScore == null ? "—" : Math.round(candidate.fundamentalScore)}</b>
+                <small>FUND. SCORE</small>
               </span>
             </button>
           ))}

@@ -1537,6 +1537,9 @@ html[data-theme=light] .paper-upload input[type='file']::file-selector-button:ho
 .qm-point { transition: opacity .15s ease; }
 .qm-point:focus-visible { outline: 1px solid var(--blue); outline-offset: 2px; }
 .qm-rail { display: flex; flex-direction: column; gap: 10px; min-width: 0; max-height: 596px; overflow-y: auto; padding: 12px; }
+/* The rail scrolls; its children must keep their natural height. Without this
+   the long score readout shrinks to the rail height and overflows over the key. */
+.qm-rail > * { flex: 0 0 auto; }
 .qm-readout { min-height: 252px; padding: 12px; border: 1px solid var(--line); background: #0a0f15; }
 .qm-readout-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
 .qm-readout-head strong { font-size: 17px; letter-spacing: .03em; }
@@ -2709,4 +2712,191 @@ html[data-theme=light] .risk-map-select:not(:disabled):focus-visible { backgroun
   .model-portfolio-strip > div { border-right: 0; border-bottom: 1px solid var(--line); }
   .model-portfolio-strip > div:last-child { border-bottom: 0; }
   .model-portfolio-badges { grid-template-columns: 1fr; }
+}
+
+/* --------------------------------------------------------------------------
+   Quantamental v2 — fundamental score, filters, analyst readout.
+   The layout stays the existing chart + rail; only the analytical surfaces
+   and the two new control strips are added.
+   -------------------------------------------------------------------------- */
+
+.qm-warn-text { color: var(--orange); }
+.qm-banner {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px;
+  padding: 8px 12px; border-bottom: 1px solid var(--line);
+  background: color-mix(in srgb, var(--orange) 7%, transparent);
+}
+.qm-banner strong { color: var(--orange); font-size: 7px; letter-spacing: .1em; }
+.qm-banner span { color: var(--muted); font-size: 8px; line-height: 1.5; }
+.qm-banner span + span { color: #8a6a3e; }
+
+.qm-filters {
+  display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px;
+  padding: 8px 12px; border-bottom: 1px solid var(--line);
+  background: color-mix(in srgb, var(--panel-raised) 55%, transparent);
+}
+.qm-filters label { display: grid; gap: 3px; min-width: 120px; }
+.qm-filters label > span { color: var(--muted); font-size: 7px; letter-spacing: .08em; }
+.qm-filters select {
+  min-height: 26px; padding: 3px 24px 3px 7px;
+  border: 1px solid var(--line-strong); border-radius: 0;
+  background: var(--panel); color: var(--text);
+  font: 500 8px/1.2 var(--font-geist-mono); letter-spacing: .03em;
+  appearance: none; cursor: pointer;
+  background-image: linear-gradient(45deg, transparent 50%, var(--muted) 50%),
+    linear-gradient(135deg, var(--muted) 50%, transparent 50%);
+  background-position: calc(100% - 11px) 11px, calc(100% - 7px) 11px;
+  background-size: 4px 4px, 4px 4px;
+  background-repeat: no-repeat;
+}
+.qm-filters select:focus-visible { outline: 1px solid var(--blue); outline-offset: 1px; }
+.qm-filter-note { margin-left: auto; color: var(--muted); font-size: 7px; letter-spacing: .05em; align-self: center; }
+
+.qm-tabs {
+  display: grid; grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1px; margin-top: 10px; background: var(--line);
+}
+.qm-tabs button {
+  min-height: 26px; border: 0; background: #0a0f15; color: var(--muted);
+  font-size: 7px; letter-spacing: .07em; cursor: pointer;
+}
+.qm-tabs button:hover { color: var(--text); }
+.qm-tabs button.active { background: #12202e; color: var(--blue); box-shadow: inset 0 -1px 0 var(--blue); }
+
+.qm-block-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  padding-bottom: 6px; border-bottom: 1px solid var(--line);
+}
+.qm-block-head > span { color: var(--blue); font-size: 7px; letter-spacing: .1em; }
+.qm-block-head > b { color: var(--text); font-size: 8px; font-weight: 500; letter-spacing: .06em; }
+
+.qm-score { margin-top: 10px; }
+.qm-score-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+.qm-score-head > div:first-child > span {
+  display: block; color: var(--muted); font-size: 7px; letter-spacing: .08em;
+}
+.qm-score-head strong { display: inline-block; margin-top: 2px; font: 600 30px/1 var(--font-geist-mono); letter-spacing: -.03em; }
+.qm-score-head strong.positive { color: var(--positive); }
+.qm-score-head strong.negative { color: var(--negative); }
+.qm-score-head strong.muted { color: var(--muted); }
+.qm-score-head small { margin-left: 2px; color: var(--muted); font-size: 8px; }
+.qm-score-meta { display: grid; gap: 3px; justify-items: end; padding-top: 2px; }
+.qm-score-meta span { color: var(--muted); font-size: 7px; letter-spacing: .05em; }
+.qm-score-track {
+  position: relative; height: 6px; margin-top: 8px;
+  background: #151d27; overflow: hidden;
+}
+.qm-score-track i { display: block; height: 100%; background: var(--blue); transition: width .2s ease; }
+.qm-score-track i.positive { background: var(--positive); }
+.qm-score-track i.negative { background: var(--negative); }
+.qm-score-track b { position: absolute; top: -2px; bottom: -2px; width: 1px; background: var(--qm-ink); opacity: .55; }
+
+.qm-components { display: grid; gap: 7px; margin-top: 10px; }
+.qm-component { padding: 6px 0; border-top: 1px solid #151d27; }
+.qm-component.unavailable { opacity: .58; }
+.qm-component-head { display: grid; grid-template-columns: minmax(0, 1fr) auto 26px; gap: 6px; align-items: baseline; }
+.qm-component-head span { color: #cdd7e2; font-size: 8px; }
+.qm-component-head b { font-size: 8px; font-weight: 500; }
+.qm-component-head small { color: var(--muted); font-size: 7px; text-align: right; }
+.qm-component-track { height: 3px; margin-top: 4px; background: #151d27; }
+.qm-component-track i { display: block; height: 100%; background: var(--blue); opacity: .8; }
+.qm-component-foot { display: flex; justify-content: space-between; margin-top: 3px; color: var(--muted); font-size: 7px; letter-spacing: .04em; }
+.qm-component p { margin: 4px 0 0; color: #7d8b9b; font: 400 7.5px/1.45 var(--font-geist-sans); }
+.qm-score-note { margin: 9px 0 0; padding-left: 7px; border-left: 1px solid var(--line-strong); color: #8b98a8; font: 400 7.5px/1.5 var(--font-geist-sans); }
+
+.qm-price-block, .qm-valuation, .qm-peers, .qm-changes { margin-top: 12px; }
+.qm-readout dl.qm-primary { grid-template-columns: 1fr 1fr; margin-top: 8px; }
+.qm-readout dl.qm-primary > div { padding: 5px 6px; background: #0a0f15; }
+.qm-readout dl.qm-primary dt { font-size: 6.5px; }
+.qm-readout dl.qm-primary dd { font-size: 9px; }
+
+.qm-metrics { display: grid; gap: 1px; margin-top: 8px; background: var(--line); }
+.qm-metrics > div { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 8px; padding: 5px 6px; background: #0a0f15; }
+.qm-metrics > div.unavailable { opacity: .55; }
+.qm-metrics span { color: var(--muted); font-size: 7px; }
+.qm-metrics b { font-size: 8.5px; font-weight: 500; }
+.qm-metrics small { grid-column: 1 / -1; color: #5f6d7d; font-size: 6.5px; line-height: 1.4; }
+.qm-fine { margin: 8px 0 0; color: #6f7d8d; font: 400 7.5px/1.5 var(--font-geist-sans); }
+
+.qm-price-block dl { margin-top: 8px; }
+.qm-liq-liquid { color: var(--positive); }
+.qm-liq-thin { color: var(--orange); }
+.qm-liq-unknown { color: #a4b0be; }
+
+.qm-peer-list { display: grid; gap: 1px; margin-top: 8px; background: var(--line); }
+.qm-peer-list button {
+  display: grid; grid-template-columns: 54px minmax(0, 1fr) 56px 30px;
+  gap: 6px; align-items: center; padding: 5px 6px;
+  border: 0; background: #0a0f15; color: var(--text); text-align: left;
+  font: inherit; cursor: pointer;
+}
+.qm-peer-list button:hover, .qm-peer-list button.active { background: #12202e; }
+.qm-peer-list button strong { font-size: 8px; letter-spacing: .03em; }
+.qm-peer-list button span { color: var(--muted); font-size: 8px; text-align: right; }
+.qm-peer-list button span:last-child { color: var(--text); }
+
+.qm-change-list { display: grid; gap: 1px; margin-top: 8px; background: var(--line); }
+.qm-change-list > div { display: grid; grid-template-columns: minmax(0, 1fr) 66px 62px; gap: 6px; align-items: baseline; padding: 5px 6px; background: #0a0f15; }
+.qm-change-list span { color: var(--muted); font-size: 7px; }
+.qm-change-list b { font-size: 8px; font-weight: 500; text-align: right; }
+.qm-change-list i { font-size: 7px; font-style: normal; text-align: right; }
+.qm-change-list i.positive { color: var(--positive); }
+.qm-change-list i.negative { color: var(--negative); }
+
+.qm-reasons { margin-top: 12px; padding-top: 8px; border-top: 1px solid var(--line); }
+.qm-reasons > span { color: var(--blue); font-size: 7px; letter-spacing: .09em; }
+.qm-reasons ul { display: grid; gap: 5px; margin: 7px 0 0; padding: 0 0 0 12px; }
+.qm-reasons li { color: #93a1b1; font: 400 7.5px/1.5 var(--font-geist-sans); }
+
+.qm-key-notes { display: grid; gap: 4px; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--line); }
+.qm-key-notes span { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 7px; }
+.qm-key-notes .ring { width: 9px; height: 9px; border-radius: 50%; border: 2px solid var(--muted); }
+.qm-key-notes .ring.up { border-color: var(--positive); }
+.qm-key-notes .ring.down { border-color: var(--negative); }
+.qm-key-notes .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--qm-point); }
+.qm-key-notes .dot.thin { opacity: .42; }
+.qm-key-notes .dot.unknown { opacity: .72; }
+
+.qm-whatchanged { padding: 9px 10px; border: 1px solid var(--line); background: #080c11; }
+.qm-whatchanged > span { display: block; color: var(--blue); font-size: 7px; letter-spacing: .1em; }
+.qm-whatchanged p { margin: 6px 0 0; color: #9aa7b6; font: 400 8px/1.5 var(--font-geist-sans); }
+
+.qm-fullscreen .qm-filters { flex: 0 0 auto; }
+.qm-fullscreen .qm-chart-scroll { height: calc(100vh - 226px); }
+.qm-fullscreen .qm-rail { max-height: calc(100vh - 210px); }
+
+html[data-theme=light] .qm-filters { background: var(--panel-raised) !important; }
+html[data-theme=light] .qm-filters select { background-color: #fff !important; color: var(--text) !important; border-color: var(--line-strong) !important; }
+html[data-theme=light] .qm-tabs { background: var(--line) !important; }
+html[data-theme=light] .qm-tabs button { background: var(--panel-raised) !important; color: var(--muted) !important; }
+html[data-theme=light] .qm-tabs button.active { background: #e6f1f8 !important; color: var(--blue) !important; }
+html[data-theme=light] .qm-readout dl.qm-primary > div,
+html[data-theme=light] .qm-metrics > div,
+html[data-theme=light] .qm-peer-list button,
+html[data-theme=light] .qm-change-list > div { background: var(--panel-raised) !important; }
+html[data-theme=light] .qm-peer-list button:hover,
+html[data-theme=light] .qm-peer-list button.active { background: #e6f1f8 !important; }
+html[data-theme=light] .qm-score-track,
+html[data-theme=light] .qm-component-track { background: #e8e5dd !important; }
+html[data-theme=light] .qm-component { border-color: var(--line) !important; }
+html[data-theme=light] .qm-component-head span { color: var(--text) !important; }
+html[data-theme=light] .qm-component p,
+html[data-theme=light] .qm-fine,
+html[data-theme=light] .qm-reasons li { color: var(--muted) !important; }
+html[data-theme=light] .qm-whatchanged { background: var(--panel-raised) !important; border-color: var(--line) !important; }
+html[data-theme=light] .qm-whatchanged p { color: var(--muted) !important; }
+html[data-theme=light] .qm-banner { background: #fff7ed !important; border-color: var(--line) !important; }
+
+@media (max-width: 1080px) {
+  .qm-filters label { min-width: 100px; flex: 1 1 110px; }
+  .qm-filter-note { width: 100%; margin-left: 0; }
+}
+@media (max-width: 720px) {
+  .qm-filters { display: grid; grid-template-columns: 1fr 1fr; }
+  .qm-filters label { min-width: 0; }
+  .qm-score-head strong { font-size: 25px; }
+  .qm-readout dl.qm-primary { grid-template-columns: 1fr; }
+  /* On a narrow screen the rail sits below the chart, so it should flow with the
+     page instead of trapping a nested scroll region. */
+  .qm-rail { max-height: none; overflow: visible; }
 }
