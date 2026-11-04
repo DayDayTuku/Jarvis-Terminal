@@ -197,12 +197,18 @@ already pass the technical scanner. Weights are fixed at **fundamental quality
 25% · technical strength 25% · quantitative signals 20% · valuation 15% ·
 catalysts & positioning 15%** (`lib/weekly-intelligence.ts`).
 
-- **Technical** blends the fitted setup score (65%) with structure checks (35%):
-  EMA25/EMA50 as the stock's base support/resistance band, RSI, relative volume,
-  distance from the EMA25 base, and proximity to the one-month high/low. EMA25 is
-  the first support in a stacked uptrend and EMA50 the base support; below both,
-  they become the resistance a recovery must clear. The 20/50/200-day trend read
-  is not used in this layer.
+- **Technical** blends the live setup score (65%) with structure checks (35%):
+  EMA25/EMA50 as the stock's ribbon and base support/resistance band, RSI,
+  relative volume, distance from the EMA25 base, and proximity to the one-month
+  high/low. The ribbon reads `bull` (price above EMA25 above EMA50), `bear`
+  (price below EMA25 below EMA50), `recovery` (above both but EMA25 still below
+  EMA50), `rollover` (below both but EMA25 still above EMA50) or `compression`
+  (price inside the band). EMA25 is the first support in a stacked uptrend and
+  EMA50 the base support; below both, they become the resistance a recovery must
+  clear. The 20/50/200-day trend read is not used in this layer. The old fitted
+  score was trained on those retired features, so it is switched off
+  (`USE_FITTED_SCORE = false`) until a ribbon-based re-fit is validated; the live
+  score is the transparent ribbon heuristic.
 - **Fundamental** reuses the Quantamental fundamental-momentum score and its
   sector profile; **valuation** reuses the peer gap and own-history percentile.
 - **Quantitative** uses 3M/6M price momentum, volume anomaly, session move and

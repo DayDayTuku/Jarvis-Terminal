@@ -131,7 +131,8 @@ test("signalsOf reads the trained fields off a classified setup", () => {
   assert.equal(extracted.setup, setup!.setup);
   assert.equal(extracted.relativeVolume, setup!.relativeVolume);
   assert.equal(extracted.rsi, setup!.rsi);
-  // The active score is the fitted percentile, and the legacy value is still kept.
+  // The active score is the ribbon heuristic; the retired fitted percentile is
+  // no longer applied to EMA25/EMA50 inputs.
   assert.ok(setup!.score >= 0 && setup!.score <= 100);
-  assert.ok(typeof setup!.legacyScore === "number");
+  assert.equal(setup!.score, setup!.legacyScore);
 });

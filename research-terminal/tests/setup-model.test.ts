@@ -27,6 +27,7 @@ const base: SetupFeatures = {
   relativeVolume: 1.5,
   rsi: 60,
   ema20: 980,
+  ema25: 980,
   ema50: 960,
   sma200: 900,
   high1m: 990,
@@ -42,10 +43,15 @@ test("classify: a breakout scores and plans exactly as before", () => {
   const setup = classify(base, { shortEligible });
   assert.ok(setup);
   assert.equal(setup.setup, "breakout");
-  // The active score is the fitted percentile; the legacy heuristic is preserved
-  // separately so the old behaviour is still pinned by a test.
-  assert.equal(setup.legacyScore, 87); // 58 + 9 + 12 + 8
-  assert.ok(setup.score >= 0 && setup.score <= 100);
+  // The active score is the transparent EMA25/EMA50 ribbon heuristic; the
+  // retired fitted percentile is no longer applied to ribbon inputs.
+  assert.equal(setup.legacyScore, 95); // 58 + 9 + 20 ribbon + 8 above base
+  assert.equal(setup.score, 95);
+  assert.equal(setup.ema25, 980);
+  assert.equal(setup.ema50, 960);
+  assert.equal(setup.ribbonState, "bull");
+  assert.equal(setup.baseSupport, 980);
+  assert.equal(setup.baseResistance, null);
   assert.equal(setup.entryLow, 990);
   assert.equal(setup.entryHigh, 1010);
   assert.equal(setup.invalidation, 940); // close * 0.94
@@ -53,6 +59,37 @@ test("classify: a breakout scores and plans exactly as before", () => {
   assert.equal(setup.riskReward, 2);
   assert.equal(setup.measuredRiskReward, 2);
   assert.equal(Number(setup.stopDistancePct.toFixed(2)), 6);
+});
+
+test("ribbon: EMA25/EMA50 acts as support above and resistance below", () => {
+  const bull = classify(base, { shortEligible });
+  assert.equal(bull?.ribbonState, "bull");
+  assert.equal(bull?.baseSupport, 980);
+  assert.equal(bull?.baseResistance, null);
+
+  const compression = classify({ ...base, ema25: 1_010, ema50: 990 }, { shortEligible });
+  assert.equal(compression?.ribbonState, "compression");
+  assert.equal(compression?.baseSupport, 990);
+  assert.equal(compression?.baseResistance, 1_010);
+
+  const bear = classify({
+    ...base,
+    ticker: "IDX:BBRI",
+    close: 900,
+    ema20: 930,
+    ema25: 930,
+    ema50: 950,
+    high1m: 1_000,
+    low1m: 950,
+    averageVolume: 30_000_000,
+    relativeVolume: 1.3,
+    rsi: 40,
+    recommendation: -0.3,
+  }, { shortEligible });
+  assert.equal(bear?.ribbonState, "bear");
+  assert.equal(bear?.baseSupport, null);
+  assert.equal(bear?.baseResistance, 930);
+  assert.ok(bear?.reasons.some((reason) => /ribbon is overhead resistance/.test(reason)));
 });
 
 test("classify: rejects illiquid and sub-50 rupiah names", () => {
@@ -67,6 +104,7 @@ test("classify: shorts only fire for BEI-eligible tickers", () => {
     ticker: "IDX:BBRI",
     close: 1000,
     ema20: 1020,
+    ema25: 1020,
     ema50: 1030,
     sma200: 1100,
     low1m: 950,

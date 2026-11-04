@@ -25,7 +25,7 @@ import { guardLock } from "../lib/lock-guard.ts";
 
 const COLUMNS = [
   "name", "description", "close", "change", "volume", "average_volume_10d_calc",
-  "relative_volume_10d_calc", "market_cap_basic", "RSI", "EMA20", "EMA50",
+  "relative_volume_10d_calc", "market_cap_basic", "RSI", "EMA20", "EMA25", "EMA50",
   "SMA200", "High.1M", "Low.1M", "Recommend.All",
 ] as const;
 type RawRow = Record<(typeof COLUMNS)[number], number | string | null>;
@@ -52,6 +52,7 @@ function toFeatures(row: RawRow, sector: string): SetupFeatures {
     relativeVolume: num(row.relative_volume_10d_calc),
     rsi: num(row.RSI),
     ema20: num(row.EMA20),
+    ema25: num(row.EMA25),
     ema50: num(row.EMA50),
     sma200: num(row.SMA200),
     high1m: num(row["High.1M"]),

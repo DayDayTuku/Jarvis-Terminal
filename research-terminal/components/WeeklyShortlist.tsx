@@ -30,6 +30,7 @@ type Setup = {
   distance25?: number | null;
   baseSupport?: number | null;
   baseResistance?: number | null;
+  ribbonState?: string | null;
   trend?: boolean;
   aboveLongTrend?: boolean;
   nearHigh?: boolean;
@@ -429,6 +430,23 @@ export default function WeeklyShortlist({ setups }: { setups: Setup[] }) {
     </div>
   );
 
+  const ribbonLabel = (state?: string | null) => {
+    switch (state) {
+      case "bull":
+        return "Ribbon · support";
+      case "bear":
+        return "Ribbon · resistance";
+      case "recovery":
+        return "Ribbon · reclaiming";
+      case "rollover":
+        return "Ribbon · rolling over";
+      case "compression":
+        return "Ribbon · compressed";
+      default:
+        return "Base trend";
+    }
+  };
+
   const renderBase = (item: Setup) => {
     if (item.ema25 == null && item.ema50 == null && item.baseSupport == null && item.baseResistance == null) {
       return null;
@@ -443,7 +461,7 @@ export default function WeeklyShortlist({ setups }: { setups: Setup[] }) {
         <div>
           <span>EMA50</span>
           <b>{item.ema50 == null ? "—" : money(px(item.ema50))}</b>
-          <small>Base trend</small>
+          <small>{ribbonLabel(item.ribbonState)}</small>
         </div>
         <div>
           <span>BASE SUPPORT</span>

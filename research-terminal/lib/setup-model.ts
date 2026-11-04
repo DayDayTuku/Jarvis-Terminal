@@ -24,16 +24,27 @@ export function isShortSetup(item: { setup?: string } | null | undefined): boole
 }
 
 /**
- * When true, a setup's `score` is the fitted model's prediction (lib/score-model)
- * instead of the legacy additive heuristic; `legacyScore` keeps the old value for
- * comparison. Flipped on only once the backtest shows the fitted score ranks
- * out-of-sample returns better than the heuristic.
+ * The fitted score was trained on EMA20/EMA50/SMA200 features. The live engine
+ * now uses the EMA25/EMA50 ribbon, so keeping the old weights would apply a model
+ * to inputs it was never fitted on. The fitted path is therefore retired here
+ * until a ribbon-based re-fit exists; `legacyScore` still records the transparent
+ * ribbon heuristic that is now the active score.
  */
-export const USE_FITTED_SCORE = true;
+export const USE_FITTED_SCORE = false;
 
 export type SetupKey = "breakout" | "pullback" | "momentum" | "reversal" | "short_breakdown";
 export type Regime = "RISK ON" | "EMERGING" | "NEUTRAL" | "RISK OFF";
 export type SetupKind = "CORE" | "TACTICAL";
+
+/** EMA25/EMA50 form the ribbon. It flips between support and resistance as
+ *  price moves across it. */
+export type RibbonState =
+  | "bull"
+  | "bear"
+  | "recovery"
+  | "rollover"
+  | "compression"
+  | "unavailable";
 
 /** Normalised inputs for one scan row. Any data source (TradingView, Yahoo, a
  *  backtest bar series) only has to fill this in. */
@@ -106,6 +117,12 @@ export type Setup = {
   distance20: number | null;
   /** Distance from the EMA25 base, in percent. */
   distance25: number | null;
+  /** The EMA25/EMA50 ribbon levels and state. */
+  ema25: number | null;
+  ema50: number | null;
+  ribbonState: RibbonState;
+  /** Gap between EMA25 and EMA50, as a percent of price. */
+  ribbonWidthPct: number | null;
   /** Nearest EMA25/EMA50 below the close; the base the thesis leans on. */
   baseSupport: number | null;
   /** Nearest EMA25/EMA50 above the close; the level a recovery must clear. */
@@ -156,18 +173,21 @@ export type PlanLevels = {
 export function planLevels(args: {
   close: number;
   ema20: number | null;
+  /** EMA25 base. When present it replaces EMA20 for the structural stop. */
+  ema25?: number | null;
   low1m: number | null;
   high1m: number | null;
   atr: number | null;
   setup: SetupKey;
   policy: PlanPolicy;
 }): PlanLevels {
-  const { close, ema20, low1m, high1m, atr, setup, policy } = args;
+  const { close, ema20, ema25, low1m, high1m, atr, setup, policy } = args;
+  const baseEma = ema25 ?? ema20;
   const short = setup === "short_breakdown";
   const useAtr = policy.stopMode === "atr" && atr !== null && Number.isFinite(atr) && atr > 0;
 
   if (!short) {
-    const percentStop = setup === "breakout" ? close * 0.94 : Math.min(ema20 ?? close * 0.95, close * 0.96);
+    const percentStop = setup === "breakout" ? close * 0.94 : Math.min(baseEma ?? close * 0.95, close * 0.96);
     const rawStop = useAtr ? close - (atr as number) * policy.atrStopMult : percentStop;
     const risk = Math.max(close - rawStop, close * 0.025);
     const invalidation = Math.round(Math.max(low1m ?? 0, rawStop));
@@ -189,7 +209,7 @@ export function planLevels(args: {
     };
   }
 
-  const percentStop = Math.min(high1m ?? close * 1.08, Math.max(ema20 ?? close * 1.05, close * 1.04));
+  const percentStop = Math.min(high1m ?? close * 1.08, Math.max(baseEma ?? close * 1.05, close * 1.04));
   const rawStop = useAtr ? close + (atr as number) * policy.atrStopMult : percentStop;
   const risk = Math.max(rawStop - close, close * 0.025);
   const invalidation = Math.round(rawStop);
@@ -226,7 +246,6 @@ export function classify(features: SetupFeatures, ctx: { shortEligible: Set<stri
   const ema20 = features.ema20;
   const ema25 = features.ema25 ?? null;
   const ema50 = features.ema50;
-  const sma200 = features.sma200;
   const high1m = features.high1m;
   const low1m = features.low1m;
   const recommendation = features.recommendation;
@@ -235,23 +254,35 @@ export function classify(features: SetupFeatures, ctx: { shortEligible: Set<stri
   if (!close || !volume || close < 50 || volume < 100_000) return null;
   if (close * (avgVolume ?? volume) < (ctx.minTurnoverIdr ?? MIN_TURNOVER_IDR)) return null;
 
-  const distance20 = ema20 ? (close / ema20 - 1) * 100 : null;
-  const distance25 = ema25 ? (close / ema25 - 1) * 100 : null;
-  // Base support/resistance is the EMA25/EMA50 band around the price. It is
-  // analytical context for the weekly layer; the fitted score keeps its own
-  // pre-trained EMA20/EMA50/SMA200 features untouched.
-  const emaBelow = [ema25, ema50].filter((level): level is number => level !== null && Number.isFinite(level) && level < close);
-  const emaAbove = [ema25, ema50].filter((level): level is number => level !== null && Number.isFinite(level) && level > close);
+  // The EMA25/EMA50 ribbon is both the trend read and the dynamic S/R band.
+  // EMA20 is only a fallback for older callers that do not supply EMA25.
+  const fast = ema25 ?? ema20;
+  const distance20 = fast ? (close / fast - 1) * 100 : null;
+  const distance25 = fast ? distance20 : null;
+  const emaBelow = [fast, ema50]
+    .filter((level): level is number => level !== null && Number.isFinite(level) && level < close);
+  const emaAbove = [fast, ema50]
+    .filter((level): level is number => level !== null && Number.isFinite(level) && level > close);
   const baseSupport = emaBelow.length ? Math.max(...emaBelow) : null;
   const baseResistance = emaAbove.length ? Math.min(...emaAbove) : null;
-  const trend = ema20 !== null && ema50 !== null && close >= ema20 && ema20 >= ema50;
-  const aboveLongTrend = sma200 === null || close >= sma200;
+  const ribbonAvailable = fast !== null && ema50 !== null;
+  const ribbonWidthPct = ribbonAvailable ? (Math.abs(fast - ema50) / close) * 100 : null;
+  let ribbonState: RibbonState = "unavailable";
+  if (ribbonAvailable) {
+    if (fast >= ema50 && close >= fast) ribbonState = "bull";
+    else if (fast <= ema50 && close <= fast) ribbonState = "bear";
+    else if (close > fast && close > ema50) ribbonState = "recovery";
+    else if (close < fast && close < ema50) ribbonState = "rollover";
+    else ribbonState = "compression";
+  }
+  const trend = ribbonState === "bull";
+  const aboveLongTrend = ema50 !== null && close >= ema50;
   const nearHigh = high1m ? close >= high1m * 0.965 : false;
   const nearLow = low1m ? close <= low1m * 1.12 : false;
 
   const ticker = features.ticker.replace("IDX:", "");
-  const shortTrend = ema20 !== null && ema50 !== null && close < ema20 && ema20 <= ema50;
-  const belowLongTrend = sma200 !== null && close < sma200;
+  const shortTrend = ribbonState === "bear";
+  const belowLongTrend = ema50 !== null && close < ema50;
   const shortBreakdown =
     ctx.shortEligible.has(ticker) &&
     nearLow &&
@@ -275,6 +306,10 @@ export function classify(features: SetupFeatures, ctx: { shortEligible: Set<stri
     atr: features.atr,
     distance20,
     distance25,
+    ema25,
+    ema50,
+    ribbonState,
+    ribbonWidthPct,
     baseSupport,
     baseResistance,
     trend,
@@ -283,20 +318,22 @@ export function classify(features: SetupFeatures, ctx: { shortEligible: Set<stri
     nearLow,
   };
 
-  // The signals are exactly what lib/score-model was trained on.
+  // The fitted model's input shape is retained for the offline tooling, but the
+  // live score now uses the ribbon heuristic below (USE_FITTED_SCORE is off).
   const signals = (setup: SetupKey) => ({ relativeVolume, rsi, distance20, change, trend, aboveLongTrend, nearHigh, nearLow, setup });
   const activeScore = (setup: SetupKey, heuristic: number) => (USE_FITTED_SCORE ? scoreSignals(signals(setup)) : clamp(heuristic));
 
   if (shortBreakdown) {
-    const heuristic = clamp(58 + Math.min(14, ((relativeVolume ?? 1) - 1) * 18) + 10 + 8 + Math.min(10, Math.abs(recommendation ?? 0) * 20));
+    const ribbonBonus = ribbonState === "bear" ? 12 : ribbonState === "rollover" ? 8 : 0;
+    const heuristic = clamp(58 + Math.min(14, ((relativeVolume ?? 1) - 1) * 18) + 10 + 8 + Math.min(10, Math.abs(recommendation ?? 0) * 20) + ribbonBonus);
     return {
       ...base,
       setup: "short_breakdown",
       score: activeScore("short_breakdown", heuristic),
       legacyScore: heuristic,
-      reasons: ["Price is breaking toward its 1-month low", "The 20-day trend is below the 50-day trend", "Volume and broader technical readings confirm weakness"],
-      caution: "Short only when the ticker is on the official BEI list and borrow is available. A move above resistance invalidates the trade.",
-      ...planLevels({ close, ema20, low1m, high1m, atr: features.atr, setup: "short_breakdown", policy }),
+      reasons: ["Price is breaking toward its 1-month low", ribbonState === "bear" ? "EMA25 is below EMA50 and the ribbon is overhead resistance" : "The EMA25/EMA50 ribbon is rolling over", "Volume and broader technical readings confirm weakness"],
+      caution: "Short only when the ticker is on the official BEI list and borrow is available. A move back above the ribbon invalidates the trade.",
+      ...planLevels({ close, ema20, ema25: fast, low1m, high1m, atr: features.atr, setup: "short_breakdown", policy }),
     };
   }
 
@@ -307,20 +344,35 @@ export function classify(features: SetupFeatures, ctx: { shortEligible: Set<stri
 
   if (nearHigh && (relativeVolume ?? 0) >= 1.15 && (rsi ?? 50) >= 52 && (rsi ?? 50) <= 76) {
     setup = "breakout";
-    score = 58 + Math.min(18, ((relativeVolume ?? 1) - 1) * 18) + (trend ? 12 : 0) + (aboveLongTrend ? 8 : 0);
-    reasons = ["Price is testing its 1-month high", "Volume is above its 10-day average", trend ? "Short-term trend is rising" : "Momentum is strengthening"];
-    caution = (rsi ?? 0) > 70 ? "Momentum is already stretched; avoid chasing a large gap." : "A close back below the breakout area weakens this setup.";
-  } else if (ema20 && ema50 && close >= ema50 && distance20 !== null && distance20 >= -3.5 && distance20 <= 2.5 && (rsi ?? 50) >= 40 && (rsi ?? 50) <= 62) {
+    const ribbonBonus = ribbonState === "bull" ? 20 : ribbonState === "recovery" ? 14 : ribbonState === "compression" ? 10 : 0;
+    score = 58 + Math.min(18, ((relativeVolume ?? 1) - 1) * 18) + ribbonBonus + (aboveLongTrend ? 8 : 0);
+    reasons = [
+      "Price is testing its 1-month high",
+      "Volume is above its 10-day average",
+      ribbonState === "bull"
+        ? "EMA25 leads EMA50 and the ribbon is acting as support"
+        : ribbonState === "recovery"
+          ? "Price has reclaimed both EMAs, but EMA25 still needs to cross above EMA50"
+          : ribbonState === "compression"
+            ? "Price is pushing through a compressed EMA25/EMA50 ribbon"
+            : "Momentum is strengthening",
+    ];
+    caution = (rsi ?? 0) > 70 ? "Momentum is already stretched; avoid chasing a large gap." : "A close back below the ribbon weakens this setup.";
+  } else if (fast && ema50 && close >= ema50 && distance25 !== null && distance25 >= -3.5 && distance25 <= 2.5 && (rsi ?? 50) >= 40 && (rsi ?? 50) <= 62) {
     setup = "pullback";
-    score = 62 + Math.max(0, 12 - Math.abs(distance20) * 3) + (ema20 >= ema50 ? 12 : 0) + (aboveLongTrend ? 7 : 0);
-    reasons = ["Price is close to its 20-day trend", "The medium-term trend remains intact", (relativeVolume ?? 1) < 1 ? "Selling volume is relatively controlled" : "Trading activity remains healthy"];
-    caution = "The setup is invalid if price closes decisively below support.";
-  } else if (trend && aboveLongTrend && (rsi ?? 0) >= 54 && (rsi ?? 100) <= 72 && (recommendation ?? 0) >= 0.1) {
+    score = 62 + Math.max(0, 12 - Math.abs(distance25) * 3) + (fast >= ema50 ? 14 : 6) + (aboveLongTrend ? 7 : 0);
+    reasons = [
+      "Price is testing the EMA25 ribbon",
+      fast >= ema50 ? "The EMA25 support is above the EMA50 base" : "The EMA50 base is holding while EMA25 catches up",
+      (relativeVolume ?? 1) < 1 ? "Selling volume is relatively controlled" : "Trading activity remains healthy",
+    ];
+    caution = "The setup is invalid if price closes decisively below the EMA50 base.";
+  } else if (ribbonState === "bull" && aboveLongTrend && (rsi ?? 0) >= 54 && (rsi ?? 100) <= 72 && (recommendation ?? 0) >= 0.1) {
     setup = "momentum";
     score = 60 + Math.min(14, ((rsi ?? 54) - 54) * 1.2) + Math.min(12, Math.max(0, (relativeVolume ?? 1) - 1) * 12) + 10;
-    reasons = ["Price is above its 20- and 50-day trends", "Momentum is positive without being extremely overbought", "Broader technical readings are constructive"];
-    caution = "Momentum setups can reverse quickly when market breadth deteriorates.";
-  } else if (nearLow && (rsi ?? 50) >= 30 && (rsi ?? 50) <= 49 && (change ?? 0) > -2) {
+    reasons = ["Price is above the EMA25/EMA50 ribbon", "EMA25 leads EMA50 and the base is rising", "Momentum is positive without being extremely overbought"];
+    caution = "Momentum setups can reverse quickly when price loses the EMA25 ribbon.";
+  } else if (nearLow && ribbonState !== "bull" && (rsi ?? 50) >= 30 && (rsi ?? 50) <= 49 && (change ?? 0) > -2) {
     setup = "reversal";
     score = 52 + Math.max(0, 15 - Math.abs((rsi ?? 40) - 40)) + ((change ?? 0) > 0 ? 10 : 3) + Math.min(10, (relativeVolume ?? 0) * 5);
     reasons = ["Price is near its 1-month low", "Selling pressure is no longer accelerating", (change ?? 0) > 0 ? "The latest close shows an initial rebound" : "Price is attempting to stabilise"];
@@ -337,7 +389,7 @@ export function classify(features: SetupFeatures, ctx: { shortEligible: Set<stri
     legacyScore: heuristic,
     reasons,
     caution,
-    ...planLevels({ close, ema20, low1m, high1m, atr: features.atr, setup, policy }),
+    ...planLevels({ close, ema20, ema25: fast, low1m, high1m, atr: features.atr, setup, policy }),
   };
 }
 

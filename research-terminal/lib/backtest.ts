@@ -221,6 +221,7 @@ export function computeFeatures(ticker: string, bars: BacktestBar[], index: numb
   const avgVolume = index >= 9 ? mean(bars.slice(index - 9, index + 1).map((bar) => bar.volume)) : null;
   const relativeVolume = avgVolume && avgVolume > 0 ? volume / avgVolume : null;
   const ema20 = ema(closes, index, 20);
+  const ema25 = ema(closes, index, 25);
   const ema50 = ema(closes, index, 50);
   const sma200 = sma(closes, index, 200);
   const rsiValue = rsi(bars, index, 14);
@@ -236,6 +237,7 @@ export function computeFeatures(ticker: string, bars: BacktestBar[], index: numb
     relativeVolume,
     rsi: rsiValue,
     ema20,
+    ema25,
     ema50,
     sma200,
     high1m: window1m.length ? Math.max(...window1m.map((bar) => bar.high)) : null,
