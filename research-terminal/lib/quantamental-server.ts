@@ -74,8 +74,23 @@ export function jakartaDate(date = new Date()): string {
   return new Intl.DateTimeFormat("en-CA", { timeZone: QUANTAMENTAL_TIME_ZONE }).format(date);
 }
 
-export async function fetchQuantamentalRows(): Promise<QuantamentalRaw[]> {
-  const universe = buildQuantamentalUniverse();
+/**
+ * `default` is the curated research universe (5 names per sector, ~55 stocks).
+ * `full` scans every ticker in IDX_UNIVERSE so the weekly module can join its
+ * own technical shortlist against fundamentals without losing names.
+ */
+export type QuantamentalScope = "default" | "full";
+
+export function quantamentalUniverse(scope: QuantamentalScope = "default") {
+  return buildQuantamentalUniverse(
+    scope === "full" ? Number.POSITIVE_INFINITY : undefined,
+  );
+}
+
+export async function fetchQuantamentalRows(
+  scope: QuantamentalScope = "default",
+): Promise<QuantamentalRaw[]> {
+  const universe = quantamentalUniverse(scope);
   const response = await fetchUpstream(SCANNER_URL, {
     method: "POST",
     headers: {
@@ -336,13 +351,15 @@ export async function buildLiveQuantamentalMap(options: {
   asOf?: string;
   persist?: boolean;
   history?: QuantamentalHistory;
+  scope?: QuantamentalScope;
 } = {}): Promise<LiveQuantamentalResult> {
+  const scope = options.scope ?? "default";
   const today = jakartaDate();
   const history = options.history ?? await loadQuantamentalHistory({ before: today });
-  const rows = await fetchQuantamentalRows();
+  const rows = await fetchQuantamentalRows(scope);
   if (!rows.length) throw new Error("The scanner returned no usable rows");
 
-  const universe = buildQuantamentalUniverse();
+  const universe = quantamentalUniverse(scope);
   const asOf = options.asOf ?? new Date().toISOString();
   const withValues = rows.filter((row) => row.close !== null || row.marketCap !== null).length;
   const map = buildQuantamentalMap(rows, {
@@ -358,7 +375,9 @@ export async function buildLiveQuantamentalMap(options: {
 
   let snapshotSaved = false;
   let snapshotError: string | null = history.error;
-  if (options.persist !== false) {
+  // Full-scope scans are a weekly-module convenience. Only the curated map is
+  // stored, so history stays comparable across days and sectors keep their cap.
+  if (options.persist !== false && scope === "default") {
     const result = await saveQuantamentalSnapshot(map);
     snapshotSaved = result.saved;
     snapshotError = result.error;

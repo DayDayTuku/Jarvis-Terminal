@@ -11,6 +11,14 @@ import {
 import { buildLifecycle, carriedPositions, recentRunsBefore } from "@/lib/weekly-positions";
 import { pickLongs as pick, pickShort, positionWeight as weight, regimeFor, shortWeight } from "@/lib/setup-model";
 import { loadMacroExposure } from "@/lib/macro-risk";
+import { buildLiveQuantamentalMap } from "@/lib/quantamental-server";
+import type { QuantamentalStock } from "@/lib/quantamental";
+import {
+  rankWeeklyPicks,
+  scoreWeeklyPick,
+  type WeeklyMacroInput,
+  type WeeklyTechnicalInput,
+} from "@/lib/weekly-intelligence";
 import { formatMacroLabel, guardLock } from "@/lib/lock-guard";
 import { selectDigestRecipients, filterSuppressed, type DigestUser } from "@/lib/email-recipients";
 import { unsubscribeUrl } from "@/lib/email-unsubscribe";
@@ -18,10 +26,35 @@ import { YAHOO_HEADERS } from "@/lib/yahoo";
 
 export const maxDuration = 60;
 
-type Setup = { ticker:string; setup:string; score:number; close:number; sector?:string; entryLow:number; entryHigh:number; invalidation:number; target:number; riskReward:number; reasons?:string[]; caution?:string };
+type Setup = { ticker:string; setup:string; score:number; close:number; sector?:string; entryLow:number; entryHigh:number; invalidation:number; target:number; riskReward:number; reasons?:string[]; caution?:string; change?:number|null; rsi?:number|null; relativeVolume?:number|null; distance20?:number|null; ema25?:number|null; ema50?:number|null; distance25?:number|null; baseSupport?:number|null; baseResistance?:number|null; trend?:boolean; aboveLongTrend?:boolean; nearHigh?:boolean; nearLow?:boolean };
 type Candidate = { run_id?:string; ticker:string; setup:string; score:number; signal_close?:number; planned_entry_low:number; planned_entry_high:number; invalidation:number; hard_stop?:number; target_one?:number; position_weight:number };
 type Action = { run_id?:string; prior_run_id?:string|null; ticker:string; action:LifecycleActionName; previous_score:number|null; current_score:number|null; target_weight:number; theoretical_fill:number|null; entry_filled:boolean; target_reached:boolean; invalidated:boolean; reason:string };
 type Bar = PriceBar;
+
+function toTechnicalInput(item: Setup): WeeklyTechnicalInput {
+  return {
+    ticker: item.ticker,
+    setup: item.setup,
+    sector: item.sector,
+    score: item.score,
+    close: item.close,
+    change: item.change ?? null,
+    rsi: item.rsi ?? null,
+    relativeVolume: item.relativeVolume ?? null,
+    distance20: item.distance20 ?? null,
+    ema25: item.ema25 ?? null,
+    ema50: item.ema50 ?? null,
+    distance25: item.distance25 ?? null,
+    baseSupport: item.baseSupport ?? null,
+    baseResistance: item.baseResistance ?? null,
+    trend: item.trend,
+    aboveLongTrend: item.aboveLongTrend,
+    nearHigh: item.nearHigh,
+    nearLow: item.nearLow,
+    invalidation: item.invalidation,
+    riskReward: item.riskReward,
+  };
+}
 
 function wibWeekday() { return new Intl.DateTimeFormat("en-US", { timeZone:"Asia/Jakarta", weekday:"short" }).format(new Date()); }
 function currentFriday() {
@@ -120,7 +153,7 @@ async function sendDigest(weekOf:string, regime:string, candidates:Candidate[], 
   const standAside=candidates.length>0 && candidates.every((item)=>Number(item.position_weight||0)===0);
   const actionRows=actions.length?actions.map((item)=>"<tr><td>"+escapeHtml(item.ticker)+"</td><td><b>"+item.action+"</b></td><td>"+Number(item.target_weight || 0).toFixed(1)+"%</td><td>"+escapeHtml(stripAlertMarkers(item.reason))+"</td></tr>").join(""):"<tr><td colspan='4'>No prior-position action this week.</td></tr>";
   const pickRows=candidates.length?candidates.map((item)=>"<tr><td><b>"+escapeHtml(item.ticker)+"</b></td><td>"+escapeHtml(item.setup)+"</td><td>"+Number(item.score).toFixed(1)+"</td><td>"+Number(item.planned_entry_low).toLocaleString("id-ID")+"–"+Number(item.planned_entry_high).toLocaleString("id-ID")+"</td></tr>").join(""):"<tr><td colspan='4'>No qualified setup. Capital remains in cash.</td></tr>";
-  const html="<!doctype html><html><body style='margin:0;background:#f4f5f7;font-family:Arial;color:#111827'><div style='max-width:760px;margin:auto;padding:28px 16px'><header style='background:#111827;color:white;padding:24px'><small>JARVIS RESEARCH</small><h1>Weekly Picks</h1><p>Week of "+escapeHtml(weekOf)+" · V5 "+escapeHtml(regime)+"</p></header><main style='background:white;padding:22px'><h2>Last week's positions</h2><table style='width:100%;border-collapse:collapse' cellpadding='9'><tr style='background:#1f3c52;color:white'><th>Ticker</th><th>Action</th><th>Weight</th><th>Reason</th></tr>"+actionRows+"</table>"+(standAside?"<h2>This week's picks — standing aside</h2><p style='background:#fff7ed;border:1px solid #f59e0b;border-radius:8px;padding:10px;color:#7c2d12'><b>No new positions this week.</b> The macro risk overlay is at 0% deployed, so the names below qualified but are <b>not entered</b>; capital remains in cash.</p>":"<h2>This week's picks</h2>")+"<table style='width:100%;border-collapse:collapse' cellpadding='9'><tr style='background:#1f3c52;color:white'><th>Ticker</th><th>Setup</th><th>Score</th><th>Entry</th></tr>"+pickRows+"</table><p style='color:#6b7280;font-size:12px'>Rules-based research, not investment advice. Every pick is reviewed next week as HOLD, REDUCE, EXIT, NO_ENTRY, or EXPIRED.</p><p style='color:#6b7280;font-size:12px'>You opted in to this digest. You can turn it off any time in Jarvis → Settings.</p></main></div></body></html>";
+  const html="<!doctype html><html><body style='margin:0;background:#f4f5f7;font-family:Arial;color:#111827'><div style='max-width:760px;margin:auto;padding:28px 16px'><header style='background:#111827;color:white;padding:24px'><small>JARVIS RESEARCH</small><h1>Weekly Picks</h1><p>Week of "+escapeHtml(weekOf)+" · JARVIS "+escapeHtml(regime)+"</p></header><main style='background:white;padding:22px'><h2>Last week's positions</h2><table style='width:100%;border-collapse:collapse' cellpadding='9'><tr style='background:#1f3c52;color:white'><th>Ticker</th><th>Action</th><th>Weight</th><th>Reason</th></tr>"+actionRows+"</table>"+(standAside?"<h2>This week's picks — standing aside</h2><p style='background:#fff7ed;border:1px solid #f59e0b;border-radius:8px;padding:10px;color:#7c2d12'><b>No new positions this week.</b> The macro risk overlay is at 0% deployed, so the names below qualified but are <b>not entered</b>; capital remains in cash.</p>":"<h2>This week's picks</h2>")+"<table style='width:100%;border-collapse:collapse' cellpadding='9'><tr style='background:#1f3c52;color:white'><th>Ticker</th><th>Setup</th><th>Score</th><th>Entry</th></tr>"+pickRows+"</table><p style='color:#6b7280;font-size:12px'>Rules-based research, not investment advice. Every pick is reviewed next week as HOLD, REDUCE, EXIT, NO_ENTRY, or EXPIRED.</p><p style='color:#6b7280;font-size:12px'>You opted in to this digest. You can turn it off any time in Jarvis → Settings.</p></main></div></body></html>";
   const fromAddress=process.env.JARVIS_EMAIL_FROM||"Jarvis Research <onboarding@resend.dev>";
   const senderAddress=fromAddress.match(/<([^>]+)>/)?.[1] || "onboarding@resend.dev";
   const deliveryRecipients=[...new Set([...recipients.map((email)=>email.toLowerCase()),senderAddress.toLowerCase()])];
@@ -132,7 +165,7 @@ async function sendDigest(weekOf:string, regime:string, candidates:Candidate[], 
     await markDelivery(supabase,eventKey,"weekly_digest",email,"pending");
     const unsubscribe=unsubscribeUrl(email);
     const emailHtml=unsubscribe?html.replace("</main>","<p style='color:#6b7280;font-size:12px'><a href='"+unsubscribe+"' style='color:#48a6ff'>Unsubscribe from these emails</a></p></main>"):html;
-    const response=await fetchUpstream("https://api.resend.com/emails",{method:"POST",headers:{Authorization:"Bearer "+apiKey,"Content-Type":"application/json","Idempotency-Key":eventKey+"/"+email},body:JSON.stringify({from:fromAddress,to:[email],subject:"JARVIS V5 · Weekly Picks · "+weekOf,html:emailHtml,...(unsubscribe?{headers:{"List-Unsubscribe":"<"+unsubscribe+">","List-Unsubscribe-Post":"List-Unsubscribe=One-Click"}}:{})})});
+    const response=await fetchUpstream("https://api.resend.com/emails",{method:"POST",headers:{Authorization:"Bearer "+apiKey,"Content-Type":"application/json","Idempotency-Key":eventKey+"/"+email},body:JSON.stringify({from:fromAddress,to:[email],subject:"JARVIS · Weekly Picks · "+weekOf,html:emailHtml,...(unsubscribe?{headers:{"List-Unsubscribe":"<"+unsubscribe+">","List-Unsubscribe-Post":"List-Unsubscribe=One-Click"}}:{})})});
     const data:any=await response.json().catch(()=>({}));
     await markDelivery(supabase,eventKey,"weekly_digest",email,response.ok?"sent":"failed",data.id||null,data.message||null);
     deliveries.push({email,ok:response.ok,status:response.status,id:data.id||null,error:data.message||null});
@@ -219,7 +252,7 @@ export async function GET(request:NextRequest) {
     ]);
     const savedCandidates=(candidateResult.data || []) as Candidate[];
     const savedActions=(actionResult.data || []) as Action[];
-    const savedRegime=String(existing.market_regime || "V5 NEUTRAL").replace(/^V5\s+/,"");
+    const savedRegime=String(existing.market_regime || "NEUTRAL").replace(/^V[56]\s+(?:JARVIS\s+)?/,"");
     let email;
     try { email=await sendDigest(weekOf,savedRegime,savedCandidates,savedActions,supabase,recipients); }
     catch(error) { console.error("Weekly Picks retry failed", error); return NextResponse.json({error:"Weekly Picks email failed.",detail:error instanceof Error?error.message:"unknown"},{status:502}); }
@@ -233,17 +266,36 @@ export async function GET(request:NextRequest) {
   const scanner:any=await scannerResponse.json();
   const setups=Array.isArray(scanner?.setups)?scanner.setups as Setup[]:[];
   const regime=regimeFor(setups);
-  const longs=pick(setups,regime);
-  const shorts=pickShort(setups).filter((item)=>shortWeight(item,longs,regime)>=3);
-  const selected=[...longs,...shorts];
   // Macro / regional overlay: trim NEW risk when the external backdrop is
   // hostile. Held positions are not resized. Fails open to full size on bad data.
   const macro=await loadMacroExposure(weekOf);
+  // Integrated JARVIS layer. If the fundamental map cannot be fetched, the
+  // weekly process still runs on the technical screen and says so in the
+  // stored reason; it never invents a fundamental or valuation score.
+  let stockByTicker=new Map<string,QuantamentalStock>();
+  let jarvisReady=false;
+  try {
+    const {map}=await buildLiveQuantamentalMap({asOf:new Date().toISOString()});
+    stockByTicker=new Map(map.stocks.map((stock)=>[stock.ticker,stock]));
+    jarvisReady=true;
+  } catch(error) {
+    console.error("Weekly Picks: quantamental map unavailable; using technical fallback", error);
+  }
+  const macroInput:WeeklyMacroInput=macro;
+  const technicalLongs=pick(setups,regime);
+  const scoredLongs=rankWeeklyPicks(technicalLongs.map((item)=>({
+    item,
+    intel:scoreWeeklyPick(toTechnicalInput(item),stockByTicker.get(item.ticker),macroInput),
+  })));
+  const longs=scoredLongs.filter((entry)=>!jarvisReady||entry.intel.stance!=="AVOID");
+  const longItems=longs.map((entry)=>entry.item);
+  const shorts=pickShort(setups).filter((item)=>shortWeight(item,longItems,regime)>=3);
+  const selected=[...longs.map((entry)=>({...entry.item,intel:entry.intel as ReturnType<typeof scoreWeeklyPick>|null,positionWeight:jarvisReady?(entry.intel.stance==="BUY"?weight(entry.item,regime):0):weight(entry.item,regime)})),...shorts.map((item)=>({...item,intel:null,positionWeight:shortWeight(item,longItems,regime)}))];
   // Lock guard: a scan that did not see the session (a halt day can leave the
   // exchange feed on pre-halt prices) cannot be locked, so the week is held at 0%.
   const lock=guardLock(regime,macro.exposure,macro.indexChangePct);
   const macroLabel=formatMacroLabel(lock.exposure,macro.flags);
-  const stamp="V5 "+lock.regime+(shorts.length&&lock.exposure>0?" · OPTIONAL SHORT":"")+macroLabel+lock.suffix;
+  const stamp="V6 JARVIS "+lock.regime+(shorts.length&&lock.exposure>0?" · OPTIONAL SHORT":"")+macroLabel+lock.suffix;
   // A 0%-exposure week is a recorded stand-aside, not "no qualified setup".
   const baseNote=lock.note??(selected.length?(lock.exposure<=0?"Macro risk-off: the week stood aside at 0% deployed. Qualified setups are recorded but are not entered.":"Automated Friday Weekly Picks with lifecycle actions and an optional risk-capped short overlay."):"No qualified setup this week.");
   if(dryRun) return NextResponse.json({ok:true,dryRun:true,weekOf,regime:lock.regime,scannedRegime:regime,staleScan:lock.stale,macro,picks:selected.map((item)=>item.ticker)});
@@ -251,14 +303,22 @@ export async function GET(request:NextRequest) {
   const {data:priorCandidates}=priorRun?await supabase.from("jarvis_weekly_candidates").select("*").eq("run_id",priorRun.id).order("rank"):{data:[]};
   const {data:run,error:runError}=await supabase.from("jarvis_weekly_runs").insert({week_of:weekOf,snapshot_kind:"forward",methodology_version:"v5",status:"locked",market_regime:stamp,note:baseNote}).select().single();
   if(runError||!run) return NextResponse.json({error:"Unable to create weekly run."},{status:500});
-  const candidates=selected.map((item,index)=>({run_id:run.id,rank:index+1,ticker:item.ticker.slice(0,12),setup:item.setup.slice(0,30),score:Number(item.score),signal_close:alignPrice(Number(item.close),"nearest"),planned_entry_low:alignPrice(Number(item.entryLow),"up"),planned_entry_high:alignPrice(Number(item.entryHigh),"down"),invalidation:alignPrice(Number(item.invalidation),"up"),hard_stop:alignPrice(Number(item.close)*(isShortSetup(item)?1.06:.94),"up"),target_one:alignPrice(Number(item.target),isShortSetup(item)?"up":"down"),risk_reward:Number(item.riskReward),position_size_idr:Math.min(1250000,75000/Math.max(.01,Math.abs(Number(item.close)-Number(item.invalidation))/Number(item.close)))*lock.exposure,position_weight:(isShortSetup(item)?shortWeight(item,longs,regime):weight(item,regime))*lock.exposure,reasons:Array.isArray(item.reasons)?item.reasons.slice(0,4):[],caution:String(item.caution||"").slice(0,500)}));
+  const candidates=selected.map((item,index)=>{
+    const intel=item.intel as { summary:string; stance:string }|null;
+    const fallbackReason=jarvisReady?null:"JARVIS map unavailable at lock time; technical-only fallback recorded.";
+    const reasons=[intel?.summary,fallbackReason,...(Array.isArray(item.reasons)?item.reasons:[])].filter(Boolean) as string[];
+    const targetWeight=Math.max(0,Number(item.positionWeight)||0);
+    const stopDistance=Math.max(.01,Math.abs(Number(item.close)-Number(item.invalidation))/Number(item.close));
+    const size=targetWeight>0?Math.min(1250000,75000/stopDistance)*lock.exposure:0;
+    return {run_id:run.id,rank:index+1,ticker:item.ticker.slice(0,12),setup:item.setup.slice(0,30),score:Number(item.score),signal_close:alignPrice(Number(item.close),"nearest"),planned_entry_low:alignPrice(Number(item.entryLow),"up"),planned_entry_high:alignPrice(Number(item.entryHigh),"down"),invalidation:alignPrice(Number(item.invalidation),"up"),hard_stop:alignPrice(Number(item.close)*(isShortSetup(item)?1.06:.94),"up"),target_one:alignPrice(Number(item.target),isShortSetup(item)?"up":"down"),risk_reward:Number(item.riskReward),position_size_idr:size,position_weight:targetWeight*lock.exposure,reasons:reasons.slice(0,4),caution:String(item.caution||"").slice(0,500)};
+  });
   if(candidates.length) { const {error}=await supabase.from("jarvis_weekly_candidates").insert(candidates); if(error) return NextResponse.json({error:"Run created, but picks could not be saved."},{status:500}); }
   const carryRuns=await recentRunsBefore(supabase,weekOf);
   const carried=await carriedPositions(supabase,carryRuns,new Set([...(priorCandidates||[]).map((item:any)=>item.ticker),...candidates.map((item)=>item.ticker)]));
   const actions=await buildLifecycle({runId:run.id,priorRun,prior:priorCandidates||[],current:candidates,carried,getBars});
   if(actions.length) { const {error}=await supabase.from("jarvis_weekly_actions").insert(actions); if(error) return NextResponse.json({error:"Run created, but actions could not be saved."},{status:500}); }
   let email;
-  try { email=await sendDigest(weekOf,stamp.replace(/^V5\s+/,""),candidates,actions,supabase,recipients); }
+  try { email=await sendDigest(weekOf,stamp.replace(/^V[56]\s+(?:JARVIS\s+)?/,""),candidates,actions,supabase,recipients); }
   catch(error) { console.error("Weekly Picks email failed", error); return NextResponse.json({error:"Weekly Picks email failed.",detail:error instanceof Error?error.message:"unknown"},{status:502}); }
   const marker=email.sent?"[email:sent]":"[email:failed:"+String(email.reason || email.failures?.[0]?.status || "unknown")+"]";
   await supabase.from("jarvis_weekly_runs").update({note:baseNote+" "+marker}).eq("id",run.id);

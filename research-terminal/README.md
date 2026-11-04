@@ -190,7 +190,48 @@ an outline encodes revision direction when it is known. Missing inputs are never
 zero-filled: names without a comparable gap or score appear in explicit
 "no gap" / "no score" lists.
 
-### Plans and pricing
+### Weekly Picks
+
+The weekly module applies the JARVIS integrated framework to the setups that
+already pass the technical scanner. Weights are fixed at **fundamental quality
+25% · technical strength 25% · quantitative signals 20% · valuation 15% ·
+catalysts & positioning 15%** (`lib/weekly-intelligence.ts`).
+
+- **Technical** blends the fitted setup score (65%) with structure checks (35%):
+  EMA25/EMA50 as the stock's base support/resistance band, RSI, relative volume,
+  distance from the EMA25 base, and proximity to the one-month high/low. EMA25 is
+  the first support in a stacked uptrend and EMA50 the base support; below both,
+  they become the resistance a recovery must clear. The 20/50/200-day trend read
+  is not used in this layer.
+- **Fundamental** reuses the Quantamental fundamental-momentum score and its
+  sector profile; **valuation** reuses the peer gap and own-history percentile.
+- **Quantitative** uses 3M/6M price momentum, volume anomaly, session move and
+  estimate revisions when they exist. Price momentum is not fundamental momentum.
+- **Catalysts** uses dated earnings, revision direction, liquidity and the macro
+  overlay. No event is invented.
+
+A component with no input is marked `unavailable` and its weight leaves the
+denominator. The JARVIS score is `Σ(score × weight) ÷ Σ(availableWeight)` and
+requires at least two available components and ≥50% weight coverage; otherwise
+the score is `null` and the stance is `WATCH`. A **BUY** additionally needs a
+JARVIS score ≥70, a technical score ≥55 and a verified fundamental component;
+below 55 is **AVOID**. The Friday lock excludes AVOID names, records only the
+available components, and keeps the stored technical `score` unchanged so the
+existing lifecycle and backtest thresholds still apply. WATCH names are recorded
+at 0% weight, so cash remains a valid outcome. Both the admin Friday POST and the
+scheduled `/api/cron/weekly-picks` job apply the same integrated layer; if the
+fundamental map cannot be fetched at lock time, the run falls back to the
+technical screen and stores that fallback in the candidate reason rather than
+inventing fundamentals.
+
+`GET /api/quantamental?scope=full` scans all 236 `IDX_UNIVERSE` tickers so the
+weekly technical shortlist never loses a name to the curated 5-per-sector cap.
+Full-scope responses use their own 15-minute cache and are **never persisted**;
+only the curated map writes snapshots. The UI states the as-of date, the newest
+disclosure date, the fundamental-map status and the macro exposure, and each pick
+expands to show component evidence, catalysts, risks and explicit data gaps.
+
+
 
 `/pricing` is public. Free access stays open; Pro and Desk tiers are scaffolded
 for workflow depth, exports, alerts, and white-label/team use. Checkout is not

@@ -6,6 +6,7 @@ import {
   jakartaDate,
   loadQuantamentalHistory,
   type QuantamentalHistory,
+  type QuantamentalScope,
 } from "@/lib/quantamental-server";
 import type { QuantamentalMap } from "@/lib/quantamental";
 
@@ -27,7 +28,10 @@ export const maxDuration = 30;
 
 const CACHE_TTL_MS = 15 * 60 * 1000;
 
-let cache: { at: number; map: QuantamentalMap } | null = null;
+const caches: Record<QuantamentalScope, { at: number; map: QuantamentalMap } | null> = {
+  default: null,
+  full: null,
+};
 
 function privateHeaders(maxAge: number) {
   return { "cache-control": `private, max-age=${maxAge}` };
@@ -57,6 +61,7 @@ export async function GET(request: NextRequest) {
     const search = request.nextUrl.searchParams;
     const targetDate = search.get("date");
     const forceRefresh = search.get("refresh") === "1";
+    const scope: QuantamentalScope = search.get("scope") === "full" ? "full" : "default";
 
     if (targetDate) {
       if (!/^\d{4}-\d{2}-\d{2}$/.test(targetDate)) {
@@ -86,9 +91,10 @@ export async function GET(request: NextRequest) {
     }
 
     const now = Date.now();
+    const cache = caches[scope];
     if (!forceRefresh && cache && now - cache.at < CACHE_TTL_MS) {
       return NextResponse.json(
-        { ...cache.map, cached: true, snapshotSaved: null },
+        { ...cache.map, scope, cached: true, snapshotSaved: null },
         { headers: privateHeaders(300) },
       );
     }
@@ -99,12 +105,14 @@ export async function GET(request: NextRequest) {
       const { map, snapshotSaved, snapshotError } = await buildLiveQuantamentalMap({
         asOf: new Date().toISOString(),
         history,
+        scope,
       });
 
-      cache = { at: now, map };
+      caches[scope] = { at: now, map };
       return NextResponse.json(
         {
           ...map,
+          scope,
           cached: false,
           snapshotSaved,
           snapshotError,
@@ -118,6 +126,7 @@ export async function GET(request: NextRequest) {
         return NextResponse.json(
           {
             ...cache.map,
+            scope,
             status: "stale" as const,
             cached: true,
             refreshError: error instanceof Error ? error.message : "Refresh failed.",

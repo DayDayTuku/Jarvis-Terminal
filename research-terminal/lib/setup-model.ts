@@ -48,6 +48,9 @@ export type SetupFeatures = {
   relativeVolume: number | null;
   rsi: number | null;
   ema20: number | null;
+  /** Base support/resistance EMAs for the weekly layer. Optional so older
+   *  callers (offline backtests) keep compiling; the live scanner fills it. */
+  ema25?: number | null;
   ema50: number | null;
   sma200: number | null;
   high1m: number | null;
@@ -101,6 +104,12 @@ export type Setup = {
   marketCap: number | null;
   atr: number | null;
   distance20: number | null;
+  /** Distance from the EMA25 base, in percent. */
+  distance25: number | null;
+  /** Nearest EMA25/EMA50 below the close; the base the thesis leans on. */
+  baseSupport: number | null;
+  /** Nearest EMA25/EMA50 above the close; the level a recovery must clear. */
+  baseResistance: number | null;
   trend: boolean;
   aboveLongTrend: boolean;
   nearHigh: boolean;
@@ -215,6 +224,7 @@ export function classify(features: SetupFeatures, ctx: { shortEligible: Set<stri
   const relativeVolume = features.relativeVolume ?? (volume && avgVolume ? volume / avgVolume : null);
   const rsi = features.rsi;
   const ema20 = features.ema20;
+  const ema25 = features.ema25 ?? null;
   const ema50 = features.ema50;
   const sma200 = features.sma200;
   const high1m = features.high1m;
@@ -226,6 +236,14 @@ export function classify(features: SetupFeatures, ctx: { shortEligible: Set<stri
   if (close * (avgVolume ?? volume) < (ctx.minTurnoverIdr ?? MIN_TURNOVER_IDR)) return null;
 
   const distance20 = ema20 ? (close / ema20 - 1) * 100 : null;
+  const distance25 = ema25 ? (close / ema25 - 1) * 100 : null;
+  // Base support/resistance is the EMA25/EMA50 band around the price. It is
+  // analytical context for the weekly layer; the fitted score keeps its own
+  // pre-trained EMA20/EMA50/SMA200 features untouched.
+  const emaBelow = [ema25, ema50].filter((level): level is number => level !== null && Number.isFinite(level) && level < close);
+  const emaAbove = [ema25, ema50].filter((level): level is number => level !== null && Number.isFinite(level) && level > close);
+  const baseSupport = emaBelow.length ? Math.max(...emaBelow) : null;
+  const baseResistance = emaAbove.length ? Math.min(...emaAbove) : null;
   const trend = ema20 !== null && ema50 !== null && close >= ema20 && ema20 >= ema50;
   const aboveLongTrend = sma200 === null || close >= sma200;
   const nearHigh = high1m ? close >= high1m * 0.965 : false;
@@ -256,6 +274,9 @@ export function classify(features: SetupFeatures, ctx: { shortEligible: Set<stri
     marketCap,
     atr: features.atr,
     distance20,
+    distance25,
+    baseSupport,
+    baseResistance,
     trend,
     aboveLongTrend,
     nearHigh,
