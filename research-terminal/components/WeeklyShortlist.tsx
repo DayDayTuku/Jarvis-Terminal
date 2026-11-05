@@ -9,6 +9,7 @@ import {
   type WeeklyPickIntelligence,
   type WeeklyTechnicalInput,
 } from "@/lib/weekly-intelligence";
+import { pickLongs, regimeFor, type Regime } from "@/lib/setup-model";
 
 type Setup = {
   ticker: string;
@@ -84,7 +85,6 @@ type Scored = Setup & {
   intel: WeeklyPickIntelligence;
   positionWeight: number;
 };
-type Regime = "RISK ON" | "EMERGING" | "NEUTRAL" | "RISK OFF";
 
 const money = (value: number) =>
   new Intl.NumberFormat("id-ID", { maximumFractionDigits: 0 }).format(value);
@@ -93,32 +93,6 @@ const px = (value: number, direction: "up" | "down" | "nearest" = "nearest") => 
   const step = tick(value);
   const round = direction === "up" ? Math.ceil : direction === "down" ? Math.floor : Math.round;
   return round(value / step) * step;
-};
-const regimeFor = (setups: Setup[]): Regime => {
-  const valid = setups.filter(
-    (item) => !isShort(item) && item.riskReward >= 1.7 && item.setup.toLowerCase() !== "reversal",
-  );
-  const emerging = valid.filter((item) => item.score >= 75).length;
-  const strong = valid.filter((item) => item.score >= 85).length;
-  return emerging >= 5 ? "RISK ON" : emerging >= 3 ? "EMERGING" : strong ? "NEUTRAL" : "RISK OFF";
-};
-const pick = (setups: Setup[], regime: Regime) => {
-  if (regime === "RISK OFF") return [];
-  const min = regime === "RISK ON" ? 75 : regime === "EMERGING" ? 80 : 85;
-  const max = regime === "RISK ON" ? 5 : regime === "EMERGING" ? 3 : 1;
-  const sectors = new Map<string, number>();
-  return [...setups]
-    .filter((item) => !isShort(item) && item.setup.toLowerCase() !== "reversal")
-    .sort((a, b) => b.score - a.score || b.riskReward - a.riskReward)
-    .filter((item) => item.score >= min && item.riskReward >= 1.7)
-    .filter((item) => {
-      const key = item.sector || "Other";
-      const count = sectors.get(key) || 0;
-      if (count >= 2) return false;
-      sectors.set(key, count + 1);
-      return true;
-    })
-    .slice(0, max);
 };
 const shortPick = (setups: Setup[]) =>
   [...setups]
@@ -274,7 +248,7 @@ export default function WeeklyShortlist({ setups }: { setups: Setup[] }) {
   }, []);
 
   const regime = useMemo(() => regimeFor(setups), [setups]);
-  const proposed = useMemo(() => pick(setups, regime), [setups, regime]);
+  const proposed = useMemo(() => pickLongs(setups, regime), [setups, regime]);
   const shorts = useMemo(() => shortPick(setups), [setups]);
   const macro = state?.macro ?? null;
   const stockByTicker = useMemo(
@@ -309,6 +283,7 @@ export default function WeeklyShortlist({ setups }: { setups: Setup[] }) {
         .map((item) => ({
           ticker: item.ticker,
           setup: item.setup,
+          sector: item.sector ?? null,
           score: item.score,
           stance: item.intel.stance,
           close: item.close,
@@ -666,8 +641,8 @@ export default function WeeklyShortlist({ setups }: { setups: Setup[] }) {
           <span>WEEKLY PICKS · JARVIS INTEGRATED</span>
           <h3>{rebalanceLocked ? "Friday Rebalance Actions" : "This Week’s Picks"}</h3>
           <p>
-            Fundamental 25% · Technical 25% · Quantitative 20% · Valuation 15% · Catalysts 15% · Up to 5 longs
-            + optional 1 short · Friday official rebalance
+            Fundamental 25% · Technical 25% · Quantitative 20% · Valuation 15% · Catalysts 15% · 0–5 longs
+            (one per sector/exposure) + optional 1 short · Friday official rebalance · cash is valid
           </p>
         </div>
         <div className="weekly-lock">

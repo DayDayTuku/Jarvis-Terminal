@@ -210,8 +210,8 @@ EMA25 to avoid chasing.
 The setup score is a ridge model re-fitted on the ribbon features with
 `pnpm fit-score -- --years=3 --limit=100`. On the 2026 out-of-sample slice
 (802 candidates) it separates the best quintile (R ≈ 0.00) from the worst
-(R ≈ −0.43); a 60-name replay over 2026 returned +7.2% with a 1.64 profit factor
-and −2.4% max drawdown, versus +1.0%, 1.04 and −2.8% for the pre-ribbon model.
+(R ≈ −0.43); a 60-name replay over 2026 returned +6.9% with a 1.86 profit factor
+and −1.65% max drawdown, versus +1.0%, 1.04 and −2.8% for the pre-ribbon model.
 That is one market regime and a small sample, not a promise of future returns.
 The transparent heuristic remains available as `legacyScore` for comparison.
 
@@ -253,6 +253,20 @@ scheduled `/api/cron/weekly-picks` job apply the same integrated layer; if the
 fundamental map cannot be fetched at lock time, the run falls back to the
 technical screen and stores that fallback in the candidate reason rather than
 inventing fundamentals.
+
+Selection is **0–5 longs, not a fixed count**: the count follows the regime gate
+(up to 5 in RISK ON, 3 in EMERGING, 1 in NEUTRAL, 0 in RISK OFF) and the score
+threshold, so an empty book is a normal outcome and cash is a position. Within
+that cap the selector admits **at most one name per sector and one per correlated
+exposure group** (`pickLongs` / `exposureOf` in `lib/setup-model.ts`, enforced
+again in the Friday lock POST). The exposure groups catch the same bet across
+different GICS labels — for example AADI and ITMG are both coal, and TCPI is a
+coal transporter, so holding two of them doubles one commodity shock rather than
+diversifying it. This concentration cap cost return in the same 60-name, 2-year
+replay (+18.4% versus +27.8% without it, PF 1.59 versus 1.78, drawdown −3.39%
+versus −2.49%); the out-of-sample slice was +6.9% with a 1.86 profit factor and
+−1.65% drawdown. Because the cap was chosen after looking at that window, treat
+the drawdown improvement as partly in-sample.
 
 `GET /api/quantamental?scope=full` scans all 236 `IDX_UNIVERSE` tickers so the
 weekly technical shortlist never loses a name to the curated 5-per-sector cap.

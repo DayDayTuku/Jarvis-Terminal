@@ -4,6 +4,7 @@ import {
   CORE_SETUPS,
   DEFAULT_POLICY,
   classify,
+  exposureOf,
   pickLongs,
   pickShort,
   planLevels,
@@ -146,12 +147,24 @@ test("regimeFor: breadth decides the regime", () => {
   assert.equal(regimeFor([made(60)]), "RISK OFF");
 });
 
-test("pickLongs: regime gates the count, sector caps at two", () => {
+test("pickLongs: one per sector and one per correlated exposure", () => {
   const made = (ticker: string, score: number, sector: string): ScoredSetup & { ticker: string } => ({ ticker, setup: "momentum", score, riskReward: 2, sector });
+  // Three Energy names: the sector cap already reduces this to one.
   const crowded = [made("A", 90, "Energy"), made("B", 89, "Energy"), made("C", 88, "Energy")];
-  assert.equal(pickLongs(crowded, "RISK ON").length, 2);
+  assert.equal(pickLongs(crowded, "RISK ON").length, 1);
   assert.equal(pickLongs(crowded, "NEUTRAL").length, 1);
   assert.equal(pickLongs(crowded, "RISK OFF").length, 0);
+
+  // Different GICS sectors, same coal exposure: still one bet.
+  const coal = [made("ADRO", 90, "Energy"), made("TCPI", 89, "Transportation & Logistics")];
+  assert.equal(pickLongs(coal, "RISK ON").length, 1);
+  assert.equal(exposureOf("TCPI.JK", "Transportation & Logistics"), "coal");
+  assert.equal(exposureOf("ZZZZ", "Other"), "sector:Other");
+
+  // Genuinely different exposures still fill the book.
+  const mixed = [made("ADRO", 90, "Energy"), made("BBCA", 89, "Financials"), made("TLKM", 88, "Infrastructures")];
+  assert.equal(pickLongs(mixed, "RISK ON").length, 3);
+
   const pick = pickLongs([made("A", 80, "Tech"), made("B", 88, "Tech")], "NEUTRAL");
   assert.equal(pick[0].ticker, "B"); // 80 fails the 85 gate
 });

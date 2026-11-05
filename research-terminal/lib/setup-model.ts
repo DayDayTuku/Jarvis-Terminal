@@ -410,7 +410,70 @@ export function classifyAll(features: SetupFeatures[], ctx: { shortEligible: Set
 
 /** The minimum shape the selection rules need. Routes hold a lighter type than
  *  the full `Setup`, so the rules are generic over whatever carries these. */
-export type ScoredSetup = { setup: string; score: number; riskReward: number; sector?: string };
+export type ScoredSetup = { setup: string; score: number; riskReward: number; sector?: string; ticker?: string };
+
+/**
+ * Correlated exposure groups that cut across GICS sectors. The sector cap alone
+ * cannot see that a coal miner and a coal transporter are the same bet, or that
+ * a gas utility and an oil producer share the same commodity cycle. One name per
+ * group keeps a 5-name book from doubling a single shock.
+ *
+ * Tickers not listed here fall back to their sector, so the map only needs the
+ * groups where cross-sector correlation is real.
+ */
+const EXPOSURE_GROUPS: Record<string, readonly string[]> = {
+  coal: [
+    "ADRO", "PTBA", "ITMG", "BUMI", "BYAN", "GEMS", "HRUM", "INDY", "AADI",
+    "ADMR", "ABMM", "DOID", "CUAN", "DEWA", "SGER", "KKGI", "MYOH", "TOBA",
+    "SMMT", "BSSR", "ARII", "MCOL", "ITMA", "DSSA", "PTRO", "TCPI", "MBSS", "HATM",
+  ],
+  oil_gas: ["MEDC", "ENRG", "ELSA", "AKRA", "PGAS", "RAJA", "RATU", "SINI"],
+  metals: ["ANTM", "MDKA", "AMMN", "BRMS", "TINS", "NICL", "CITA"],
+  nickel: ["INCO", "NCKL", "MBMA"],
+  banks: [
+    "BBCA", "BBRI", "BMRI", "BBNI", "BRIS", "BBTN", "BNGA", "NISP", "PNBN",
+    "ARTO", "BTPS", "MEGA", "BJBR", "BJTM", "BDMN", "BNII",
+  ],
+  consumer_finance: ["ADMF", "BFIN", "WOMF", "CFIN", "MFIN", "IMJS"],
+  telco: ["TLKM", "EXCL", "ISAT"],
+  towers: ["TOWR", "TBIG", "MTEL"],
+  property: [
+    "BSDE", "CTRA", "SMRA", "PWON", "ASRI", "DMAS", "LPCK", "LPKR", "KIJA",
+    "PANI", "JRPT", "MTLA", "RDTX", "BEST", "DUTI", "GPRA", "BKSL", "MDLN",
+    "MINA", "UANG", "BUVA",
+  ],
+  cement: ["INTP", "SMGR"],
+  pulp_paper: ["INKP", "TKIM", "INRU", "FASW", "ALDO", "TRST", "EKAD"],
+  palm_oil: ["TAPG", "AALI", "LSIP", "DSNG", "SIMP", "TBLA", "JARR", "CEKA"],
+  poultry_feed: ["CPIN", "JPFA"],
+  retail: ["ERAA", "MAPI", "ACES", "LPPF", "MAPA", "RALS"],
+  media: ["MNCN", "SCMA", "FILM", "EMTK"],
+  technology: [
+    "GOTO", "BUKA", "WIFI", "DCII", "EDGE", "MLPT", "BELI", "DMMX", "MCAS",
+    "MTDL", "CHIP", "AXIO", "WIRG", "DIVA", "NFCX", "GLVA", "DNET",
+  ],
+  healthcare: [
+    "KLBF", "SIDO", "MIKA", "HEAL", "SILO", "TSPC", "KAEF", "SOHO", "PRDA",
+    "DVLA", "MERK", "PYFA", "SAME", "BMHS", "SRAJ",
+  ],
+  logistics: [
+    "ASSA", "BIRD", "GIAA", "SMDR", "TMAS", "BULL", "NELY", "SOCI", "WEHA",
+    "IPCC", "LEAD", "SHIP", "WINS",
+  ],
+  construction: ["WIKA", "PTPP", "ADHI", "TOTL", "NRCA", "SSIA"],
+  utilities: ["BREN", "PGEO", "KEEN", "POWR", "CDIA"],
+  auto: ["AUTO", "GJTL", "SMSM", "IMAS", "MPMX", "BOGA", "CARS"],
+};
+
+const EXPOSURE_BY_TICKER = new Map<string, string>(
+  Object.entries(EXPOSURE_GROUPS).flatMap(([group, tickers]) => tickers.map((ticker) => [ticker, group])),
+);
+
+/** Correlated-exposure key for one name. Falls back to the sector. */
+export function exposureOf(ticker: string | undefined, sector?: string | null): string {
+  const key = String(ticker ?? "").replace(/^IDX:/, "").replace(/\.JK$/, "").toUpperCase();
+  return EXPOSURE_BY_TICKER.get(key) ?? `sector:${sector || "Other"}`;
+}
 
 /** Market regime read from the breadth of the current scan. */
 export function regimeFor(setups: ScoredSetup[], excluded: ReadonlySet<string> = EXCLUDED_SETUPS): Regime {
@@ -455,7 +518,8 @@ export function positionWeight(item: { setup: string; score: number }, regime: R
 export const REGIME_MINIMUM: Record<Regime, number> = { "RISK ON": 75, EMERGING: 80, NEUTRAL: 85, "RISK OFF": 101 };
 export const REGIME_MAXIMUM: Record<Regime, number> = { "RISK ON": 5, EMERGING: 3, NEUTRAL: 1, "RISK OFF": 0 };
 
-/** The week's long picks: score gate by regime, sector cap of two. */
+/** The week's long picks: score gate by regime, one name per sector and per
+ *  correlated exposure group, hard cap by regime. */
 export function pickLongs<T extends ScoredSetup>(
   setups: T[],
   regime: Regime,
@@ -465,16 +529,18 @@ export function pickLongs<T extends ScoredSetup>(
   if (regime === "RISK OFF") return [];
   const minimum = thresholds?.minimum?.[regime] ?? REGIME_MINIMUM[regime];
   const maximum = thresholds?.maximum?.[regime] ?? REGIME_MAXIMUM[regime];
-  const sectors = new Map<string, number>();
+  const sectors = new Set<string>();
+  const exposures = new Set<string>();
   return [...setups]
     .filter((item) => !isShortSetup(item) && !excluded.has(item.setup.toLowerCase()))
     .sort((a, b) => b.score - a.score || b.riskReward - a.riskReward)
     .filter((item) => item.score >= minimum && item.riskReward >= 1.7)
     .filter((item) => {
-      const sector = item.sector || "Other";
-      const count = sectors.get(sector) || 0;
-      if (count >= 2) return false;
-      sectors.set(sector, count + 1);
+      const sector = (item.sector || "Other").toLowerCase();
+      const exposure = exposureOf(item.ticker, item.sector);
+      if (sectors.has(sector) || exposures.has(exposure)) return false;
+      sectors.add(sector);
+      exposures.add(exposure);
       return true;
     })
     .slice(0, maximum);

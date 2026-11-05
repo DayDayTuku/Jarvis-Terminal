@@ -12,6 +12,7 @@ import { loadMacroExposure } from "@/lib/macro-risk";
 import { formatMacroLabel, guardLock, regimeFromLabel } from "@/lib/lock-guard";
 import { YAHOO_HEADERS } from "@/lib/yahoo";
 import { isAdmin } from "@/lib/auth";
+import { exposureOf } from "@/lib/setup-model";
 function fridayOfCurrentWeek() {
   const now = new Date();
   const wib = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Jakarta" }));
@@ -84,7 +85,7 @@ export async function POST(request:NextRequest){
   const supabase=await createClient(); const{data:{user}}=await supabase.auth.getUser();
   if(!user||!isAdmin(user))return NextResponse.json({error:"Admin required"},{status:403});
   if(!mayLockNow())return NextResponse.json({error:"Forward snapshots can only be locked after Friday 16:00 WIB."},{status:400});
-  const body:any=await request.json(); const incoming=Array.isArray(body?.candidates)?body.candidates:[]; let shortSeen=false,longCount=0; const rows=incoming.filter((item:any)=>{if(item.stance==="AVOID")return false;if(isShortSetup(item)){if(shortSeen)return false;shortSeen=true;return Number(item.score)>=85&&Number(item.riskReward)>=2&&Number(item.positionWeight)<=8;}if(longCount>=5)return false;longCount+=1;return true;}).slice(0,6); const weekOf=fridayOfCurrentWeek();
+  const body:any=await request.json(); const incoming=Array.isArray(body?.candidates)?body.candidates:[]; let shortSeen=false,longCount=0; const sectors=new Set<string>(),exposures=new Set<string>(); const rows=incoming.filter((item:any)=>{if(item.stance==="AVOID")return false;if(isShortSetup(item)){if(shortSeen)return false;shortSeen=true;return Number(item.score)>=85&&Number(item.riskReward)>=2&&Number(item.positionWeight)<=8;}if(longCount>=5)return false;const sector=String(item.sector||"Other").toLowerCase();const exposure=exposureOf(item.ticker,sector);if(sectors.has(sector)||exposures.has(exposure))return false;sectors.add(sector);exposures.add(exposure);longCount+=1;return true;}).slice(0,6); const weekOf=fridayOfCurrentWeek();
   const{data:existing}=await supabase.from("jarvis_weekly_runs").select("id").eq("week_of",weekOf).maybeSingle(); if(existing)return NextResponse.json({ok:true,alreadyLocked:true});
   const{data:priorRun}=await supabase.from("jarvis_weekly_runs").select("*").lt("week_of",weekOf).order("week_of",{ascending:false}).limit(1).maybeSingle();
   const{data:priorCandidates}=priorRun?await supabase.from("jarvis_weekly_candidates").select("*").eq("run_id",priorRun.id).order("rank"):{data:[]};
