@@ -86,11 +86,11 @@ jobs:
 
       - name: Upload raw output
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: backtest-${{ github.run_id }}
           path: |
             research-terminal/full.txt
             research-terminal/oos.txt
           if-no-files-found: warn
-          retention-days: 365
+          retention-days: 90

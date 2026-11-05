@@ -348,7 +348,7 @@ checks npm and GitHub Actions weekly.
 A scheduled workflow (`.github/workflows/backtest.yml`) re-runs the 60-name,
 2-year replay and the clean out-of-sample slice on the 1st of every month. It
 publishes both tables to the Actions run summary and keeps the raw output as a
-365-day artifact. The score is not re-fitted automatically: after a manual
+90-day artifact. The score is not re-fitted automatically: after a manual
 `pnpm fit-score`, update `OOS_FROM` in that workflow to the new training split.
 
 ## Project layout
