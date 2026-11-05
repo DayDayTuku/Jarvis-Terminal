@@ -1,0 +1,96 @@
+name: Monthly backtest
+
+on:
+  schedule:
+    # 01:00 UTC on the 1st = 08:00 WIB. Fresh month of bars, before the Monday open.
+    - cron: "0 1 1 * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: backtest
+  cancel-in-progress: true
+
+env:
+  # First session after the shipped score's training split. Update this whenever
+  # `pnpm fit-score` is re-run and lib/score-model.ts is replaced.
+  OOS_FROM: "2026-01-10"
+
+jobs:
+  replay:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: research-terminal
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 10
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: research-terminal/pnpm-lock.yaml
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      # Keep concurrency low so Yahoo does not rate-limit the runner.
+      - name: Full 2-year replay
+        shell: bash
+        run: |
+          set -o pipefail
+          pnpm backtest -- --limit=60 --years=2 --concurrency=3 | tee full.txt
+
+      - name: Out-of-sample replay
+        shell: bash
+        run: |
+          set -o pipefail
+          pnpm backtest -- --limit=60 --years=2 --concurrency=3 --from="$OOS_FROM" | tee oos.txt
+
+      - name: Publish summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "## Monthly backtest"
+            echo
+            echo "Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+            echo
+            echo "### Active model fit"
+            echo '```'
+            sed -n '/fit: {/,/}/p' lib/score-model.ts | head -8
+            echo '```'
+            if [ -s full.txt ]; then
+              echo "### Full 2-year replay"
+              echo '```'
+              sed -n '/^VARIANT/,/^$/p' full.txt
+              sed -n '/^Baseline by setup:/,/^$/p' full.txt
+              sed -n '/^Baseline by score bucket:/,/^$/p' full.txt
+              echo '```'
+            fi
+            if [ -s oos.txt ]; then
+              echo "### Out-of-sample replay (from ${OOS_FROM})"
+              echo '```'
+              sed -n '/^VARIANT/,/^$/p' oos.txt
+              sed -n '/^Baseline by setup:/,/^$/p' oos.txt
+              echo '```'
+            fi
+            echo
+            echo "The score is **not** re-fitted automatically. After a manual"
+            echo "\`pnpm fit-score\`, update \`OOS_FROM\` to the new split date."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload raw output
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backtest-${{ github.run_id }}
+          path: |
+            research-terminal/full.txt
+            research-terminal/oos.txt
+          if-no-files-found: warn
+          retention-days: 365
