@@ -38,6 +38,7 @@ import {
   type SetupKey,
 } from "./setup-model.ts";
 import { signalsOf, type ScoreSignals } from "./score-model.ts";
+import { applyBreadthHysteresis, readBreadth, type BreadthBands } from "./market-breadth.ts";
 
 export type BacktestBar = { date: string; open: number; high: number; low: number; close: number; volume: number };
 
@@ -87,6 +88,14 @@ export type BacktestPolicy = {
   macro?: (read: MacroRead) => number;
   /** Minimum average daily turnover in rupiah (overrides the shipped floor). */
   minTurnoverIdr?: number;
+  /**
+   * How the weekly regime is read. "setups" is the shipped count-of-qualified-
+   * setups rule; "breadth" reads participation across the whole scan and applies
+   * the hysteresis buffer. Offline-only so the two can be compared.
+   */
+  regimeMode?: "setups" | "breadth";
+  /** Thresholds for the breadth regime, so a calibration can be compared. */
+  breadthBands?: BreadthBands;
 };
 
 export const DEFAULT_BACKTEST_POLICY: BacktestPolicy = {
@@ -144,6 +153,8 @@ export type BacktestResult = {
   summary: BacktestStats;
   bySetup: Array<{ setup: string; stats: BacktestStats }>;
   byScore: Array<{ bucket: string; stats: BacktestStats }>;
+  /** Weeks spent in each regime, for diagnosing an over-defensive read. */
+  regimeWeeks: Record<Regime, number>;
 };
 
 const mean = (values: number[]): number => (values.length ? values.reduce((a, b) => a + b, 0) / values.length : 0);
@@ -576,6 +587,10 @@ export function runBacktest(input: BacktestInput): BacktestResult {
 
   const picksByTicker = new Map<string, Pick[]>();
 
+  // Carried across weeks so the breadth regime can apply its hysteresis buffer.
+  let priorRegime: Regime | null = null;
+  const regimeWeeks: Record<Regime, number> = { "RISK ON": 0, EMERGING: 0, NEUTRAL: 0, "RISK OFF": 0 };
+
   scanDates.forEach((scanDate, weekIndex) => {
     const features: SetupFeatures[] = [];
     for (const [ticker, bars] of input.barsByTicker) {
@@ -593,7 +608,13 @@ export function runBacktest(input: BacktestInput): BacktestResult {
     // The regime is read on the same tradeable set the selection uses, so a
     // setup we would never trade cannot inflate the breadth read.
     const excluded = new Set(policy.excludeSetups ?? [...EXCLUDED_SETUPS]);
-    const regime = regimeFor(scored, excluded);
+    // Breadth reads the whole scan, before classification. Falling back to the
+    // setup count keeps a thin/unusable scan from asserting a regime.
+    const regime = policy.regimeMode === "breadth"
+      ? applyBreadthHysteresis(readBreadth(features).score, priorRegime, policy.breadthBands) ?? regimeFor(scored, excluded)
+      : regimeFor(scored, excluded);
+    priorRegime = regime;
+    regimeWeeks[regime] += 1;
     const tradeThisWeek = (!policy.regimes || policy.regimes.includes(regime)) && marketOpen(scanDate);
     const longs = tradeThisWeek ? pickLongs(scored, regime, input.thresholds, excluded) : [];
     const shorts = tradeThisWeek ? pickShort(scored).filter((setup) => shortWeight(setup, longs, regime) >= 3) : [];
@@ -668,5 +689,6 @@ export function runBacktest(input: BacktestInput): BacktestResult {
     summary: stats(trades),
     bySetup: setups.map((setup) => ({ setup, stats: stats(trades.filter((trade) => trade.setup === setup)) })),
     byScore: SCORE_BUCKETS.map((bucket) => ({ bucket: bucket.label, stats: stats(trades.filter((trade) => bucket.test(trade.score))) })),
+    regimeWeeks,
   };
 }

@@ -210,8 +210,9 @@ EMA25 to avoid chasing.
 The setup score is a ridge model re-fitted on the ribbon features with
 `pnpm fit-score -- --years=3 --limit=100`. On the 2026 out-of-sample slice
 (802 candidates) it separates the best quintile (R ≈ 0.00) from the worst
-(R ≈ −0.43); a 60-name replay over 2026 returned +6.9% with a 1.86 profit factor
-and −1.65% max drawdown, versus +1.0%, 1.04 and −2.8% for the pre-ribbon model.
+(R ≈ −0.43); with the shipped gates, a 60-name replay over 2026 returned +4.4%
+with a 2.50 profit factor and −1.13% max drawdown, versus +1.0%, 1.04 and −2.8%
+for the pre-ribbon model under its own gates.
 That is one market regime and a small sample, not a promise of future returns.
 The transparent heuristic remains available as `legacyScore` for comparison.
 
@@ -267,6 +268,25 @@ replay (+18.4% versus +27.8% without it, PF 1.59 versus 1.78, drawdown −3.39%
 versus −2.49%); the out-of-sample slice was +6.9% with a 1.86 profit factor and
 −1.65% drawdown. Because the cap was chosen after looking at that window, treat
 the drawdown improvement as partly in-sample.
+
+The regime that gates the count is **participation breadth**, not a count of the
+setups the score model happened to produce. `lib/market-breadth.ts` reads every
+scanned name — not only the qualified setups — and combines the share above
+EMA25 (25%), above EMA50 (25%), above SMA200 (20%), the advance/decline line
+(15%) and the share within 5% of a one-month high (15%, centred on a 25% base
+rate). Missing components leave the denominator; the composite needs three
+components and 60% of the weight, otherwise the week falls back to the setup
+count and never invents a regime. The weekly regime moves at most one step and
+only after the score clears a band by four points (60 / 45 / 30), with a
+collapse at or below 25 overriding the buffer. `GET /api/swing-setups` returns
+the components and `GET /api/v1/market-regime` exposes them to API clients.
+
+Breadth is more defensive than the setup count, and that is visible in the
+replay: +14.8% with a 1.89 profit factor and −2.41% drawdown, versus +16.4%,
+1.52 and −3.39% for the setup-count gate. The 2026 out-of-sample slice returned
++4.4% (2.50, −1.13%) versus +6.9% (1.86, −1.65%). It gives up headline return to
+hold less risk in weak tape, and the bands were chosen on the same window, so
+the out-of-sample improvement is only partly independent.
 
 `GET /api/quantamental?scope=full` scans all 236 `IDX_UNIVERSE` tickers so the
 weekly technical shortlist never loses a name to the curated 5-per-sector cap.

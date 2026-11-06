@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import type { Section } from "../../lib/navigation";
 import WeeklyShortlist from "../WeeklyShortlist";
 import TrackRecord from "../TrackRecord";
+import type { BreadthRead } from "@/lib/market-breadth";
 
 /**
  * Model Portfolio is deliberately a separate surface from My Portfolio.
@@ -30,12 +31,13 @@ type ScannerPayload = {
   status?: string;
   asOf?: string;
   setups?: Setup[];
+  breadth?: BreadthRead | null;
   message?: string;
 };
 
 type ScannerState =
   | { kind: "loading" }
-  | { kind: "ready"; setups: Setup[]; asOf: string | null; status: string }
+  | { kind: "ready"; setups: Setup[]; breadth: BreadthRead | null; asOf: string | null; status: string }
   | { kind: "unavailable"; message: string };
 
 export default function ModelPortfolio({
@@ -58,6 +60,7 @@ export default function ModelPortfolio({
         setScanner({
           kind: "ready",
           setups: Array.isArray(payload.setups) ? payload.setups : [],
+          breadth: payload.breadth ?? null,
           asOf: typeof payload.asOf === "string" ? payload.asOf : null,
           status: typeof payload.status === "string" ? payload.status : "live",
         });
@@ -73,6 +76,7 @@ export default function ModelPortfolio({
   }, []);
 
   const setups = scanner.kind === "ready" ? scanner.setups : [];
+  const breadth = scanner.kind === "ready" ? scanner.breadth : null;
 
   return (
     <section className="model-portfolio-page">
@@ -111,7 +115,7 @@ export default function ModelPortfolio({
         </div>
       )}
 
-      <WeeklyShortlist setups={setups} />
+      <WeeklyShortlist setups={setups} breadth={breadth} />
 
       <TrackRecord />
 

@@ -9,7 +9,9 @@ import {
   type WeeklyPickIntelligence,
   type WeeklyTechnicalInput,
 } from "@/lib/weekly-intelligence";
-import { pickLongs, regimeFor, type Regime } from "@/lib/setup-model";
+import { pickLongs, positionKind, positionWeight, regimeFor, shortWeight } from "@/lib/setup-model";
+import { applyBreadthHysteresis, type BreadthRead } from "@/lib/market-breadth";
+import { regimeFromLabel } from "@/lib/lock-guard";
 
 type Setup = {
   ticker: string;
@@ -100,23 +102,6 @@ const shortPick = (setups: Setup[]) =>
     .filter((item) => item.score >= 85 && item.riskReward >= 2)
     .sort((a, b) => b.score - a.score || b.riskReward - a.riskReward)
     .slice(0, 1);
-const kind = (item: { setup: string; score: number }) =>
-  !isShort(item) && item.score >= 85 && /(PULLBACK|ACCUMULATION|TREND)/.test(item.setup.toUpperCase())
-    ? "CORE"
-    : "TACTICAL";
-const weight = (item: { setup: string; score: number }, regime: Regime) => {
-  const base =
-    kind(item) === "CORE" ? (item.score >= 90 ? 15 : 12.5) : item.score >= 90 ? 10 : 7.5;
-  const multiplier = regime === "RISK ON" ? 1 : regime === "EMERGING" ? 0.8 : 0.6;
-  return Math.max(5, Math.round((base * multiplier) / 2.5) * 2.5);
-};
-const shortWeight = (item: Setup, longs: Setup[], regime: Regime) => {
-  const weights = longs.map((long) => weight(long, regime)).sort((a, b) => a - b);
-  const median = weights.length ? weights[Math.floor(weights.length / 2)] : 10;
-  const stop = Math.max(0.1, ((item.invalidation - item.close) / item.close) * 100);
-  const raw = Math.min(8, median * 0.7, 50 / stop);
-  return Math.max(0, Math.floor(raw * 2) / 2);
-};
 const change = (action?: Action) =>
   !action
     ? "NEW"
@@ -200,7 +185,7 @@ const toInput = (item: Setup): WeeklyTechnicalInput => ({
   riskReward: item.riskReward,
 });
 
-export default function WeeklyShortlist({ setups }: { setups: Setup[] }) {
+export default function WeeklyShortlist({ setups, breadth }: { setups: Setup[]; breadth?: BreadthRead | null }) {
   const [state, setState] = useState<State | null>(null);
   const [quant, setQuant] = useState<QuantMap | null>(null);
   const [quantError, setQuantError] = useState<string | null>(null);
@@ -247,7 +232,13 @@ export default function WeeklyShortlist({ setups }: { setups: Setup[] }) {
     };
   }, []);
 
-  const regime = useMemo(() => regimeFor(setups), [setups]);
+  // The locked regime from the prior week is the hysteresis anchor; before the
+  // first lock there is no anchor and the raw breadth read stands.
+  const priorRegime = useMemo(() => regimeFromLabel(state?.run?.market_regime), [state?.run?.market_regime]);
+  const regime = useMemo(() => {
+    if (breadth?.score != null) return applyBreadthHysteresis(breadth.score, priorRegime) ?? regimeFor(setups);
+    return regimeFor(setups);
+  }, [breadth, priorRegime, setups]);
   const proposed = useMemo(() => pickLongs(setups, regime), [setups, regime]);
   const shorts = useMemo(() => shortPick(setups), [setups]);
   const macro = state?.macro ?? null;
@@ -259,8 +250,8 @@ export default function WeeklyShortlist({ setups }: { setups: Setup[] }) {
   const scored = useMemo<Scored[]>(() => {
     const rows = proposed.map((item) => {
       const intel = scoreWeeklyPick(toInput(item), stockByTicker.get(item.ticker), macro);
-      const positionWeight = intel.stance === "BUY" ? weight(item, regime) : 0;
-      return { ...item, intel, positionWeight };
+      const size = intel.stance === "BUY" ? positionWeight(item, regime) : 0;
+      return { ...item, intel, positionWeight: size };
     });
     return rankWeeklyPicks(rows);
   }, [proposed, stockByTicker, macro, regime]);
@@ -390,6 +381,11 @@ export default function WeeklyShortlist({ setups }: { setups: Setup[] }) {
         : "MACRO FULL SIZE"
     : "MACRO UNAVAILABLE";
 
+  const breadthText =
+    breadth?.score == null
+      ? "BREADTH UNAVAILABLE · SETUP-COUNT REGIME"
+      : `BREADTH ${breadth.score.toFixed(0)}/100 · ${breadth.components.filter((item) => item.score !== null).length}/${breadth.components.length} INPUTS · ${breadth.sample} NAMES`;
+
   const renderComponents = (intel: WeeklyPickIntelligence) => (
     <div className="weekly-components">
       {intel.components.map((item) => (
@@ -507,7 +503,7 @@ export default function WeeklyShortlist({ setups }: { setups: Setup[] }) {
             <strong>{item.ticker}</strong>
             <small>
               <em className={`weekly-stance ${item.intel.stance.toLowerCase()}`}>{item.intel.stance}</em>{" "}
-              · {kind(item)} · {item.setup.toUpperCase().replace("SHORT_", "")} · TECH {item.score.toFixed(0)}
+              · {positionKind(item)} · {item.setup.toUpperCase().replace("SHORT_", "")} · TECH {item.score.toFixed(0)}
             </small>
             <small>
               {item.intel.jarvisScore === null ? "JARVIS N/A" : `JARVIS ${item.intel.jarvisScore.toFixed(1)}`} ·{" "}
@@ -567,7 +563,7 @@ export default function WeeklyShortlist({ setups }: { setups: Setup[] }) {
           <div>
             <strong>{item.ticker}</strong>
             <small>
-              {isShort(item) ? "SHORT" : kind(item)} · {item.setup.toUpperCase().replace("SHORT_", "")} · TECH{" "}
+              {isShort(item) ? "SHORT" : positionKind(item)} · {item.setup.toUpperCase().replace("SHORT_", "")} · TECH{" "}
               {Number(item.score).toFixed(0)}
             </small>
             {intel && <small>JARVIS {intel.jarvisScore === null ? "N/A" : intel.jarvisScore.toFixed(1)}</small>}
@@ -659,6 +655,7 @@ export default function WeeklyShortlist({ setups }: { setups: Setup[] }) {
           <span>MARKET REGIME</span>
           <b>{regime}</b>
           <small>{macroText}</small>
+          <small>{breadthText}</small>
         </div>
         <div>
           <span>JCI SESSION</span>

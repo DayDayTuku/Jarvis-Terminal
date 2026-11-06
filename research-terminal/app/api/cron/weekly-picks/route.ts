@@ -10,6 +10,7 @@ import {
 } from "@/lib/weekly-lifecycle";
 import { buildLifecycle, carriedPositions, recentRunsBefore } from "@/lib/weekly-positions";
 import { pickLongs as pick, pickShort, positionWeight as weight, regimeFor, shortWeight } from "@/lib/setup-model";
+import { applyBreadthHysteresis } from "@/lib/market-breadth";
 import { loadMacroExposure } from "@/lib/macro-risk";
 import { buildLiveQuantamentalMap } from "@/lib/quantamental-server";
 import type { QuantamentalStock } from "@/lib/quantamental";
@@ -19,7 +20,7 @@ import {
   type WeeklyMacroInput,
   type WeeklyTechnicalInput,
 } from "@/lib/weekly-intelligence";
-import { formatMacroLabel, guardLock } from "@/lib/lock-guard";
+import { formatMacroLabel, guardLock, regimeFromLabel } from "@/lib/lock-guard";
 import { selectDigestRecipients, filterSuppressed, type DigestUser } from "@/lib/email-recipients";
 import { unsubscribeUrl } from "@/lib/email-unsubscribe";
 import { YAHOO_HEADERS } from "@/lib/yahoo";
@@ -265,7 +266,12 @@ export async function GET(request:NextRequest) {
   if(!scannerResponse.ok) return NextResponse.json({error:"Screener unavailable."},{status:503});
   const scanner:any=await scannerResponse.json();
   const setups=Array.isArray(scanner?.setups)?scanner.setups as Setup[]:[];
-  const regime=regimeFor(setups);
+  // Breadth reads every scanned name; the prior locked regime is the hysteresis
+  // anchor so one noisy week cannot flip a five-name book to cash and back.
+  const {data:priorLocked}=await supabase.from("jarvis_weekly_runs").select("market_regime").lt("week_of",weekOf).order("week_of",{ascending:false}).limit(1).maybeSingle();
+  const priorRegime=regimeFromLabel(priorLocked?.market_regime);
+  const breadthScore=typeof scanner?.breadth?.score==="number"?scanner.breadth.score:null;
+  const regime=breadthScore!==null?(applyBreadthHysteresis(breadthScore,priorRegime)??regimeFor(setups)):regimeFor(setups);
   // Macro / regional overlay: trim NEW risk when the external backdrop is
   // hostile. Held positions are not resized. Fails open to full size on bad data.
   const macro=await loadMacroExposure(weekOf);
@@ -298,7 +304,7 @@ export async function GET(request:NextRequest) {
   const stamp="V6 JARVIS "+lock.regime+(shorts.length&&lock.exposure>0?" · OPTIONAL SHORT":"")+macroLabel+lock.suffix;
   // A 0%-exposure week is a recorded stand-aside, not "no qualified setup".
   const baseNote=lock.note??(selected.length?(lock.exposure<=0?"Macro risk-off: the week stood aside at 0% deployed. Qualified setups are recorded but are not entered.":"Automated Friday Weekly Picks with lifecycle actions and an optional risk-capped short overlay."):"No qualified setup this week.");
-  if(dryRun) return NextResponse.json({ok:true,dryRun:true,weekOf,regime:lock.regime,scannedRegime:regime,staleScan:lock.stale,macro,picks:selected.map((item)=>item.ticker)});
+  if(dryRun) return NextResponse.json({ok:true,dryRun:true,weekOf,regime:lock.regime,scannedRegime:regime,breadth:breadthScore,staleScan:lock.stale,macro,picks:selected.map((item)=>item.ticker)});
   const {data:priorRun}=await supabase.from("jarvis_weekly_runs").select("*").lt("week_of",weekOf).order("week_of",{ascending:false}).limit(1).maybeSingle();
   const {data:priorCandidates}=priorRun?await supabase.from("jarvis_weekly_candidates").select("*").eq("run_id",priorRun.id).order("rank"):{data:[]};
   const {data:run,error:runError}=await supabase.from("jarvis_weekly_runs").insert({week_of:weekOf,snapshot_kind:"forward",methodology_version:"v5",status:"locked",market_regime:stamp,note:baseNote}).select().single();

@@ -106,6 +106,11 @@ async function main(): Promise<void> {
     { label: "hold + costs", policy: { holdThroughDrops: true, costPct: 0.4 } },
     { label: "hold + index>200d + costs", policy: { holdThroughDrops: true, marketSma: 200, costPct: 0.4 } },
     { label: "atr stops + hold + costs", policy: { holdThroughDrops: true, plan: { ...DEFAULT_POLICY, stopMode: "atr" }, costPct: 0.4 } },
+    // --- Regime study: setup-count breadth vs participation breadth ---
+    // The live rule counts qualified setups; breadth reads every scanned name
+    // above its ribbon plus the advance/decline line and applies hysteresis.
+    { label: "breadth regime", policy: { regimeMode: "breadth" } },
+    { label: "breadth + costs 0.4%", policy: { regimeMode: "breadth", costPct: 0.4 } },
     // --- Macro / regional overlay study, layered on the shipped policy ---
     // Judged on portfolio return AND drawdown in BOTH halves of the sample. The
     // "always 50%" row is the null: if a signal cannot beat plain deleveraging it
@@ -131,6 +136,11 @@ async function main(): Promise<void> {
   for (const run of runs) console.log(row(run.label, run.result));
 
   const baseline = runs[0].result;
+  console.log("\nRegime distribution:");
+  for (const run of runs.filter((item) => item.label === "baseline (live)" || item.label.startsWith("breadth"))) {
+    const weeks = run.result.regimeWeeks;
+    console.log(`  ${run.label.padEnd(26)} ON=${String(weeks["RISK ON"]).padStart(2)}  EMERGING=${String(weeks.EMERGING).padStart(2)}  NEUTRAL=${String(weeks.NEUTRAL).padStart(2)}  OFF=${String(weeks["RISK OFF"]).padStart(2)}`);
+  }
   const reasons = new Map<string, number>();
   for (const trade of baseline.trades) reasons.set(trade.exitReason, (reasons.get(trade.exitReason) ?? 0) + 1);
   console.log("\nBaseline exit reasons:");

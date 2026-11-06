@@ -68,6 +68,7 @@ jobs:
               echo "### Full 2-year replay"
               echo '```'
               sed -n '/^VARIANT/,/^$/p' full.txt
+              sed -n '/^Regime distribution:/,/^$/p' full.txt
               sed -n '/^Baseline by setup:/,/^$/p' full.txt
               sed -n '/^Baseline by score bucket:/,/^$/p' full.txt
               echo '```'
@@ -76,6 +77,7 @@ jobs:
               echo "### Out-of-sample replay (from ${OOS_FROM})"
               echo '```'
               sed -n '/^VARIANT/,/^$/p' oos.txt
+              sed -n '/^Regime distribution:/,/^$/p' oos.txt
               sed -n '/^Baseline by setup:/,/^$/p' oos.txt
               echo '```'
             fi

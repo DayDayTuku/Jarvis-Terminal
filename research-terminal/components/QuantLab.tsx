@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import WeeklyShortlist from "./WeeklyShortlist";
 import TrackRecord from "./TrackRecord";
+import type { BreadthRead } from "@/lib/market-breadth";
 
 type MarketData = {
   freshness: string;
@@ -20,6 +21,7 @@ type Setup = {
 type ScannerData = {
   status: string; asOf: string; universe: number; scanned: number;
   methodology: string; setups: Setup[]; message?: string;
+  breadth?: BreadthRead | null;
 };
 
 const setupMeta = {
@@ -187,7 +189,7 @@ export default function QuantLab({
         )}
       </article>
 
-      <WeeklyShortlist setups={data?.setups ?? []} />
+      <WeeklyShortlist setups={data?.setups ?? []} breadth={data?.breadth ?? null} />
 
       <TrackRecord />
 

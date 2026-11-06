@@ -2,6 +2,7 @@ import { fetchUpstream } from "@/lib/upstream";
 import { NextResponse } from "next/server";
 import { IDX_UNIVERSE } from "@/lib/idx-universe";
 import { classifyAll, type SetupFeatures } from "@/lib/setup-model";
+import { readBreadth } from "@/lib/market-breadth";
 
 export const dynamic = "force-dynamic";
 
@@ -84,6 +85,8 @@ export async function GET() {
       // Additive payload for Market Explorer: every scanned row, not only the
       // rows that qualify as a setup. Existing consumers read `setups` only.
       quotes: features,
+      // Participation breadth across the whole scan, not only the setups.
+      breadth: readBreadth(features),
     });
   } catch (error) {
     return NextResponse.json({
