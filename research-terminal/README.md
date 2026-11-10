@@ -190,6 +190,44 @@ an outline encodes revision direction when it is known. Missing inputs are never
 zero-filled: names without a comparable gap or score appear in explicit
 "no gap" / "no score" lists.
 
+### Universe and dataset
+
+`lib/idx-universe.ts` is a curated list, not an index membership file. Each name
+carries the app's own 11-way `sector` (used for the one-name-per-sector cap) and
+a finer `industry` taken from TradingView's public scanner as of the **2026-11-10**
+snapshot. The industry is metadata for peer reading and audits; it is not a live
+quote, and `null` means the source had no value rather than a guess. One name
+(ALII) is deliberately null because the source labels a coal-logistics operator
+as a hotel company.
+
+The list is 256 names. It grew by 22 verified additions and lost one dead
+ticker: each addition had to clear Rp 2T market cap and Rp 5B average daily
+turnover on that snapshot, trade on Yahoo, and be absent from the curated list.
+Mandala Multifinance (MFIN) was removed because both TradingView and Yahoo
+return no data — it was only ever a dead search result. Every added name was
+also placed in its correlated exposure group, so the concentration cap still
+sees that EMAS is a metals bet and CMNT is cement.
+
+That does not make the whole list liquid. On the same snapshot, 80 of 256 names
+traded under Rp 1B/day, and the selection rules have no liquidity filter, so a
+thin name can still be picked when it scores well. Treat those as discovery and
+peer-coverage entries, not names you can size. A liquidity gate belongs in the
+selector, and it was intentionally not added in the same change as a data
+refresh.
+
+Re-check the list instead of trusting it forever:
+
+```bash
+pnpm audit-universe                 # static checks + live snapshot
+pnpm audit-universe -- --offline    # duplicates, ticker format, sectors only
+```
+
+The audit prints coverage, names that the exchange-filtered scan omits (the app
+looks its universe up by exact symbol, so they are still scanned), names below
+the turnover floor, and liquid names that are missing from the list. It exits
+non-zero only on static errors — duplicates, malformed tickers, or an unknown
+sector — so it can run in CI without failing on market data.
+
 ### Swing setup engine
 
 The live scanner (`GET /api/swing-setups`) reads price through the **EMA25/EMA50
@@ -373,6 +411,7 @@ pnpm test       # node:test suite (160+ tests)
 pnpm smoke      # boots the production build and checks headers + auth gates
 pnpm backtest   # macro-overlay backtest (requires network access)
 pnpm fit-score  # score-model fitting helper
+pnpm audit-universe  # re-check the curated IDX list against a live snapshot
 ```
 
 CI runs type checking (app and tests), lint, the unit tests, and a production
