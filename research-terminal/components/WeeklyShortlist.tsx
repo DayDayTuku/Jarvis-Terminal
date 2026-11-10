@@ -24,6 +24,8 @@ type Setup = {
   target: number;
   riskReward: number;
   sector?: string;
+  /** Average daily turnover in rupiah, when the Scanner supplied it. */
+  turnoverIdr?: number;
   change?: number | null;
   rsi?: number | null;
   relativeVolume?: number | null;
@@ -90,6 +92,9 @@ type Scored = Setup & {
 
 const money = (value: number) =>
   new Intl.NumberFormat("id-ID", { maximumFractionDigits: 0 }).format(value);
+/** Compact average daily turnover, e.g. "Rp 84B" or "Rp 1.2T". */
+const turnover = (value: number) =>
+  value >= 1e12 ? `Rp ${(value / 1e12).toFixed(1)}T` : `Rp ${Math.round(value / 1e9)}B`;
 const tick = (value: number) => (value < 200 ? 1 : value < 500 ? 2 : value < 2000 ? 5 : value < 5000 ? 10 : 25);
 const px = (value: number, direction: "up" | "down" | "nearest" = "nearest") => {
   const step = tick(value);
@@ -504,6 +509,7 @@ export default function WeeklyShortlist({ setups, breadth }: { setups: Setup[]; 
             <small>
               <em className={`weekly-stance ${item.intel.stance.toLowerCase()}`}>{item.intel.stance}</em>{" "}
               · {positionKind(item)} · {item.setup.toUpperCase().replace("SHORT_", "")} · TECH {item.score.toFixed(0)}
+              {item.turnoverIdr ? ` · ${turnover(item.turnoverIdr)}/DAY` : ""}
             </small>
             <small>
               {item.intel.jarvisScore === null ? "JARVIS N/A" : `JARVIS ${item.intel.jarvisScore.toFixed(1)}`} ·{" "}

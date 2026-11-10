@@ -203,17 +203,20 @@ as a hotel company.
 The list is 256 names. It grew by 22 verified additions and lost one dead
 ticker: each addition had to clear Rp 2T market cap and Rp 5B average daily
 turnover on that snapshot, trade on Yahoo, and be absent from the curated list.
-Mandala Multifinance (MFIN) was removed because both TradingView and Yahoo
+Some of those additions sit between Rp 5bn and the Rp 20bn selector floor, so
+they are discovery and peer names rather than candidates. Mandala Multifinance
+(MFIN) was removed because both TradingView and Yahoo
 return no data — it was only ever a dead search result. Every added name was
 also placed in its correlated exposure group, so the concentration cap still
 sees that EMAS is a metals bet and CMNT is cement.
 
-That does not make the whole list liquid. On the same snapshot, 80 of 256 names
-traded under Rp 1B/day, and the selection rules have no liquidity filter, so a
-thin name can still be picked when it scores well. Treat those as discovery and
-peer-coverage entries, not names you can size. A liquidity gate belongs in the
-selector, and it was intentionally not added in the same change as a data
-refresh.
+The list is **wider than the tradeable set on purpose**. `classify` already
+rejects any name below **Rp 20bn average daily turnover** (`MIN_TURNOVER_IDR` in
+`lib/setup-model.ts`), so a listing name below that floor can appear in search,
+the peer map and portfolio tools, but it can never become a weekly pick. On the
+2026-11-10 snapshot 66 of the 256 names cleared the floor, and the audit reports
+**zero selectable names missing** from the list. That is why it marks selectable
+names separately instead of calling the whole list liquid.
 
 Re-check the list instead of trusting it forever:
 
@@ -223,10 +226,21 @@ pnpm audit-universe -- --offline    # duplicates, ticker format, sectors only
 ```
 
 The audit prints coverage, names that the exchange-filtered scan omits (the app
-looks its universe up by exact symbol, so they are still scanned), names below
-the turnover floor, and liquid names that are missing from the list. It exits
-non-zero only on static errors — duplicates, malformed tickers, or an unknown
-sector — so it can run in CI without failing on market data.
+looks its universe up by exact symbol, so they are still scanned), how many
+names clear the selector floor, and selectable names missing from the list. It
+exits non-zero only on static errors — duplicates, malformed tickers, or an
+unknown sector — so it can run in CI without failing on market data.
+
+The floor itself is a deliberate choice, not a default. `pnpm backtest` carries
+`turnover 5bn/10bn/40bn/80bn` rows, and on the 2026-11-10 data a looser floor is
+worse in every window tested — at 5bn the 60-name replay drops from +16.6% to
++12.5% with a lower profit factor. Tightening to 40bn improves the full 256-name
+window (+18.3% versus +14.7%, drawdown −4.56% versus −6.86%) but gives up 3.9
+points of out-of-sample 2026 return on the 60-name slice (+3.0% versus +6.9%)
+without improving its drawdown. That mixed result is why the floor stays at
+20bn: the evidence supports not being looser, not being tighter. As with the
+breadth bands, these rows are same-window comparisons and should be re-read
+after a regime change rather than treated as permanent.
 
 ### Swing setup engine
 

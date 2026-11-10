@@ -13,6 +13,7 @@
 // is unreachable the script says so and still exits with the static result.
 
 import { IDX_UNIVERSE } from "../lib/idx-universe.ts";
+import { MIN_TURNOVER_IDR } from "../lib/setup-model.ts";
 
 const SCAN_URL = "https://scanner.tradingview.com/indonesia/scan";
 const COLUMNS = [
@@ -24,11 +25,17 @@ const SECTORS = [
   "Financials", "Healthcare", "Industrials", "Infrastructures",
   "Properties & Real Estate", "Technology", "Transportation & Logistics",
 ] as const;
-/** Below this average daily turnover a name is hard to enter or exit cleanly. */
-const THIN_TURNOVER_IDR = 1e9;
-/** Names clearing this bar are worth considering as additions. */
-const DEFAULT_MIN_TURNOVER = 5e9;
+/**
+ * The selector's own floor (`MIN_TURNOVER_IDR`). Names below it stay in the
+ * universe for search, peers and portfolio tools, but `classify` will never
+ * turn them into a pick, so the audit must not call them tradeable.
+ */
+const SELECTOR_FLOOR_IDR = MIN_TURNOVER_IDR;
+/** Names clearing the selector floor are worth considering as additions. */
+const DEFAULT_MIN_TURNOVER = SELECTOR_FLOOR_IDR;
 const DEFAULT_MIN_MCAP = 2e12;
+/** Below the selector floor a name is still useful for search and peer reads. */
+const LISTING_FLOOR_IDR = 5e9;
 
 type SnapshotRow = {
   ticker: string;
@@ -189,9 +196,11 @@ async function main() {
     for (const stock of hidden) console.log(`    · ${publicTicker(stock.ticker)} ${stock.name}`);
   }
 
-  const thin = traded.filter((item) => item.turnover < THIN_TURNOVER_IDR);
+  const thin = traded.filter((item) => item.turnover < SELECTOR_FLOOR_IDR);
+  const selectable = traded.length - thin.length;
   console.log(`\nLiquidity: ${traded.length} names with a price and volume`);
-  console.log(`  below ${(THIN_TURNOVER_IDR / 1e9).toFixed(0)}B IDR/day: ${thin.length}`);
+  console.log(`  below the selector floor (Rp ${(SELECTOR_FLOOR_IDR / 1e9).toFixed(0)}B/day): ${thin.length}`);
+  console.log(`  selectable at the current floor: ${selectable}`);
   for (const item of thin.slice(0, 10)) {
     console.log(`    · ${publicTicker(item.stock.ticker).padEnd(5)} ${(item.turnover / 1e9).toFixed(2)}B/day  ${item.stock.name}`);
   }
@@ -206,8 +215,24 @@ async function main() {
       return [{ row, turnover }];
     })
     .sort((a, b) => b.turnover - a.turnover);
-  console.log(`\nLiquid names missing from the universe (>= Rp ${(minTurnover / 1e9).toFixed(0)}B/day, >= Rp ${(minMarketCap / 1e12).toFixed(0)}T cap): ${additions.length}`);
+  console.log(`\nSelectable names missing from the universe (>= Rp ${(minTurnover / 1e9).toFixed(0)}B/day, >= Rp ${(minMarketCap / 1e12).toFixed(0)}T cap): ${additions.length}`);
   for (const { row, turnover } of additions.slice(0, 30)) {
+    console.log(`  · ${row.ticker.padEnd(5)} ${(turnover / 1e9).toFixed(1).padStart(7)}B/day  ${(row.description || "").slice(0, 44).padEnd(44)} ${row.industry ?? "—"}`);
+  }
+
+  // A name between the listing floor and the selector floor can be added for
+  // discovery, peers and portfolio tools even though it can never be picked.
+  const listings = rows
+    .filter((row) => row.type === "stock" && !universe.has(row.ticker))
+    .flatMap((row) => {
+      if (row.close === null || row.averageVolume === null) return [];
+      const turnover = row.close * row.averageVolume;
+      if (turnover < LISTING_FLOOR_IDR || turnover >= minTurnover) return [];
+      return [{ row, turnover }];
+    })
+    .sort((a, b) => b.turnover - a.turnover);
+  console.log(`\nLiquid but below the selector floor (Rp ${(LISTING_FLOOR_IDR / 1e9).toFixed(0)}-${(minTurnover / 1e9).toFixed(0)}B/day): ${listings.length}`);
+  for (const { row, turnover } of listings.slice(0, 10)) {
     console.log(`  · ${row.ticker.padEnd(5)} ${(turnover / 1e9).toFixed(1).padStart(7)}B/day  ${(row.description || "").slice(0, 44).padEnd(44)} ${row.industry ?? "—"}`);
   }
 

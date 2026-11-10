@@ -100,6 +100,16 @@ test("classify: rejects illiquid and sub-50 rupiah names", () => {
   assert.equal(classify({ ...base, averageVolume: 100_000 }, { shortEligible }), null);
 });
 
+test("classify: the turnover floor is rupiah and stays readable on the setup", () => {
+  // The fixture turns over exactly Rp 20bn a day, the shipped floor.
+  const setup = classify(base, { shortEligible });
+  assert.equal(setup?.turnoverIdr, 20_000_000_000);
+  assert.equal(classify({ ...base, averageVolume: 19_999_999 }, { shortEligible }), null);
+  // A variant can loosen the floor without changing the read.
+  const loose = classify({ ...base, averageVolume: 6_000_000 }, { shortEligible, minTurnoverIdr: 5e9 });
+  assert.equal(loose?.turnoverIdr, 6_000_000_000);
+});
+
 test("classify: shorts only fire for BEI-eligible tickers", () => {
   const weak: SetupFeatures = {
     ...base,

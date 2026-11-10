@@ -96,7 +96,9 @@ export const DEFAULT_POLICY: PlanPolicy = {
  * stock is only 0.25bn IDR a day, far too thin to enter and exit without moving
  * the price. IDR 20bn/day is a conservative institutional floor (roughly USD
  * 1.2m of turnover); it lowers both the left tail and the portfolio drawdown
- * versus a 10bn floor with no loss of return. `ctx.minTurnoverIdr` overrides it
+ * versus a 10bn floor with no loss of return. Tightening to 40bn looks better
+ * on the full 256-name window but gives up more out-of-sample return than it
+ * saves in drawdown, so the floor stays here. `ctx.minTurnoverIdr` overrides it
  * so variants can be tested.
  */
 export const MIN_TURNOVER_IDR = 20_000_000_000;
@@ -109,6 +111,8 @@ export type Setup = {
   close: number;
   change: number | null;
   volume: number | null;
+  /** Average daily turnover in rupiah (close × average volume). */
+  turnoverIdr: number;
   relativeVolume: number | null;
   rsi: number | null;
   marketCap: number | null;
@@ -252,7 +256,10 @@ export function classify(features: SetupFeatures, ctx: { shortEligible: Set<stri
   const marketCap = features.marketCap;
 
   if (!close || !volume || close < 50 || volume < 100_000) return null;
-  if (close * (avgVolume ?? volume) < (ctx.minTurnoverIdr ?? MIN_TURNOVER_IDR)) return null;
+  // Turnover is the tradeability read, so keep it on the setup: a pick that
+  // clears the floor should be able to show by how much.
+  const turnoverIdr = close * (avgVolume ?? volume);
+  if (turnoverIdr < (ctx.minTurnoverIdr ?? MIN_TURNOVER_IDR)) return null;
 
   // The EMA25/EMA50 ribbon is both the trend read and the dynamic S/R band.
   // EMA20 is only a fallback for older callers that do not supply EMA25.
@@ -303,6 +310,7 @@ export function classify(features: SetupFeatures, ctx: { shortEligible: Set<stri
     close,
     change,
     volume,
+    turnoverIdr,
     relativeVolume,
     rsi,
     marketCap,

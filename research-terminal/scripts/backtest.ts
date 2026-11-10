@@ -111,6 +111,13 @@ async function main(): Promise<void> {
     // above its ribbon plus the advance/decline line and applies hysteresis.
     { label: "breadth regime", policy: { regimeMode: "breadth" } },
     { label: "breadth + costs 0.4%", policy: { regimeMode: "breadth", costPct: 0.4 } },
+    // --- Liquidity study: the shipped floor is Rp 20bn/day ---
+    // Compared on the same names, so a looser floor shows what the extra trades
+    // are worth rather than just adding rows.
+    { label: "turnover 5bn/day", policy: { minTurnoverIdr: 5e9 } },
+    { label: "turnover 10bn/day", policy: { minTurnoverIdr: 10e9 } },
+    { label: "turnover 40bn/day", policy: { minTurnoverIdr: 40e9 } },
+    { label: "turnover 80bn/day", policy: { minTurnoverIdr: 80e9 } },
     // --- Macro / regional overlay study, layered on the shipped policy ---
     // Judged on portfolio return AND drawdown in BOTH halves of the sample. The
     // "always 50%" row is the null: if a signal cannot beat plain deleveraging it
