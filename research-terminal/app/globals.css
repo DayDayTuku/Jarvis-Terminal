@@ -3,6 +3,7 @@
 :root {
   --bg: #000000; --panel: #080808; --panel-raised: #0d0d0d; --line: #242424; --line-strong: #3a3a3a;
   --text: #e8edf3; --muted: #778596; --blue: #48a6ff; --orange: #ff9840; --positive: #43d4a3; --negative: #ff6678;
+  --violet: #b889ff; --gold: #d5b354; --on-accent: #04101b;
   --bep: #ffffff;
 }
 * { box-sizing: border-box; }
@@ -249,7 +250,7 @@ button:focus-visible, textarea:focus-visible { outline: 1px solid var(--blue); o
 .release-row time span { display: block; margin-top: 4px; color: #657284; font-size: 7px; }.release-row strong,.release-row small { display: block; }.release-row strong { font-size: 9px; font-weight: 520; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }.release-row small { margin-top: 5px; color: var(--muted); font-size: 7px; }.country-tag { color: var(--blue); font-size: 8px; }.importance { font-size: 7px; padding: 3px 4px; border: 1px solid var(--line-strong); }.importance.high { color: var(--orange); border-color: #714821; }.importance.med { color: #d7c25d; }
 
 .indicator-head, .indicator-row { display: grid; grid-template-columns: 1.2fr .65fr .65fr 1.5fr .45fr; align-items: center; gap: 8px; padding: 0 12px; }
-.indicator-head { height: 31px; color: var(--muted); font-size: 7px; border-bottom: 1px solid var(--line); }.indicator-row { min-height: 43px; border-bottom: 1px solid var(--line); font-size: 9px; }.indicator-row strong { font-weight: 550; }.indicator-row > span:not(:first-child), .indicator-row > b { text-align: right; }.indicator-row > b { font-size: 9px; }.deviation-track { height: 5px; background: #18212c; position: relative; }.deviation-track:after { content: ''; position: absolute; left: 50%; top: -3px; height: 11px; width: 1px; background: #586574; }.deviation-track i { display: block; height: 100%; }.hot { color: var(--orange); background: var(--orange); }.warm { color: #d5b354; background: #d5b354; }.neutral { color: var(--blue); background: var(--blue); }.cool { color: #6d8fca; background: #6d8fca; }
+.indicator-head { height: 31px; color: var(--muted); font-size: 7px; border-bottom: 1px solid var(--line); }.indicator-row { min-height: 43px; border-bottom: 1px solid var(--line); font-size: 9px; }.indicator-row strong { font-weight: 550; }.indicator-row > span:not(:first-child), .indicator-row > b { text-align: right; }.indicator-row > b { font-size: 9px; }.deviation-track { height: 5px; background: #18212c; position: relative; }.deviation-track:after { content: ''; position: absolute; left: 50%; top: -3px; height: 11px; width: 1px; background: #586574; }.deviation-track i { display: block; height: 100%; }.hot { color: var(--orange); }.warm { color: var(--gold); }.neutral { color: var(--blue); }.cool { color: var(--positive); }.deviation-track i.hot { background: var(--orange); }.deviation-track i.warm { background: var(--gold); }.deviation-track i.neutral { background: var(--blue); }.deviation-track i.cool { background: var(--positive); }
 .heatmap { height: 282px; display: grid; grid-template-columns: repeat(6, 1fr); grid-template-rows: repeat(3, 1fr); grid-auto-flow: dense; gap: 3px; padding: 3px; }.heat-tile { display: grid; place-content: center; text-align: center; border: 1px solid #ffffff0e; min-width: 0; }.heat-tile span { font-size: 8px; color: #dbe3eb; letter-spacing: .04em; }.heat-tile strong { font-size: 13px; margin-top: 4px; }.heat-tile.xl { grid-column: span 2; grid-row: span 2; }.heat-tile.lg { grid-row: span 2; }.heat-tile.md { grid-column: span 1; }.up1 { background: color-mix(in srgb, var(--positive) 12%, #101820); }.up2 { background: color-mix(in srgb, var(--positive) 23%, #0d151b); }.up3 { background: color-mix(in srgb, var(--positive) 37%, #0c1419); }.down1 { background: color-mix(in srgb, var(--negative) 12%, #101820); }.down2 { background: color-mix(in srgb, var(--negative) 23%, #101419); }.down3 { background: color-mix(in srgb, var(--negative) 38%, #101318); }
 .curve-status { color: var(--positive); font-size: 8px; }.curve-status i { display: inline-block; width: 5px; height: 5px; border-radius: 50%; background: var(--positive); margin-right: 5px; }.curve-chart { height: 181px; position: relative; padding: 16px 10px 0; background-image: linear-gradient(var(--line) 1px, transparent 1px); background-size: 100% 25%; }.curve-bars { height: 145px; display: flex; align-items: end; justify-content: space-around; position: relative; z-index: 1; }.curve-column { height: 100%; display: flex; flex-direction: column; justify-content: end; align-items: center; gap: 5px; font-size: 7px; color: var(--muted); }.curve-column i { display: block; width: 5px; background: linear-gradient(var(--blue), #2d608d); }.curve-column b { font-weight: 450; }.curve-baseline { position: absolute; left: 0; right: 0; bottom: 31px; height: 1px; background: var(--line-strong); }.curve-callouts { display: grid; grid-template-columns: repeat(3, 1fr); border-top: 1px solid var(--line); }.curve-callouts div { padding: 10px; display: grid; gap: 4px; border-right: 1px solid var(--line); }.curve-callouts div:last-child { border: 0; }.curve-callouts span,.curve-callouts small { color: var(--muted); font-size: 7px; }.curve-callouts strong { font-size: 12px; }.curve-callouts small { color: var(--positive); }
 
@@ -1527,6 +1528,7 @@ html[data-theme=light] .paper-upload input[type='file']::file-selector-button:ho
 .pricing-cta.primary { border-color: var(--blue); background: var(--blue); color: #02060a; }
 .pricing-cta.primary:hover:not(:disabled) { background: #6bb9ff; color: #02060a; }
 .pricing-cta:disabled { color: #657284; border-color: #253040; cursor: not-allowed; }
+.pricing-cta.primary:disabled { color: #02060a; border-color: var(--blue); }
 .pricing-note { display: block; margin-top: 8px; color: #657284; font-size: 7px; line-height: 1.5; }
 .pricing-faq { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1px; margin: 10px 0 50px; border: 1px solid #233040; background: #233040; }
 .pricing-faq > div { padding: 22px; background: #070a0f; }
@@ -2955,3 +2957,92 @@ html[data-theme=light] .qm-banner { background: #fff7ed !important; border-color
      page instead of trapping a nested scroll region. */
   .qm-rail { max-height: none; overflow: visible; }
 }
+
+/* --------------------------------------------------------------------------
+   Light-mode contrast pass II
+   The audit below covers surfaces that still hardcoded the dark palette or
+   inherited a disabled/primary colour from the dark theme. Every rule is
+   scoped to html[data-theme=light] so dark mode is untouched.
+   -------------------------------------------------------------------------- */
+
+/* Pricing: the disabled primary CTA kept the muted dark-theme text colour. */
+html[data-theme=light] .pricing-cta.primary:disabled {
+  background: var(--blue) !important;
+  border-color: var(--blue) !important;
+  color: #ffffff !important;
+  opacity: 1 !important;
+}
+html[data-theme=light] .pricing-ribbon { background: var(--blue) !important; color: #ffffff !important; }
+html[data-theme=light] .pricing-promise span,
+html[data-theme=light] .pricing-back { color: var(--muted) !important; border-color: var(--line-strong) !important; }
+
+/* Primary actions: white text is the only readable option on the light blue. */
+html[data-theme=light] :is(.primary-button,.portfolio-actions button.primary,.onboarding-footer .primary-button,.qm-actions button.active) { color: #ffffff !important; }
+
+/* Data-status strip and weekly row accents. */
+html[data-theme=light] .data-status-feed { color: var(--muted) !important; border-color: var(--line) !important; }
+html[data-theme=light] :is(.weekly-lock,.weekly-lock strong) { color: var(--positive) !important; }
+html[data-theme=light] :is(.weekly-head span,.weekly-empty span) { color: var(--blue) !important; }
+html[data-theme=light] .weekly-stance.buy { color: #0b6b4f !important; background: #e7f6ef !important; }
+html[data-theme=light] .weekly-stance.watch { color: var(--blue) !important; background: #e6f1f8 !important; }
+html[data-theme=light] .weekly-stance.avoid { color: var(--negative) !important; background: #fdebed !important; }
+html[data-theme=light] .weekly-stance.short { color: var(--violet) !important; background: #efe8fb !important; }
+
+/* Drawers and feedback labels. */
+html[data-theme=light] .feedback-modal form > label { color: var(--muted) !important; }
+html[data-theme=light] .recent-note p,
+html[data-theme=light] .note-history p { color: var(--text) !important; }
+html[data-theme=light] .drawer textarea::placeholder { color: var(--muted) !important; }
+
+/* Map chrome: Leaflet's default attribution is dark-on-light-tile sized for a light map. */
+html[data-theme=light] .risk-map-canvas .leaflet-control-attribution {
+  background: #fffefaee !important;
+  color: var(--muted) !important;
+}
+html[data-theme=light] .risk-map-canvas .leaflet-control-attribution a { color: var(--blue) !important; }
+
+/* Misc semantic colours that were below AA on the light surfaces. */
+html[data-theme=light] .cot-percentiles small { color: var(--muted) !important; }
+html[data-theme=light] .importance.med { color: var(--gold) !important; }
+html[data-theme=light] .qm-status-stale { color: var(--orange) !important; }
+
+/* Access page: keep the animated intro readable, then theme the form. */
+html[data-theme=light] .access-intro-brand,
+html[data-theme=light] .access-intro-brand strong,
+html[data-theme=light] .access-intro-brand > span { color: #f3f7fb !important; }
+html[data-theme=light] .access-intro-brand small { color: var(--blue) !important; }
+html[data-theme=light] .access-login-transition { color: #f3f7fb !important; }
+html[data-theme=light] .access-login-transition strong { color: #f3f7fb !important; }
+html[data-theme=light] .access-login-transition small { color: var(--blue) !important; }
+html[data-theme=light] .access-mode button { color: var(--muted) !important; background: transparent !important; }
+html[data-theme=light] .access-mode button.active { background: var(--blue) !important; color: #ffffff !important; }
+html[data-theme=light] .access-welcome h1 { color: var(--text) !important; }
+html[data-theme=light] .access-welcome > p,
+html[data-theme=light] .access-points,
+html[data-theme=light] .access-points span { color: var(--text) !important; }
+html[data-theme=light] .access-eyebrow,
+html[data-theme=light] .access-form-heading > span { color: var(--blue) !important; }
+html[data-theme=light] .access-form-heading h2 { color: var(--text) !important; }
+html[data-theme=light] .access-form-heading p,
+html[data-theme=light] .access-form-pane > small,
+html[data-theme=light] .access-card label { color: var(--muted) !important; }
+html[data-theme=light] .panel-boundary {
+  background: var(--panel-raised) !important;
+  border-color: var(--negative) !important;
+}
+html[data-theme=light] .panel-boundary-retry { color: #ffffff !important; }
+html[data-theme=light] .password-field button { color: var(--blue) !important; }
+
+/* Light-mode contrast pass III: remaining sub-AA spots found by the audit. */
+html[data-theme=light] .onboarding-tickers button.selected span { color: #0b6b4f !important; }
+html[data-theme=light] .weekly-head p { color: var(--muted) !important; }
+html[data-theme=light] .setup-toolbar label span,
+html[data-theme=light] .setup-toolbar small { color: var(--muted) !important; }
+html[data-theme=light] .portfolio-actions button.primary {
+  background: var(--blue) !important;
+  border-color: var(--blue) !important;
+  color: #ffffff !important;
+}
+html[data-theme=light] .quality-hero p { color: var(--muted) !important; }
+html[data-theme=light] .feedback-modal legend { color: var(--muted) !important; }
+html[data-theme=light] .stock-modal-content .rating-bar-value { color: var(--rating-ink, #ffffff) !important; }

@@ -236,7 +236,7 @@ export default function StockDetailModal({
           flexDirection: "column",
           borderRadius: "3px",
           fontFamily: "var(--font-geist-mono), ui-monospace, monospace",
-          color: "#e8edf3",
+          color: "var(--text)",
           overflow: "hidden",
           boxShadow: "0 24px 64px rgba(0,0,0,0.9), 0 0 30px rgba(72,166,255,0.15)",
         }}
@@ -259,7 +259,7 @@ export default function StockDetailModal({
             <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
               <span
                 style={{
-                  color: "#48a6ff",
+                  color: "var(--blue)",
                   fontSize: "18px",
                   fontWeight: 700,
                   letterSpacing: "0.06em",
@@ -270,8 +270,8 @@ export default function StockDetailModal({
               <span
                 style={{
                   fontSize: "8px",
-                  color: "#05101b",
-                  backgroundColor: "#48a6ff",
+                  color: "var(--on-accent)",
+                  backgroundColor: "var(--blue)",
                   padding: "1px 5px",
                   borderRadius: "2px",
                   fontWeight: 700,
@@ -284,7 +284,7 @@ export default function StockDetailModal({
             {data && (
               <div
                 style={{
-                  color: "#778596",
+                  color: "var(--muted)",
                   fontSize: "11px",
                   marginTop: "3px",
                   fontFamily: "var(--font-geist-sans), sans-serif",
@@ -294,7 +294,7 @@ export default function StockDetailModal({
                 {data.sector && ` · ${data.sector}`}
                 {data.industry && ` · ${data.industry}`}
                 {lastUpdated && (
-                  <span style={{ color: "#536171" }}>
+                  <span style={{ color: "var(--muted)" }}>
                     {" · "}UPDATED {lastUpdated.toLocaleTimeString("en-GB", {
                       hour: "2-digit",
                       minute: "2-digit",
@@ -311,7 +311,7 @@ export default function StockDetailModal({
             style={{
               background: "transparent",
               border: "none",
-              color: "#778596",
+              color: "var(--muted)",
               fontSize: "22px",
               lineHeight: 1,
               cursor: "pointer",
@@ -330,7 +330,7 @@ export default function StockDetailModal({
               style={{
                 padding: "36px",
                 textAlign: "center",
-                color: "#778596",
+                color: "var(--muted)",
                 fontSize: "12px",
                 display: "flex",
                 alignItems: "center",
@@ -343,8 +343,8 @@ export default function StockDetailModal({
                   width: "6px",
                   height: "6px",
                   borderRadius: "50%",
-                  background: "#48a6ff",
-                  boxShadow: "0 0 8px #48a6ff",
+                  background: "var(--blue)",
+                  boxShadow: "0 0 8px var(--blue)",
                 }}
               />
               FETCHING YAHOO FINANCE DATA...
@@ -357,7 +357,7 @@ export default function StockDetailModal({
                 minHeight: 220,
                 padding: "36px",
                 textAlign: "center",
-                color: "#ff6678",
+                color: "var(--negative)",
                 fontSize: "12px",
                 display: "grid",
                 placeContent: "center",
@@ -369,9 +369,9 @@ export default function StockDetailModal({
                 type="button"
                 onClick={() => setRetryKey((value) => value + 1)}
                 style={{
-                  border: "1px solid #48a6ff",
+                  border: "1px solid var(--blue)",
                   background: "#0b1825",
-                  color: "#48a6ff",
+                  color: "var(--blue)",
                   padding: "9px 14px",
                   fontSize: 9,
                   fontWeight: 700,
@@ -403,7 +403,7 @@ export default function StockDetailModal({
                     <span
                       style={{
                         fontSize: "10px",
-                        color: "#778596",
+                        color: "var(--muted)",
                         marginLeft: "6px",
                         fontWeight: 400,
                       }}
@@ -418,8 +418,8 @@ export default function StockDetailModal({
                     fontWeight: 600,
                     color:
                       (data.regularMarketChangePercent ?? 0) >= 0
-                        ? "#43d4a3"
-                        : "#ff6678",
+                        ? "var(--positive)"
+                        : "var(--negative)",
                   }}
                 >
                   {data.regularMarketChangePercent !== null
@@ -434,7 +434,7 @@ export default function StockDetailModal({
                   padding: "9px 18px",
                   borderBottom: "1px solid #5b3b20",
                   background: "#171008",
-                  color: "#d9a066",
+                  color: "var(--text)",
                   fontSize: 9,
                   lineHeight: 1.5,
                   display: "flex",
@@ -486,9 +486,9 @@ export default function StockDetailModal({
                       border: "none",
                       borderBottom:
                         tab === t
-                          ? "2px solid #48a6ff"
+                          ? "2px solid var(--blue)"
                           : "2px solid transparent",
-                      color: tab === t ? "#48a6ff" : "#778596",
+                      color: tab === t ? "var(--blue)" : "var(--muted)",
                       cursor: "pointer",
                       fontWeight: tab === t ? 700 : 400,
                       transition: "color 0.12s, border-color 0.12s",
@@ -534,7 +534,7 @@ export default function StockDetailModal({
                         minHeight: 38,
                         border: "1px solid #235886",
                         background: "linear-gradient(90deg, #091522, #0b1b2b)",
-                        color: "#48a6ff",
+                        color: "var(--blue)",
                         fontSize: 9,
                         fontWeight: 700,
                         letterSpacing: ".08em",
@@ -551,7 +551,7 @@ export default function StockDetailModal({
                     <div>
                       <div
                         style={{
-                          color: "#48a6ff",
+                          color: "var(--blue)",
                           marginBottom: "8px",
                           fontSize: "9px",
                           letterSpacing: "0.08em",
@@ -583,7 +583,7 @@ export default function StockDetailModal({
                     <div>
                       <div
                         style={{
-                          color: "#48a6ff",
+                          color: "var(--blue)",
                           marginBottom: "8px",
                           fontSize: "9px",
                           letterSpacing: "0.08em",
@@ -616,7 +616,7 @@ export default function StockDetailModal({
                       <div>
                         <div
                           style={{
-                            color: "#48a6ff",
+                            color: "var(--blue)",
                             marginBottom: "8px",
                             fontSize: "9px",
                             letterSpacing: "0.08em",
@@ -697,7 +697,7 @@ export default function StockDetailModal({
                       <div>
                         <div
                           style={{
-                            color: "#48a6ff",
+                            color: "var(--blue)",
                             marginBottom: "8px",
                             fontSize: "9px",
                             letterSpacing: "0.08em",
@@ -752,10 +752,10 @@ export default function StockDetailModal({
                     borderRadius: "2px",
                     cursor: isInWatchlist ? "not-allowed" : "pointer",
                     border: isInWatchlist
-                      ? "1px solid #233041"
-                      : "1px solid #48a6ff",
-                    color: isInWatchlist ? "#5d6d80" : "#05101b",
-                    backgroundColor: isInWatchlist ? "#0d141e" : "#48a6ff",
+                      ? "1px solid var(--line-strong)"
+                      : "1px solid var(--blue)",
+                    color: isInWatchlist ? "var(--muted)" : "var(--on-accent)",
+                    backgroundColor: isInWatchlist ? "var(--panel-raised)" : "var(--blue)",
                     transition: "all 0.15s ease",
                     fontFamily:
                       "var(--font-geist-mono), ui-monospace, monospace",

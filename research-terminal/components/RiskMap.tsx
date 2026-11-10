@@ -49,7 +49,7 @@ const LAYERS: Array<{ id: MonitorLayer; label: string; note: string; color: stri
   { id: "CONFLICT", label: "GEOPOLITICAL", note: "Static reference + news reports", color: KIND_COLOR.CONFLICT },
   { id: "CHOKEPOINT", label: "MARITIME CHOKEPOINTS", note: "Static reference · no live status", color: KIND_COLOR.CHOKEPOINT },
   { id: "INFRASTRUCTURE", label: "INFRASTRUCTURE", note: "News-derived · unverified", color: "#4aa8ff" },
-  { id: "COMMODITY", label: "COMMODITY SUPPLY", note: "News-derived · unverified", color: "#c9a227" },
+  { id: "COMMODITY", label: "COMMODITY SUPPLY", note: "News-derived · unverified", color: "var(--gold)" },
 ];
 
 const PROVENANCE: Array<{ id: EventConfidence | "ALL"; label: string }> = [

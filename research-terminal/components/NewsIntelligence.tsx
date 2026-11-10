@@ -25,8 +25,8 @@ type NewsPayload = {
 };
 
 const topics: Topic[] = ["ALL", "IDX", "MACRO", "COMMODITIES"];
-const colors = { HIGH: "#ff6678", MEDIUM: "#ffb45e", LOW: "#778596" };
-const toneColors = { POSITIVE: "#43d4a3", RISK: "#ff6678", MIXED: "#48a6ff" };
+const colors = { HIGH: "var(--negative)", MEDIUM: "var(--orange)", LOW: "var(--muted)" };
+const toneColors = { POSITIVE: "var(--positive)", RISK: "var(--negative)", MIXED: "var(--blue)" };
 const SAVED_KEY = "jarvis_saved_news";
 
 function relativeTime(value: string | null) {
@@ -96,25 +96,25 @@ export default function NewsIntelligence() {
 
   return (
     <section style={{ display: "grid", gap: 12 }}>
-      <div className="news-stats" style={{ display: "grid", gridTemplateColumns: "repeat(3,minmax(0,1fr))", border: "1px solid var(--line-strong)", background: "#070a0f" }}>
+      <div className="news-stats" style={{ display: "grid", gridTemplateColumns: "repeat(3,minmax(0,1fr))", border: "1px solid var(--line-strong)", background: "var(--panel)" }}>
         {[
-          ["MATCHED STORIES", articles.length, "#e8edf3"],
-          ["HIGH IMPACT", highImpactCount, "#ff6678"],
-          ["RISK-TONED", riskCount, "#ffb45e"],
+          ["MATCHED STORIES", articles.length, "var(--text)"],
+          ["HIGH IMPACT", highImpactCount, "var(--negative)"],
+          ["RISK-TONED", riskCount, "var(--orange)"],
         ].map(([label, value, color]) => (
           <div key={String(label)} style={{ padding: "13px 15px", borderRight: "1px solid var(--line)", minWidth: 0 }}>
-            <span style={{ color: "#657284", fontSize: 8, letterSpacing: ".08em" }}>{label}</span>
+            <span style={{ color: "var(--muted)", fontSize: 8, letterSpacing: ".08em" }}>{label}</span>
             <strong style={{ display: "block", marginTop: 5, color: String(color), fontSize: 21 }}>{value}</strong>
           </div>
         ))}
       </div>
 
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "11px 13px", border: "1px solid #25415a", borderRadius: 3, background: "#08131e", flexWrap: "wrap" }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "11px 13px", border: "1px solid var(--line-strong)", borderRadius: 3, background: "var(--panel-raised)", flexWrap: "wrap" }}>
         <div>
-          <strong style={{ display: "block", color: "#48a6ff", fontSize: 9, letterSpacing: ".08em" }}>INDONESIA MARKET NEWS</strong>
-          <span style={{ display: "block", marginTop: 4, color: "#778596", fontSize: 8 }}>Fresh IDX, macro, and commodity coverage from multiple Indonesian publishers.</span>
+          <strong style={{ display: "block", color: "var(--blue)", fontSize: 9, letterSpacing: ".08em" }}>INDONESIA MARKET NEWS</strong>
+          <span style={{ display: "block", marginTop: 4, color: "var(--muted)", fontSize: 8 }}>Fresh IDX, macro, and commodity coverage from multiple Indonesian publishers.</span>
         </div>
-        <div style={{ display: "flex", gap: 7, alignItems: "center", color: "#657284", fontSize: 7 }}>
+        <div style={{ display: "flex", gap: 7, alignItems: "center", color: "var(--muted)", fontSize: 7 }}>
           <span>{saved.length} SAVED</span><span>·</span><span>72H WINDOW</span>
         </div>
       </div>
@@ -123,7 +123,7 @@ export default function NewsIntelligence() {
         <div className="news-toolbar">
           <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
             {topics.map((item) => (
-              <button key={item} type="button" onClick={() => setTopic(item)} className={topic === item ? "active" : ""} style={{ border: topic === item ? "1px solid #48a6ff" : "1px solid #253040", background: topic === item ? "#0b1926" : "#080b10", color: topic === item ? "#48a6ff" : "#778596", padding: "7px 9px", cursor: "pointer", fontSize: 8, letterSpacing: ".06em" }}>
+              <button key={item} type="button" onClick={() => setTopic(item)} className={topic === item ? "active" : ""} style={{ border: topic === item ? "1px solid var(--blue)" : "1px solid var(--line-strong)", background: topic === item ? "var(--panel-raised)" : "var(--panel)", color: topic === item ? "var(--blue)" : "var(--muted)", padding: "7px 9px", cursor: "pointer", fontSize: 8, letterSpacing: ".06em" }}>
                 {item}
               </button>
             ))}
@@ -136,18 +136,18 @@ export default function NewsIntelligence() {
             placeholder="Filter headlines, sources..."
             aria-label="Search news headlines"
           />
-          <button type="button" onClick={() => setSavedOnly((value) => !value)} className={savedOnly ? "active" : ""} style={{ border: savedOnly ? "1px solid #ffb45e" : "1px solid #253040", background: savedOnly ? "#1a1308" : "#080b10", color: savedOnly ? "#ffb45e" : "#778596", padding: "7px 9px", cursor: "pointer", fontSize: 8 }}>
+          <button type="button" onClick={() => setSavedOnly((value) => !value)} className={savedOnly ? "active" : ""} style={{ border: savedOnly ? "1px solid var(--orange)" : "1px solid var(--line-strong)", background: savedOnly ? "var(--panel-raised)" : "var(--panel)", color: savedOnly ? "var(--orange)" : "var(--muted)", padding: "7px 9px", cursor: "pointer", fontSize: 8 }}>
             ★ SAVED {saved.length}
           </button>
-          <button type="button" onClick={() => setRefreshKey((value) => value + 1)} style={{ border: 0, background: "transparent", color: "#778596", cursor: "pointer", fontSize: 8 }}>
+          <button type="button" onClick={() => setRefreshKey((value) => value + 1)} style={{ border: 0, background: "transparent", color: "var(--muted)", cursor: "pointer", fontSize: 8 }}>
             ↻ REFRESH
           </button>
         </div>
 
         {loading ? (
-          <div style={{ minHeight: 300, display: "grid", placeContent: "center", color: "#778596", fontSize: 10 }}>FETCHING INDONESIAN MARKET COVERAGE…</div>
+          <div style={{ minHeight: 300, display: "grid", placeContent: "center", color: "var(--muted)", fontSize: 10 }}>FETCHING INDONESIAN MARKET COVERAGE…</div>
         ) : error ? (
-          <div style={{ minHeight: 300, display: "grid", placeContent: "center", textAlign: "center", color: "#ff6678", fontSize: 10 }}>{error}</div>
+          <div style={{ minHeight: 300, display: "grid", placeContent: "center", textAlign: "center", color: "var(--negative)", fontSize: 10 }}>{error}</div>
         ) : articles.length ? (
           <div>
             {articles.map((article) => (
@@ -158,10 +158,10 @@ export default function NewsIntelligence() {
                     <span style={{ display: "block", marginTop: 5, color: toneColors[article.tone], fontSize: 7 }}>{article.tone}</span>
                   </div>
                   <div style={{ minWidth: 0 }}>
-                    <strong style={{ display: "block", color: "#e8edf3", font: "600 12px/1.45 var(--font-geist-sans)", overflowWrap: "anywhere" }}>{article.title}</strong>
-                    <span style={{ display: "block", marginTop: 6, color: "#657284", fontSize: 8 }}>{article.source.toUpperCase()}{article.country ? ` · ${article.country.toUpperCase()}` : ""} · {relativeTime(article.publishedAt)}</span>
+                    <strong style={{ display: "block", color: "var(--text)", font: "600 12px/1.45 var(--font-geist-sans)", overflowWrap: "anywhere" }}>{article.title}</strong>
+                    <span style={{ display: "block", marginTop: 6, color: "var(--muted)", fontSize: 8 }}>{article.source.toUpperCase()}{article.country ? ` · ${article.country.toUpperCase()}` : ""} · {relativeTime(article.publishedAt)}</span>
                   </div>
-                  <span style={{ color: "#48a6ff", fontSize: 13 }}>↗</span>
+                  <span style={{ color: "var(--blue)", fontSize: 13 }}>↗</span>
                 </a>
                 <button
                   type="button"
@@ -176,12 +176,12 @@ export default function NewsIntelligence() {
             ))}
           </div>
         ) : (
-          <div style={{ minHeight: 300, display: "grid", placeContent: "center", color: "#778596", fontSize: 10 }}>
+          <div style={{ minHeight: 300, display: "grid", placeContent: "center", color: "var(--muted)", fontSize: 10 }}>
             {savedOnly ? "NO SAVED STORIES MATCH THESE FILTERS" : "NO MATCHING STORIES IN THE LAST 72 HOURS"}
           </div>
         )}
 
-        <footer style={{ display: "flex", justifyContent: "space-between", gap: 12, padding: "9px 12px", color: "#536171", fontSize: 7, lineHeight: 1.5 }}>
+        <footer style={{ display: "flex", justifyContent: "space-between", gap: 12, padding: "9px 12px", color: "var(--muted)", fontSize: 7, lineHeight: 1.5 }}>
           <span>{data?.source ?? "MULTI-PUBLISHER RSS"} · 72H WINDOW</span>
           <span style={{ textAlign: "right" }}>LABELS USE TITLE KEYWORDS · OPEN SOURCE TO VERIFY</span>
         </footer>

@@ -100,20 +100,20 @@ export default function InvestmentRiskScan({ data }: { data: Detail }) {
             ? "NEEDS DEEPER REVIEW"
             : "NO MAJOR FLAGS DETECTED";
   const verdictColor =
-    checks.length < 3 ? "#778596" : riskCount ? "#ff6678" : watchCount >= 3 ? "#ffb45e" : "#43d4a3";
+    checks.length < 3 ? "var(--muted)" : riskCount ? "var(--negative)" : watchCount >= 3 ? "var(--orange)" : "var(--positive)";
   const toneStyles: Record<RiskTone, { color: string; label: string; bg: string }> = {
-    strong: { color: "#43d4a3", label: "CLEAR", bg: "#071510" },
-    watch: { color: "#ffb45e", label: "WATCH", bg: "#171108" },
-    risk: { color: "#ff6678", label: "RED FLAG", bg: "#19090d" },
+    strong: { color: "var(--positive)", label: "CLEAR", bg: "#071510" },
+    watch: { color: "var(--orange)", label: "WATCH", bg: "#171108" },
+    risk: { color: "var(--negative)", label: "RED FLAG", bg: "#19090d" },
   };
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
       <div>
-        <div style={{ color: "#48a6ff", fontSize: 9, fontWeight: 700, letterSpacing: ".08em" }}>
+        <div style={{ color: "var(--blue)", fontSize: 9, fontWeight: 700, letterSpacing: ".08em" }}>
           INVESTMENT RISK SCAN · RULE-BASED
         </div>
-        <div style={{ marginTop: 5, color: "#778596", fontSize: 9, lineHeight: 1.55 }}>
+        <div style={{ marginTop: 5, color: "var(--muted)", fontSize: 9, lineHeight: 1.55 }}>
           A fast pre-mortem before valuation work. Every signal shows its rule; this is a checklist, not a buy or sell recommendation.
           {isFinancial ? " Liquidity and debt/equity tests are excluded for financial companies because their balance sheets are structurally different." : ""}
         </div>
@@ -121,18 +121,18 @@ export default function InvestmentRiskScan({ data }: { data: Detail }) {
 
       <div style={{ display: "grid", gridTemplateColumns: "1.35fr repeat(3, .65fr)", border: "1px solid #235886", background: "linear-gradient(90deg, #091522, #071019)" }}>
         <div style={{ padding: "12px 13px", borderRight: "1px solid #1d344a" }}>
-          <span style={{ display: "block", color: "#536171", fontSize: 7, letterSpacing: ".08em" }}>OVERALL READ</span>
+          <span style={{ display: "block", color: "var(--muted)", fontSize: 7, letterSpacing: ".08em" }}>OVERALL READ</span>
           <strong style={{ display: "block", marginTop: 5, color: verdictColor, fontSize: 11 }}>{verdict}</strong>
-          <span style={{ display: "block", marginTop: 4, color: "#778596", fontSize: 8 }}>{coverage}% DATA COVERAGE</span>
+          <span style={{ display: "block", marginTop: 4, color: "var(--muted)", fontSize: 8 }}>{coverage}% DATA COVERAGE</span>
         </div>
         {[
-          ["CLEAR", strongCount, "#43d4a3"],
-          ["WATCH", watchCount, "#ffb45e"],
-          ["RED FLAGS", riskCount, "#ff6678"],
+          ["CLEAR", strongCount, "var(--positive)"],
+          ["WATCH", watchCount, "var(--orange)"],
+          ["RED FLAGS", riskCount, "var(--negative)"],
         ].map(([label, value, color]) => (
           <div key={String(label)} style={{ padding: "12px 10px", borderRight: "1px solid #1d344a", textAlign: "center" }}>
             <strong style={{ display: "block", color: String(color), fontSize: 17 }}>{value}</strong>
-            <span style={{ display: "block", marginTop: 4, color: "#778596", fontSize: 7 }}>{label}</span>
+            <span style={{ display: "block", marginTop: 4, color: "var(--muted)", fontSize: 7 }}>{label}</span>
           </div>
         ))}
       </div>
@@ -147,10 +147,10 @@ export default function InvestmentRiskScan({ data }: { data: Detail }) {
                 <div key={item.label} style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 12, padding: "10px 11px", border: "1px solid #182332", background: style.bg }}>
                   <div>
                     <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
-                      <strong style={{ color: "#e8edf3", fontSize: 10 }}>{item.label}</strong>
+                      <strong style={{ color: "var(--text)", fontSize: 10 }}>{item.label}</strong>
                       <span style={{ color: style.color, fontSize: 7, fontWeight: 800, letterSpacing: ".07em" }}>{style.label}</span>
                     </div>
-                    <div style={{ marginTop: 4, color: "#778596", fontSize: 8, lineHeight: 1.45 }}>{item.detail}</div>
+                    <div style={{ marginTop: 4, color: "var(--muted)", fontSize: 8, lineHeight: 1.45 }}>{item.detail}</div>
                   </div>
                   <strong style={{ color: style.color, fontSize: 12, alignSelf: "center" }}>{item.value}</strong>
                 </div>
@@ -158,12 +158,12 @@ export default function InvestmentRiskScan({ data }: { data: Detail }) {
             })}
         </div>
       ) : (
-        <div style={{ minHeight: 190, display: "grid", placeContent: "center", textAlign: "center", color: "#778596", fontSize: 10, lineHeight: 1.6 }}>
+        <div style={{ minHeight: 190, display: "grid", placeContent: "center", textAlign: "center", color: "var(--muted)", fontSize: 10, lineHeight: 1.6 }}>
           Risk scan needs live fundamental data.<br />Retry when the data connection is available.
         </div>
       )}
 
-      <div style={{ color: "#536171", fontSize: 7, lineHeight: 1.5 }}>
+      <div style={{ color: "var(--muted)", fontSize: 7, lineHeight: 1.5 }}>
         THRESHOLDS ARE GENERAL SCREENING REFERENCES · REVIEW FILINGS, DEBT MATURITY, ONE-OFF ITEMS, AND SECTOR-SPECIFIC ACCOUNTING BEFORE INVESTING
       </div>
     </div>

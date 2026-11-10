@@ -90,12 +90,12 @@ export default function ScenarioLab({
             : "DOWNSIDE DOMINATES";
   const signalColor =
     weightedUpside === null
-      ? "#778596"
+      ? "var(--muted)"
       : weightedUpside >= 10
-        ? "#43d4a3"
+        ? "var(--positive)"
         : weightedUpside > -10
-          ? "#ffb45e"
-          : "#ff6678";
+          ? "var(--orange)"
+          : "var(--negative)";
 
   const updateCase = (
     index: number,
@@ -113,8 +113,8 @@ export default function ScenarioLab({
   if (!eps || !price) {
     return (
       <div style={{ minHeight: 260, display: "grid", placeContent: "center", textAlign: "center", gap: 10 }}>
-        <strong style={{ color: "#ff9840", fontSize: 11, letterSpacing: ".08em" }}>SCENARIO MODEL NEEDS LIVE EPS + PRICE</strong>
-        <span style={{ maxWidth: 430, color: "#778596", fontSize: 10, lineHeight: 1.6 }}>
+        <strong style={{ color: "var(--orange)", fontSize: 11, letterSpacing: ".08em" }}>SCENARIO MODEL NEEDS LIVE EPS + PRICE</strong>
+        <span style={{ maxWidth: 430, color: "var(--muted)", fontSize: 10, lineHeight: 1.6 }}>
           The model will not invent targets while Yahoo fundamentals are degraded. Retry the data connection, then reopen this tab.
         </span>
       </div>
@@ -124,10 +124,10 @@ export default function ScenarioLab({
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
       <div>
-        <div style={{ color: "#48a6ff", fontSize: 9, fontWeight: 700, letterSpacing: ".08em" }}>
+        <div style={{ color: "var(--blue)", fontSize: 9, fontWeight: 700, letterSpacing: ".08em" }}>
           12-MONTH VALUATION SCENARIO LAB
         </div>
-        <div style={{ marginTop: 5, color: "#778596", fontSize: 9, lineHeight: 1.55 }}>
+        <div style={{ marginTop: 5, color: "var(--muted)", fontSize: 9, lineHeight: 1.55 }}>
           Target price = EPS TTM × (1 + growth assumption) × target P/E.
           {peerMedian
             ? ` Base P/E is anchored to the ${peerMedian.toFixed(2)}× same-sector peer median.`
@@ -138,14 +138,14 @@ export default function ScenarioLab({
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 8 }}>
         {results.map((item, index) => {
           const color =
-            item.label === "BEAR" ? "#ff6678" : item.label === "BULL" ? "#43d4a3" : "#48a6ff";
+            item.label === "BEAR" ? "var(--negative)" : item.label === "BULL" ? "var(--positive)" : "var(--blue)";
           return (
             <section key={item.label} style={{ border: `1px solid ${color}55`, background: "#080d14", minWidth: 0 }}>
               <header style={{ padding: "8px 10px", borderBottom: "1px solid #182332", color, fontSize: 9, fontWeight: 800, letterSpacing: ".1em" }}>
                 {item.label} · {item.probability}%
               </header>
               <div style={{ padding: 10, display: "grid", gap: 9 }}>
-                <label style={{ display: "grid", gap: 4, color: "#778596", fontSize: 7 }}>
+                <label style={{ display: "grid", gap: 4, color: "var(--muted)", fontSize: 7 }}>
                   EPS GROWTH
                   <div style={{ display: "flex", alignItems: "center", border: "1px solid #233041", background: "#05080c" }}>
                     <input
@@ -160,7 +160,7 @@ export default function ScenarioLab({
                     <span style={{ paddingRight: 7 }}>%</span>
                   </div>
                 </label>
-                <label style={{ display: "grid", gap: 4, color: "#778596", fontSize: 7 }}>
+                <label style={{ display: "grid", gap: 4, color: "var(--muted)", fontSize: 7 }}>
                   TARGET P/E
                   <div style={{ display: "flex", alignItems: "center", border: "1px solid #233041", background: "#05080c" }}>
                     <input
@@ -176,9 +176,9 @@ export default function ScenarioLab({
                   </div>
                 </label>
                 <div style={{ paddingTop: 8, borderTop: "1px solid #182332" }}>
-                  <span style={{ display: "block", color: "#536171", fontSize: 7 }}>TARGET PRICE</span>
+                  <span style={{ display: "block", color: "var(--muted)", fontSize: 7 }}>TARGET PRICE</span>
                   <strong style={{ display: "block", marginTop: 4, color: "#fff", fontSize: 17 }}>{fmtNum(item.target, 0)}</strong>
-                  <span style={{ display: "block", marginTop: 3, color: (item.upside ?? 0) >= 0 ? "#43d4a3" : "#ff6678", fontSize: 9, fontWeight: 700 }}>
+                  <span style={{ display: "block", marginTop: 3, color: (item.upside ?? 0) >= 0 ? "var(--positive)" : "var(--negative)", fontSize: 9, fontWeight: 700 }}>
                     {item.upside === null ? "—" : `${item.upside >= 0 ? "+" : ""}${item.upside.toFixed(1)}%`}
                   </span>
                 </div>
@@ -190,11 +190,11 @@ export default function ScenarioLab({
 
       <div style={{ display: "grid", gridTemplateColumns: "1.1fr .9fr", border: "1px solid #235886", background: "linear-gradient(90deg, #091522, #071019)" }}>
         <div style={{ padding: "13px 14px", borderRight: "1px solid #1d344a" }}>
-          <span style={{ display: "block", color: "#778596", fontSize: 7, letterSpacing: ".08em" }}>PROBABILITY-WEIGHTED VALUE</span>
-          <strong style={{ display: "block", marginTop: 5, color: "#fff", fontSize: 20 }}>{fmtNum(weightedTarget, 0)} <small style={{ color: "#778596", fontSize: 8 }}>IDR</small></strong>
+          <span style={{ display: "block", color: "var(--muted)", fontSize: 7, letterSpacing: ".08em" }}>PROBABILITY-WEIGHTED VALUE</span>
+          <strong style={{ display: "block", marginTop: 5, color: "#fff", fontSize: 20 }}>{fmtNum(weightedTarget, 0)} <small style={{ color: "var(--muted)", fontSize: 8 }}>IDR</small></strong>
         </div>
         <div style={{ padding: "13px 14px" }}>
-          <span style={{ display: "block", color: "#778596", fontSize: 7, letterSpacing: ".08em" }}>DECISION SIGNAL</span>
+          <span style={{ display: "block", color: "var(--muted)", fontSize: 7, letterSpacing: ".08em" }}>DECISION SIGNAL</span>
           <strong style={{ display: "block", marginTop: 5, color: signalColor, fontSize: 10 }}>{signal}</strong>
           <span style={{ display: "block", marginTop: 4, color: signalColor, fontSize: 9 }}>
             {weightedUpside === null ? "—" : `${weightedUpside >= 0 ? "+" : ""}${weightedUpside.toFixed(1)}% VS SPOT`}
@@ -202,7 +202,7 @@ export default function ScenarioLab({
         </div>
       </div>
 
-      <div style={{ display: "flex", justifyContent: "space-between", gap: 12, color: "#536171", fontSize: 7, lineHeight: 1.5 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 12, color: "var(--muted)", fontSize: 7, lineHeight: 1.5 }}>
         <span>ASSUMPTION MODEL · NOT AN INVESTMENT RECOMMENDATION</span>
         <span style={{ textAlign: "right" }}>
           {peersLoading ? "LOADING PEER ANCHOR…" : peerMedian ? `${peerMultiples.length} PEERS IN MEDIAN` : "CURRENT MULTIPLE ANCHOR"}

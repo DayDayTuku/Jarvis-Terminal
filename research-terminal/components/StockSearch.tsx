@@ -192,7 +192,7 @@ export default function StockSearch({
               justifyContent: "space-between",
               padding: "8px 11px",
               borderBottom: "1px solid #1f2d3d",
-              color: "#778596",
+              color: "var(--muted)",
               fontSize: "8px",
               letterSpacing: ".1em",
             }}
@@ -203,7 +203,7 @@ export default function StockSearch({
 
           <div className="stock-search-list" style={{ maxHeight: 272, overflowY: "auto" }}>
             {!loading && isSearching && results.length === 0 ? (
-              <div style={{ padding: "18px 11px", color: "#778596", fontSize: "10px" }}>
+              <div style={{ padding: "18px 11px", color: "var(--muted)", fontSize: "10px" }}>
                 NO MATCHING IDX TICKER
               </div>
             ) : (
@@ -228,7 +228,7 @@ export default function StockSearch({
                       border: 0,
                       borderBottom: "1px solid #151e29",
                       background: index === activeIndex ? "#0e1824" : "transparent",
-                      color: "#e8edf3",
+                      color: "var(--text)",
                       textAlign: "left",
                       cursor: "pointer",
                     }}
@@ -236,7 +236,7 @@ export default function StockSearch({
                     <strong style={{ color, letterSpacing: ".06em" }}>
                       {stock.ticker.replace(".JK", "")}
                     </strong>
-                    <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "#a3adba", fontSize: 10 }}>
+                    <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "var(--muted)", fontSize: 10 }}>
                       {stock.name}
                     </span>
                     <span style={{ color, border: `1px solid ${color}66`, padding: "3px 5px", fontSize: 7, whiteSpace: "nowrap" }}>
@@ -248,7 +248,7 @@ export default function StockSearch({
             )}
           </div>
 
-          <div style={{ padding: "7px 11px", color: "#536171", fontSize: 7, letterSpacing: ".08em" }}>
+          <div style={{ padding: "7px 11px", color: "var(--muted)", fontSize: 7, letterSpacing: ".08em" }}>
             ↑↓ NAVIGATE · ENTER OPEN · ESC CLOSE
           </div>
         </div>

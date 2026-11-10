@@ -38,25 +38,27 @@ export default class PanelBoundary extends Component<Props, State> {
       <section
         role="alert"
         aria-label={`${this.props.label} unavailable`}
+        className="panel-boundary"
         style={{
           border: '1px solid #5a2a2a',
           background: '#12090b',
-          color: '#e8edf3',
+          color: 'var(--text)',
           padding: '28px',
           margin: '18px 0',
           fontFamily: 'var(--font-geist-mono), ui-monospace, monospace',
         }}
       >
-        <span style={{ display: 'block', color: '#ff6678', fontSize: 10, letterSpacing: '.1em' }}>
+        <span style={{ display: 'block', color: 'var(--negative)', fontSize: 10, letterSpacing: '.1em' }}>
           {this.props.label.toUpperCase()} · PANEL ERROR
         </span>
         <h2 style={{ margin: '10px 0 8px', fontSize: 18 }}>This section could not be displayed.</h2>
-        <p style={{ margin: 0, color: '#93a0af', fontSize: 12, lineHeight: 1.7 }}>
+        <p style={{ margin: 0, color: 'var(--muted)', fontSize: 12, lineHeight: 1.7 }}>
           The rest of the terminal is still available. Retry the section, or switch to another view.
         </p>
         <button
           type="button"
           onClick={() => this.setState({ error: null })}
+          className="panel-boundary-retry"
           style={{
             marginTop: 16,
             background: '#48a6ff',
