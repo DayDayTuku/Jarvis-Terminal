@@ -641,14 +641,20 @@ export default function WeeklyShortlist({ setups, breadth }: { setups: Setup[]; 
       <div className="weekly-head">
         <div>
           <span>WEEKLY PICKS · JARVIS INTEGRATED</span>
-          <h3>{rebalanceLocked ? "Friday Rebalance Actions" : "This Week’s Picks"}</h3>
+          <h3>{lockedThisWeek ? (isFriday ? "Friday Rebalance Actions" : "This Week’s Picks") : "Provisional · Not Locked"}</h3>
           <p>
             Fundamental 25% · Technical 25% · Quantitative 20% · Valuation 15% · Catalysts 15% · 0–5 longs
             (one per sector/exposure) + optional 1 short · Friday official rebalance · cash is valid
           </p>
+          {!lockedThisWeek && (
+            <p className="weekly-provisional">
+              LIVE PREVIEW · scored from the latest scanner in your browser, not a stored run. Levels are
+              indicative and can change until the official snapshot locks Friday 16:30 WIB.
+            </p>
+          )}
         </div>
-        <div className="weekly-lock">
-          {busy ? "LOCKING…" : "FRIDAY DECISION"}
+        <div className={`weekly-lock${lockedThisWeek ? "" : " provisional"}`}>
+          {busy ? "LOCKING…" : lockedThisWeek ? "LOCKED" : "PROVISIONAL"}
           <small>
             {observed.length} OBSERVATION DAYS · {state?.run?.week_of || "—"}
             {weekStamp ? ` · LOCKED ${weekStamp}` : ""}
@@ -695,7 +701,7 @@ export default function WeeklyShortlist({ setups, breadth }: { setups: Setup[]; 
             </span>
           );
         })}
-        <small>Friday is the only official decision. Cash is a valid position.</small>
+        <small>Friday 16:30 WIB is the only official decision. Cash is a valid position.</small>
       </div>
 
       {!state ? (

@@ -24,7 +24,10 @@ function fridayOfCurrentWeek() {
 function mayLockNow() {
   const parts = new Intl.DateTimeFormat("en-US", { timeZone:"Asia/Jakarta", weekday:"short", hour:"2-digit", minute:"2-digit", hour12:false }).formatToParts(new Date());
   const value = Object.fromEntries(parts.map((part) => [part.type, part.value]));
-  return value.weekday === "Fri" && Number(value.hour) >= 16;
+  // The scheduled lock and email fire at 16:30 WIB (vercel.json cron
+  // `30 9 * * 1-5`). The manual gate must not open earlier, or an admin lock at
+  // 16:05 would create a run the 16:30 cron then treats as already locked.
+  return value.weekday === "Fri" && Number(value.hour) * 60 + Number(value.minute) >= 16 * 60 + 30;
 }
 function escapeHtml(value: unknown) {
   return String(value ?? "").replace(/[&<>"']/g, (char) => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#039;" }[char] ?? char));
@@ -84,7 +87,7 @@ export async function GET(){
 export async function POST(request:NextRequest){
   const supabase=await createClient(); const{data:{user}}=await supabase.auth.getUser();
   if(!user||!isAdmin(user))return NextResponse.json({error:"Admin required"},{status:403});
-  if(!mayLockNow())return NextResponse.json({error:"Forward snapshots can only be locked after Friday 16:00 WIB."},{status:400});
+  if(!mayLockNow())return NextResponse.json({error:"Forward snapshots can only be locked after Friday 16:30 WIB."},{status:400});
   const body:any=await request.json(); const incoming=Array.isArray(body?.candidates)?body.candidates:[]; let shortSeen=false,longCount=0; const sectors=new Set<string>(),exposures=new Set<string>(); const rows=incoming.filter((item:any)=>{if(item.stance==="AVOID")return false;if(isShortSetup(item)){if(shortSeen)return false;shortSeen=true;return Number(item.score)>=85&&Number(item.riskReward)>=2&&Number(item.positionWeight)<=8;}if(longCount>=5)return false;const sector=String(item.sector||"Other").toLowerCase();const exposure=exposureOf(item.ticker,sector);if(sectors.has(sector)||exposures.has(exposure))return false;sectors.add(sector);exposures.add(exposure);longCount+=1;return true;}).slice(0,6); const weekOf=fridayOfCurrentWeek();
   const{data:existing}=await supabase.from("jarvis_weekly_runs").select("id").eq("week_of",weekOf).maybeSingle(); if(existing)return NextResponse.json({ok:true,alreadyLocked:true});
   const{data:priorRun}=await supabase.from("jarvis_weekly_runs").select("*").lt("week_of",weekOf).order("week_of",{ascending:false}).limit(1).maybeSingle();
