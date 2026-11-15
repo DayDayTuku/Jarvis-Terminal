@@ -424,6 +424,7 @@ pnpm lint       # ESLint
 pnpm test       # node:test suite (160+ tests)
 pnpm smoke      # boots the production build and checks headers + auth gates
 pnpm backtest   # macro-overlay backtest (requires network access)
+pnpm backtest -- --mc --mc-compare   # add Monte Carlo robustness + paired variant tests
 pnpm fit-score  # score-model fitting helper
 pnpm audit-universe  # re-check the curated IDX list against a live snapshot
 ```
@@ -434,9 +435,36 @@ checks npm and GitHub Actions weekly.
 
 A scheduled workflow (`.github/workflows/backtest.yml`) re-runs the 60-name,
 2-year replay and the clean out-of-sample slice on the 1st of every month. It
-publishes both tables to the Actions run summary and keeps the raw output as a
+publishes both tables to the Actions run summary — including the Monte Carlo
+robustness and paired variant comparison — and keeps the raw output as a
 90-day artifact. The score is not re-fitted automatically: after a manual
 `pnpm fit-score`, update `OOS_FROM` in that workflow to the new training split.
+
+### Monte Carlo robustness
+
+`lib/monte-carlo.ts` resamples the backtest to separate a result from path luck.
+It has two engines:
+
+- **Weekly circular block bootstrap** (default 4-week blocks) of the weekly
+  portfolio return series. Preserves short-range clustering, so the drawdown
+  distribution is not artificially narrow. Reports P5–P95 for total return, max
+  drawdown and worst week, plus `P(total < 0)` and `P(max DD ≤ −20%)`.
+- **Trade bootstrap** (i.i.d.) of settled trades for win rate, average return,
+  average R and profit factor confidence intervals.
+
+`--mc-compare` runs a **paired** block bootstrap of every variant against the
+baseline on the same weeks. `DIFF = baseline − variant`, so a negative median
+means the variant won. This is the honest test for a rule change; picking the
+variant with the best standalone percentile is just overfitting with extra
+steps.
+
+Flags: `--mc`, `--mc-iterations=2000`, `--mc-block=4`, `--mc-seed=42`,
+`--mc-compare`. A fixed seed makes a run reproducible.
+
+Monte Carlo resamples returns you already observed. It quantifies sampling noise
+and path ordering; it does not create edge and cannot describe a regime absent
+from the sample. Wide intervals mean the sample is too small to justify a change
+on its own.
 
 ## Project layout
 

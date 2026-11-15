@@ -9,11 +9,12 @@
 // to choose between variants, not as a promise of future returns.
 
 import { runBacktest, macroReadFor, type BacktestPolicy, type BacktestResult, type BacktestBar, type MacroRead } from "../lib/backtest.ts";
+import { monteCarlo, compareVariants, type Distribution } from "../lib/monte-carlo.ts";
 import { MACRO_SYMBOLS, macroExposure, type MacroBar } from "../lib/macro-risk.ts";
 import { DEFAULT_POLICY, type Setup } from "../lib/setup-model.ts";
 import { loadUniverse, fetchBars, pool } from "./yahoo.ts";
 
-type Args = { years: number; limit: number; tickers: string[] | null; scaleOut: boolean; concurrency: number; from: string | null; to: string | null };
+type Args = { years: number; limit: number; tickers: string[] | null; scaleOut: boolean; concurrency: number; from: string | null; to: string | null; mc: boolean; mcIterations: number; mcBlock: number; mcSeed: number; mcCompare: boolean };
 
 function parseArgs(argv: string[]): Args {
   const get = (name: string): string | undefined => argv.find((arg) => arg.startsWith(`--${name}=`))?.split("=").slice(1).join("=");
@@ -26,6 +27,11 @@ function parseArgs(argv: string[]): Args {
     concurrency: Number(get("concurrency") ?? 5),
     from: get("from") ?? null,
     to: get("to") ?? null,
+    mc: argv.includes("--mc"),
+    mcIterations: Number(get("mc-iterations") ?? 2000),
+    mcBlock: Number(get("mc-block") ?? 4),
+    mcSeed: Number(get("mc-seed") ?? 42),
+    mcCompare: argv.includes("--mc-compare"),
   };
 }
 
@@ -78,6 +84,92 @@ function row(label: string, result: BacktestResult): string {
 
 function header(): string {
   return ["VARIANT".padEnd(26), "TRADES".padStart(6), "WIN%".padStart(6), "AVG RET".padStart(10), "PF".padStart(6), "TAIL 5%".padStart(9), "PORT RET".padStart(9), "MAX DD".padStart(9), "WORST".padStart(9)].join(" ");
+}
+
+const pp = (value: number, digits = 1): string => `${value >= 0 ? "+" : ""}${value.toFixed(digits)}%`;
+
+function distributionHeader(): string {
+  return ["METRIC".padEnd(16), "P5".padStart(9), "P25".padStart(9), "P50".padStart(9), "P75".padStart(9), "P95".padStart(9), "MEAN".padStart(9)].join(" ");
+}
+
+function distributionRow(label: string, d: Distribution, digits = 1, percent = true): string {
+  return [
+    label.padEnd(16),
+    ...[d.p5, d.p25, d.p50, d.p75, d.p95, d.mean]
+      .map((value) => (percent ? pp(value, digits) : value.toFixed(digits)).padStart(9)),
+  ].join(" ");
+}
+
+function printMonteCarlo(baseline: BacktestResult, runs: Array<{ label: string; result: BacktestResult }>, args: Args): void {
+  const mc = monteCarlo(baseline.trades, { iterations: args.mcIterations, blockWeeks: args.mcBlock, seed: args.mcSeed });
+  const week = mc.weekly.observed;
+
+  console.log("\nMonte Carlo robustness · baseline (live)");
+  console.log(
+    `  weekly circular block bootstrap · ${mc.options.iterations} paths · ${mc.options.blockWeeks}-week blocks · seed ${mc.options.seed}`,
+  );
+  console.log(
+    `  observed: ${week.weeks} weeks · total ${pp(week.totalReturn)} · max DD ${pp(week.maxDrawdown)} · worst week ${pp(week.worstWeek)}`,
+  );
+  console.log("");
+  console.log(distributionHeader());
+  console.log("-".repeat(distributionHeader().length));
+  console.log(distributionRow("total return", mc.weekly.totalReturn));
+  console.log(distributionRow("max drawdown", mc.weekly.maxDrawdown));
+  console.log(distributionRow("worst week", mc.weekly.worstWeek));
+  console.log(
+    `  P(total return < 0) = ${(mc.weekly.probNegative * 100).toFixed(1)}%   P(max DD ≤ −20%) = ${(mc.weekly.probDrawdownBeyond20 * 100).toFixed(1)}%`,
+  );
+
+  console.log("\nTrade bootstrap (settled trades, i.i.d.)");
+  console.log(distributionHeader());
+  console.log("-".repeat(distributionHeader().length));
+  console.log(distributionRow("win rate", mc.trades.winRate, 0, false));
+  console.log(distributionRow("avg return", mc.trades.avgReturn, 2));
+  console.log(distributionRow("avg R", mc.trades.avgR, 2, false));
+  console.log(distributionRow("profit factor", mc.trades.profitFactor, 2, false));
+  console.log(
+    `  observed: n=${mc.trades.trades} · win ${mc.trades.observed.winRate.toFixed(0)}% · avg ${pp(mc.trades.observed.avgReturn, 2)} · PF ${money(mc.trades.observed.profitFactor, 2)}`,
+  );
+  console.log(
+    `  P(avg return < 0) = ${(mc.trades.probAvgReturnNegative * 100).toFixed(1)}%   P(PF < 1) = ${(mc.trades.probProfitFactorBelow1 * 100).toFixed(1)}%`,
+  );
+
+  for (const warning of mc.warnings) console.log(`  ! ${warning}`);
+  console.log(
+    "  Read this as path and sampling uncertainty around what you already observed — not as evidence of edge.",
+  );
+
+  if (!args.mcCompare) return;
+
+  const others = runs.filter((run) => run.label !== "baseline (live)");
+  if (!others.length) return;
+  console.log("\nPaired block bootstrap vs baseline (same weeks, same blocks)");
+  console.log(
+    ["VARIANT".padEnd(26), "P(BASE WINS)".padStart(12), "P5 DIFF".padStart(9), "P50 DIFF".padStart(9), "P95 DIFF".padStart(9)].join(" "),
+  );
+  console.log("-".repeat(70));
+  console.log("  DIFF = baseline − variant, in percentage points over the whole window. Negative DIFF means the variant won.");
+  for (const run of others) {
+    const comparison = compareVariants("baseline", baseline.trades, run.label, run.result.trades, {
+      iterations: args.mcIterations,
+      blockWeeks: args.mcBlock,
+      seed: args.mcSeed,
+    });
+    console.log(
+      [
+        run.label.padEnd(26),
+        `${(comparison.probABeatsB * 100).toFixed(1)}%`.padStart(12),
+        pp(comparison.terminalDiff.p5).padStart(9),
+        pp(comparison.terminalDiff.p50).padStart(9),
+        pp(comparison.terminalDiff.p95).padStart(9),
+      ].join(" "),
+    );
+  }
+  console.log(
+    `  ${others.length} comparisons: at a 95% bar you expect about ${(others.length * 0.05).toFixed(1)} false winners by chance.`,
+  );
+  console.log("  A high P(base wins) means the variant did not beat the live rule on the same market path.");
 }
 
 async function main(): Promise<void> {
@@ -228,6 +320,7 @@ async function main(): Promise<void> {
       console.log(`  ${entry.bucket.padEnd(8)} n=${String(s.trades).padStart(3)}  win=${money(s.winRate, 0).padStart(3)}%  avg=${signed(s.avgReturn).padStart(8)}  avgR=${money(s.avgR).padStart(6)}`);
     }
   }
+  if (args.mc) printMonteCarlo(baseline, runs, args);
   console.log("");
 }
 
