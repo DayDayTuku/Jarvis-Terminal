@@ -150,7 +150,7 @@ test("planLevels: room mode stops claiming reward it cannot reach", () => {
 });
 
 test("regimeFor: breadth decides the regime", () => {
-  const made = (score: number): ScoredSetup => ({ setup: "pullback", score, riskReward: 2 });
+  const made = (score: number): ScoredSetup => ({ setup: "momentum", score, riskReward: 2 });
   assert.equal(regimeFor([made(76), made(76), made(76), made(76), made(76)]), "RISK ON");
   assert.equal(regimeFor([made(76), made(76), made(76)]), "EMERGING");
   assert.equal(regimeFor([made(90)]), "NEUTRAL");
@@ -185,15 +185,15 @@ test("pickShort: one short, and only a strong one", () => {
   assert.equal(pickShort([made(90)]).length, 1);
 });
 
-test("positionKind documents that only a high pullback is CORE", () => {
-  assert.deepEqual([...CORE_SETUPS], ["pullback"]);
-  assert.equal(positionKind({ setup: "pullback", score: 86 }), "CORE");
+test("no setup currently earns the CORE weight premium", () => {
+  assert.deepEqual([...CORE_SETUPS], []);
+  assert.equal(positionKind({ setup: "pullback", score: 86 }), "TACTICAL");
   assert.equal(positionKind({ setup: "momentum", score: 95 }), "TACTICAL");
   assert.equal(positionKind({ setup: "pullback", score: 80 }), "TACTICAL");
 });
 
 test("positionWeight: regime scales the weight, with a floor", () => {
-  assert.equal(positionWeight({ setup: "pullback", score: 92 }, "RISK ON"), 15);
+  assert.equal(positionWeight({ setup: "pullback", score: 92 }, "RISK ON"), 10);
   assert.equal(positionWeight({ setup: "momentum", score: 92 }, "RISK ON"), 10);
   assert.equal(positionWeight({ setup: "momentum", score: 80 }, "NEUTRAL"), 5); // 7.5 * 0.6 -> floor
 });
@@ -227,4 +227,15 @@ test("reversals are classified but never selected, and do not count as breadth",
   // But an explicit override can put it back, so the backtest can measure it.
   assert.equal(regimeFor([reversal, momentum], new Set()), regimeFor([reversal, momentum], new Set()));
   assert.equal(pickLongs([reversal], "RISK ON", undefined, new Set()).length, 1);
+});
+
+test("pullbacks are classified but never selected, and do not count as breadth", () => {
+  const pullback: ScoredSetup = { setup: "pullback", score: 95, riskReward: 2, sector: "Other" };
+  const momentum: ScoredSetup = { setup: "momentum", score: 76, riskReward: 2, sector: "Other" };
+  assert.equal(regimeFor([pullback]), "RISK OFF");
+  assert.deepEqual(pickLongs([pullback], "RISK ON"), []);
+  assert.equal(regimeFor([pullback, momentum]), regimeFor([momentum]));
+  assert.deepEqual(pickLongs([pullback, momentum], "RISK ON"), [momentum]);
+  // The override still reaches it, so the backtest can measure the exclusion.
+  assert.equal(pickLongs([pullback], "RISK ON", undefined, new Set()).length, 1);
 });

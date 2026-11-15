@@ -497,24 +497,32 @@ export function regimeFor(setups: ScoredSetup[], excluded: ReadonlySet<string> =
 }
 
 /**
- * CORE names carry the larger weight. The shipped rule matched
- * /(PULLBACK|ACCUMULATION|TREND)/ but the model only ever emits
- * breakout/pullback/momentum/reversal/short_breakdown, so ACCUMULATION and TREND
- * were dead branches and CORE collapsed to "a high-scoring pullback". Kept
- * identical here (flagged for the backtest) rather than changed silently.
+ * No setup currently earns the CORE premium. Pullback used to be the only
+ * CORE setup; it lost money per trade in every slice measured — 2-year full
+ * (n=23, −0.35%, PF 0.85), 2-year out-of-sample (n=11, −1.14%, PF 0.58) and
+ * 3-year full (n=38, −0.38%, PF 0.83) — while receiving the LARGEST weight.
+ * That is the same evidence standard used to exclude reversals. The set is kept
+ * (empty) so the weight rule stays explicit and an override can still be
+ * measured in the backtest rather than hard-coded away.
  */
-export const CORE_SETUPS: ReadonlySet<string> = new Set(["pullback"]);
+export const CORE_SETUPS: ReadonlySet<string> = new Set();
 
 /**
- * Setups the model deliberately does NOT trade. `reversal` is a counter-trend
- * entry whose returns are strongly regime-dependent (it was the best cohort in
- * one half of the backtest and the worst in the other) and whose losses cluster,
- * so it is the biggest single source of drawdown. Dropping it raises the
- * risk-adjusted result in BOTH halves and shrinks the portfolio drawdown. It is
- * still classified and shown in the screener; it is only excluded from selection.
- * Overridable so the backtest can measure the difference.
+ * Setups the model deliberately does NOT trade. Both were excluded on the same
+ * rule: a cohort that loses money in every measured slice, with a plausible
+ * mechanism, does not get capital.
+ *
+ * - `reversal` is a counter-trend entry whose losses cluster; dropping it
+ *   raised the risk-adjusted result in both halves of the original backtest.
+ * - `pullback` is a shallow-dip entry that kept failing in trending tape. On
+ *   the 60-name replay, removing it lifted average trade return from +1.05% to
+ *   +1.25% and profit factor from 1.53 to 1.65 over 2 years, and from +1.54% to
+ *   +2.32% / PF 1.86 to 2.62 on the 2026 out-of-sample slice.
+ *
+ * Both are still classified and shown in the screener; they are only excluded
+ * from selection. Overridable so the backtest can measure the difference.
  */
-export const EXCLUDED_SETUPS: ReadonlySet<string> = new Set(["reversal"]);
+export const EXCLUDED_SETUPS: ReadonlySet<string> = new Set(["reversal", "pullback"]);
 
 export function positionKind(item: { setup: string; score: number }): SetupKind {
   return item.score >= 85 && CORE_SETUPS.has(item.setup.toLowerCase()) ? "CORE" : "TACTICAL";

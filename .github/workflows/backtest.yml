@@ -43,13 +43,13 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
-          pnpm backtest -- --limit=60 --years=2 --concurrency=3 --mc --mc-compare | tee full.txt
+          pnpm backtest -- --limit=60 --years=2 --concurrency=3 --mc --mc-compare --edge | tee full.txt
 
       - name: Out-of-sample replay
         shell: bash
         run: |
           set -o pipefail
-          pnpm backtest -- --limit=60 --years=2 --concurrency=3 --from="$OOS_FROM" | tee oos.txt
+          pnpm backtest -- --limit=60 --years=2 --concurrency=3 --from="$OOS_FROM" --edge | tee oos.txt
 
       - name: Publish summary
         if: always()
@@ -72,6 +72,10 @@ jobs:
               sed -n '/^Baseline by setup:/,/^$/p' full.txt
               sed -n '/^Baseline by score bucket:/,/^$/p' full.txt
               echo '```'
+              echo "### Edge concentration (full replay)"
+              echo '```'
+              sed -n '/^Edge concentration/,/^$/p' full.txt | head -40
+              echo '```'
               echo "### Monte Carlo robustness (full replay)"
               echo '```'
               sed -n '/^Monte Carlo robustness/,$p' full.txt | head -70
@@ -83,6 +87,10 @@ jobs:
               sed -n '/^VARIANT/,/^$/p' oos.txt
               sed -n '/^Regime distribution:/,/^$/p' oos.txt
               sed -n '/^Baseline by setup:/,/^$/p' oos.txt
+              echo '```'
+              echo "### Edge concentration (out-of-sample)"
+              echo '```'
+              sed -n '/^Edge concentration/,/^$/p' oos.txt | head -40
               echo '```'
             fi
             echo

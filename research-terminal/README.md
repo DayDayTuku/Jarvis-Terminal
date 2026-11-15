@@ -321,6 +321,16 @@ versus −2.49%); the out-of-sample slice was +6.9% with a 1.86 profit factor an
 −1.65% drawdown. Because the cap was chosen after looking at that window, treat
 the drawdown improvement as partly in-sample.
 
+Two cohorts are **classified and shown but not selected**: counter-trend
+reversals and shallow-dip pullbacks (`EXCLUDED_SETUPS` in `lib/setup-model.ts`).
+Pullback was the only setup earning the CORE weight premium, yet it lost money
+per trade in every slice measured: 2-year full (n=23, −0.35%, PF 0.85), 2-year
+out-of-sample (n=11, −1.14%, PF 0.58) and 3-year full (n=38, −0.38%, PF 0.83).
+Removing it lifted the 2-year replay from +1.05% to +1.25% average trade return
+and PF 1.53 to 1.65; on the 2026 out-of-sample slice it moved +1.54%/1.86 to
++2.32%/2.62 and cut max drawdown from −1.65% to −0.48%. The set is overridable,
+so `pnpm backtest` can measure re-including either cohort.
+
 The regime that gates the count is **participation breadth**, not a count of the
 setups the score model happened to produce. `lib/market-breadth.ts` reads every
 scanned name — not only the qualified setups — and combines the share above
@@ -424,7 +434,8 @@ pnpm lint       # ESLint
 pnpm test       # node:test suite (160+ tests)
 pnpm smoke      # boots the production build and checks headers + auth gates
 pnpm backtest   # macro-overlay backtest (requires network access)
-pnpm backtest -- --mc --mc-compare   # add Monte Carlo robustness + paired variant tests
+pnpm backtest -- --mc --mc-compare   # Monte Carlo robustness + paired variant tests
+pnpm backtest -- --edge              # per-name contribution, HHI and leave-one-out fragility
 pnpm fit-score  # score-model fitting helper
 pnpm audit-universe  # re-check the curated IDX list against a live snapshot
 ```
@@ -460,6 +471,12 @@ steps.
 
 Flags: `--mc`, `--mc-iterations=2000`, `--mc-block=4`, `--mc-seed=42`,
 `--mc-compare`. A fixed seed makes a run reproducible.
+
+`--edge` prints the per-name concentration report: additive contribution
+(weight × return), gross share, effective number of names (1/HHI), the worst
+contributors, and a leave-one-out recompound. A positive headline that depends
+on one or two names is a bet, not an edge; the report makes that visible instead
+of leaving it to be inferred.
 
 Monte Carlo resamples returns you already observed. It quantifies sampling noise
 and path ordering; it does not create edge and cannot describe a regime absent

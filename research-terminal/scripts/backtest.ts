@@ -8,13 +8,13 @@
 // prints how each candidate rule change would have performed. Read it as a way
 // to choose between variants, not as a promise of future returns.
 
-import { runBacktest, macroReadFor, type BacktestPolicy, type BacktestResult, type BacktestBar, type MacroRead } from "../lib/backtest.ts";
+import { runBacktest, macroReadFor, stats, type BacktestPolicy, type BacktestResult, type BacktestBar, type MacroRead } from "../lib/backtest.ts";
 import { monteCarlo, compareVariants, type Distribution } from "../lib/monte-carlo.ts";
 import { MACRO_SYMBOLS, macroExposure, type MacroBar } from "../lib/macro-risk.ts";
 import { DEFAULT_POLICY, type Setup } from "../lib/setup-model.ts";
 import { loadUniverse, fetchBars, pool } from "./yahoo.ts";
 
-type Args = { years: number; limit: number; tickers: string[] | null; scaleOut: boolean; concurrency: number; from: string | null; to: string | null; mc: boolean; mcIterations: number; mcBlock: number; mcSeed: number; mcCompare: boolean };
+type Args = { years: number; limit: number; tickers: string[] | null; scaleOut: boolean; concurrency: number; from: string | null; to: string | null; mc: boolean; mcIterations: number; mcBlock: number; mcSeed: number; mcCompare: boolean; edge: boolean };
 
 function parseArgs(argv: string[]): Args {
   const get = (name: string): string | undefined => argv.find((arg) => arg.startsWith(`--${name}=`))?.split("=").slice(1).join("=");
@@ -32,6 +32,7 @@ function parseArgs(argv: string[]): Args {
     mcBlock: Number(get("mc-block") ?? 4),
     mcSeed: Number(get("mc-seed") ?? 42),
     mcCompare: argv.includes("--mc-compare"),
+    edge: argv.includes("--edge"),
   };
 }
 
@@ -172,6 +173,89 @@ function printMonteCarlo(baseline: BacktestResult, runs: Array<{ label: string; 
   console.log("  A high P(base wins) means the variant did not beat the live rule on the same market path.");
 }
 
+type Contribution = { ticker: string; trades: number; contribution: number; wins: number; avg: number; grossGain: number; grossLoss: number };
+
+/**
+ * Per-name concentration. A positive headline that comes from one or two names
+ * is not an edge, it is a bet. This prints the additive contribution
+ * (weight × return), the effective number of names, and a leave-one-out
+ * recompound so the fragility is visible rather than inferred.
+ */
+function printEdgeReport(result: BacktestResult, label: string): void {
+  const closed = result.trades.filter((trade) => trade.status === "CLOSED" && trade.returnPct !== null);
+  if (!closed.length) {
+    console.log(`\nEdge concentration · ${label}\n  No settled trades.`);
+    return;
+  }
+
+  const map = new Map<string, Contribution>();
+  for (const trade of closed) {
+    const contribution = (trade.weight / 100) * (trade.returnPct as number);
+    const row = map.get(trade.ticker) ?? { ticker: trade.ticker, trades: 0, contribution: 0, wins: 0, avg: 0, grossGain: 0, grossLoss: 0 };
+    row.trades += 1;
+    row.contribution += contribution;
+    if ((trade.returnPct as number) > 0) {
+      row.wins += 1;
+      row.grossGain += contribution;
+    } else {
+      row.grossLoss += Math.abs(contribution);
+    }
+    map.set(trade.ticker, row);
+  }
+
+  const rows = [...map.values()].map((row) => ({ ...row, avg: row.contribution / row.trades }));
+  rows.sort((a, b) => b.contribution - a.contribution);
+  const net = rows.reduce((sum, row) => sum + row.contribution, 0);
+  const gross = rows.reduce((sum, row) => sum + Math.abs(row.contribution), 0);
+  const hhi = gross > 0 ? rows.reduce((sum, row) => sum + (Math.abs(row.contribution) / gross) ** 2, 0) : 0;
+  const effectiveNames = hhi > 0 ? 1 / hhi : 0;
+
+  console.log(`\nEdge concentration · ${label}`);
+  console.log("  contribution = Σ position weight × return, in additive percent of the book");
+  console.log(
+    `  names ${rows.length} · net ${pp(net)} pts · gross ${pp(gross)} pts · effective names (1/HHI) ${effectiveNames.toFixed(1)}`,
+  );
+
+  const head = ["TICKER".padEnd(8), "TRADES".padStart(6), "WIN%".padStart(5), "CONTRIB".padStart(9), "GROSS SH".padStart(9), "AVG".padStart(8)].join(" ");
+  console.log("");
+  console.log(head);
+  console.log("-".repeat(head.length));
+  const show = (row: Contribution & { avg: number }): string =>
+    [
+      row.ticker.padEnd(8),
+      String(row.trades).padStart(6),
+      `${((row.wins / row.trades) * 100).toFixed(0)}%`.padStart(5),
+      pp(row.contribution).padStart(9),
+      `${((row.contribution / Math.max(gross, 1e-9)) * 100).toFixed(1)}%`.padStart(9),
+      pp(row.avg, 2).padStart(8),
+    ].join(" ");
+  for (const row of rows.slice(0, 10)) console.log(show(row));
+  const losers = rows.filter((row) => row.contribution < 0).slice(-5).reverse();
+  if (losers.length) {
+    console.log("  — worst —");
+    for (const row of losers) console.log(show(row));
+  }
+
+  console.log("\n  Leave-one-out (remove every trade in that name, recompound the weekly curve)");
+  const base = result.summary.portfolioReturn ?? 0;
+  const loo = rows
+    .map((row) => {
+      const remaining = result.trades.filter((trade) => trade.ticker !== row.ticker);
+      return { ticker: row.ticker, total: stats(remaining).portfolioReturn ?? 0 };
+    })
+    .map((item) => ({ ...item, delta: item.total - base }))
+    .sort((a, b) => a.delta - b.delta);
+  for (const item of loo.slice(0, 5)) {
+    console.log(`  ${item.ticker.padEnd(8)} portfolio ${pp(item.total).padStart(9)}   Δ ${pp(item.delta).padStart(9)}`);
+  }
+  const flips = loo.filter((item) => base > 0 && item.total <= 0).length;
+  const topShare = net !== 0 ? (rows[0].contribution / net) * 100 : 0;
+  console.log(
+    `  top name ${rows[0].ticker} = ${topShare.toFixed(0)}% of net contribution · names whose removal alone turns the sample negative: ${flips}`,
+  );
+  if (flips > 0) console.log("  ! The edge does not survive the loss of every one of those names. Treat it as concentrated.");
+}
+
 async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
   const loaded = await loadUniverse(args);
@@ -193,7 +277,11 @@ async function main(): Promise<void> {
 
   const variants: Array<{ label: string; policy: Partial<BacktestPolicy>; scoreWith?: (setup: Setup) => number }> = [
     { label: "baseline (live)", policy: {} },
-    { label: "with reversals", policy: { excludeSetups: [] } },
+    { label: "with reversals + pullback", policy: { excludeSetups: [] } },
+    { label: "with pullback (tactical)", policy: { excludeSetups: ["reversal"] } },
+    { label: "with pullback + costs", policy: { excludeSetups: ["reversal"], costPct: 0.4 } },
+    { label: "rr >= 2.0", policy: { minRiskReward: 2 } },
+    { label: "rr >= 2.5", policy: { minRiskReward: 2.5 } },
     { label: "costs 0.4%", policy: { costPct: 0.4 } },
     { label: "hold + costs", policy: { holdThroughDrops: true, costPct: 0.4 } },
     { label: "hold + index>200d + costs", policy: { holdThroughDrops: true, marketSma: 200, costPct: 0.4 } },
@@ -297,7 +385,7 @@ async function main(): Promise<void> {
   }
 
   console.log("\nReversal trades by score bucket:");
-  const reversals = runs.find((run) => run.label === "with reversals")?.result ?? baseline;
+  const reversals = runs.find((run) => run.label === "with reversals + pullback")?.result ?? baseline;
   const revBuckets = new Map<string, any[]>();
   for (const trade of reversals.trades as any[]) {
     if (trade.setup !== "reversal") continue;
@@ -320,6 +408,7 @@ async function main(): Promise<void> {
       console.log(`  ${entry.bucket.padEnd(8)} n=${String(s.trades).padStart(3)}  win=${money(s.winRate, 0).padStart(3)}%  avg=${signed(s.avgReturn).padStart(8)}  avgR=${money(s.avgR).padStart(6)}`);
     }
   }
+  if (args.edge) printEdgeReport(baseline, "baseline (live)");
   if (args.mc) printMonteCarlo(baseline, runs, args);
   console.log("");
 }
