@@ -418,6 +418,7 @@ See `.env.example` for placeholders. Summary:
 | `FRED_API_KEY` | Optional | Uses the FRED API; otherwise the keyless CSV fallback |
 | `EODHD_API_TOKEN` | Optional | Adds EODHD fundamentals to stock detail |
 | `TRADING_ECONOMICS_API_KEY` | Optional | Economic calendar |
+| `ARTHARA_API_KEY` | Optional | Server-only key for IDX foreign flow, broker summary, ownership and filings; the sandbox is metered, so reads are opt-in |
 | `NEXT_PUBLIC_UPGRADE_URL` | Optional | Checkout URL for the Pro plan CTA |
 | `NEXT_PUBLIC_SALES_EMAIL` | Optional | Contact address for Desk/white-label enquiries |
 | `JARVIS_SHORT_ELIGIBLE` | Optional | Comma-separated tickers allowed in the short overlay |
@@ -438,6 +439,11 @@ pnpm backtest -- --mc --mc-compare   # Monte Carlo robustness + paired variant t
 pnpm backtest -- --edge              # per-name contribution, HHI and leave-one-out fragility
 pnpm fit-score  # score-model fitting helper
 pnpm audit-universe  # re-check the curated IDX list against a live snapshot
+pnpm arthara -- usage                # arthara quota/plan, 0 requests
+pnpm arthara -- status               # per-dataset as-of dates, 0 requests
+pnpm arthara -- probe --ticker=BBCA   # print the planned spend, then stop
+pnpm arthara -- probe --ticker=BBCA --yes  # spend 2 requests: prices + foreign flow
+pnpm arthara -- market-flow --yes     # spend 1 request: exchange-wide foreign flow
 ```
 
 CI runs type checking (app and tests), lint, the unit tests, and a production
@@ -482,6 +488,37 @@ Monte Carlo resamples returns you already observed. It quantifies sampling noise
 and path ordering; it does not create edge and cannot describe a regime absent
 from the sample. Wide intervals mean the sample is too small to justify a change
 on its own.
+
+### arthara data feed
+
+`lib/arthara.ts` is the server-side client for the [arthara](https://www.arthara.id/)
+IDX API — the inputs Yahoo does not carry: foreign net flow per ticker and for
+the whole exchange, broker summary, KSEI ownership composition, IDX disclosures,
+fundamental snapshots and macro series. Authentication is
+`Authorization: Bearer $ARTHARA_API_KEY`; the key is server-only and never
+prefixed `NEXT_PUBLIC_`.
+
+Quota discipline is part of the client, not a convention:
+
+- A page costs one request **whatever its row count**, and following
+  `meta.next_cursor` costs another. `artharaPaged` therefore defaults to
+  `maxPages: 1` and returns `truncated: true` when rows remain, so a short read
+  is never mistaken for a complete window.
+- Retries are off by default. A retried call can still be billed, and on a
+  metered plan a silent retry is a silent cost; callers opt in with `attempts`.
+- `/v1/usage`, `/v1/status` and `/v1/plans` are free. `pnpm arthara -- usage`
+  prints the balance and the plan's caps (history depth, rows per page, batch
+  size, requests per minute).
+- `meta.cost`, `meta.as_of`, `clamped_from` and `clamped_to` are surfaced on
+  every result. A window the server narrowed is reported as narrowed rather than
+  left to look like missing data.
+- Nullable vendor fields stay `null`. Nothing is zero-filled.
+
+The sandbox plan is free but deliberately small: 100 requests for the key's
+lifetime, one year of history, one ticker per call, five calls a minute. Its
+`evaluation` licence does not allow republishing the raw rows, so derived
+signals only. A per-ticker, one-year flow study over 60 names is ~60 requests —
+a real budget decision, not a loop to run casually.
 
 ## Project layout
 

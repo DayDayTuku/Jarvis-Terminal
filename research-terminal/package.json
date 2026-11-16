@@ -15,6 +15,7 @@
     "test": "node --import ./tests/node-test-setup.mjs --test --experimental-strip-types \"tests/**/*.test.ts\"",
     "smoke": "node scripts/smoke.mjs",
     "backtest": "node --experimental-strip-types scripts/backtest.ts",
+    "arthara": "node --experimental-strip-types scripts/arthara.ts",
     "fit-score": "node --experimental-strip-types scripts/fit-score.ts",
     "audit-universe": "node --experimental-strip-types scripts/audit-universe.ts"
   },
