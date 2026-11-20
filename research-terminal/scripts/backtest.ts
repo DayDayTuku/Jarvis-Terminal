@@ -10,6 +10,7 @@
 
 import { runBacktest, macroReadFor, stats, type BacktestPolicy, type BacktestResult, type BacktestBar, type MacroRead } from "../lib/backtest.ts";
 import { monteCarlo, compareVariants, type Distribution } from "../lib/monte-carlo.ts";
+import { ORDER_FLOW_OFF, type OrderFlowPolicy } from "../lib/order-flow.ts";
 import { MACRO_SYMBOLS, macroExposure, type MacroBar } from "../lib/macro-risk.ts";
 import { DEFAULT_POLICY, type Setup } from "../lib/setup-model.ts";
 import { loadUniverse, fetchBars, pool } from "./yahoo.ts";
@@ -274,6 +275,7 @@ async function main(): Promise<void> {
 
   // A modest short list; flip this on with the BEI-eligible list to include shorts.
   const shortEligible = new Set<string>();
+  const flowPolicy = (patch: Partial<OrderFlowPolicy>): OrderFlowPolicy => ({ ...ORDER_FLOW_OFF, ...patch });
 
   const variants: Array<{ label: string; policy: Partial<BacktestPolicy>; scoreWith?: (setup: Setup) => number }> = [
     { label: "baseline (live)", policy: {} },
@@ -298,6 +300,19 @@ async function main(): Promise<void> {
     { label: "turnover 10bn/day", policy: { minTurnoverIdr: 10e9 } },
     { label: "turnover 40bn/day", policy: { minTurnoverIdr: 40e9 } },
     { label: "turnover 80bn/day", policy: { minTurnoverIdr: 80e9 } },
+    // --- Order-flow study (lib/order-flow) ---
+    // Daily-bar evidence only: auction location from a volume profile, a
+    // close-location delta proxy, anchored VWAP extension and unfilled gaps.
+    // There is no OI in a cash equity and no aggressor tape, so those parts of
+    // the session notes are deliberately absent.
+    { label: "flow: above value", policy: { orderFlow: flowPolicy({ requireAboveValue: true }) } },
+    { label: "flow: no absorption", policy: { orderFlow: flowPolicy({ vetoSupplyAbsorption: true }) } },
+    { label: "flow: not extended 2.5σ", policy: { orderFlow: flowPolicy({ maxExtensionSigma: 2.5 }) } },
+    { label: "flow: not extended 2.0σ", policy: { orderFlow: flowPolicy({ maxExtensionSigma: 2 }) } },
+    { label: "flow: not extended 3.0σ", policy: { orderFlow: flowPolicy({ maxExtensionSigma: 3 }) } },
+    { label: "flow: cvd >= 0", policy: { orderFlow: flowPolicy({ minCvdPct: 0 }) } },
+    { label: "flow: all", policy: { orderFlow: flowPolicy({ requireAboveValue: true, vetoSupplyAbsorption: true, maxExtensionSigma: 2.5 }) } },
+    { label: "flow: all + costs", policy: { orderFlow: flowPolicy({ requireAboveValue: true, vetoSupplyAbsorption: true, maxExtensionSigma: 2.5 }), costPct: 0.4 } },
     // --- Macro / regional overlay study, layered on the shipped policy ---
     // Judged on portfolio return AND drawdown in BOTH halves of the sample. The
     // "always 50%" row is the null: if a signal cannot beat plain deleveraging it

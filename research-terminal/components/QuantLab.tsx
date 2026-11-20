@@ -11,12 +11,24 @@ type MarketData = {
 };
 type FredData = { freshness: string; regime: Array<{ date: string; growth: number; inflation: number }> };
 type SetupKey = "all" | "breakout" | "pullback" | "momentum" | "reversal" | "short_breakdown";
+type FlowRead = {
+  asOf: string | null;
+  location: "ABOVE_VALUE" | "AT_VALUE_HIGH" | "INSIDE_VALUE" | "AT_VALUE_LOW" | "BELOW_VALUE" | "UNKNOWN";
+  cvdPct: number | null;
+  vwapSigma: number | null;
+  absorption: "NONE" | "SUPPLY" | "DEMAND" | "UNKNOWN";
+  gapBelowPct: number | null;
+  gapAbovePct: number | null;
+  blockLong: boolean;
+  blockReasons: string[];
+};
 type Setup = {
   ticker: string; name: string; setup: Exclude<SetupKey, "all">; score: number;
   close: number; change: number | null; volume: number; relativeVolume: number | null;
   rsi: number | null; marketCap: number | null; distance20: number | null;
   reasons: string[]; caution: string; entryLow: number; entryHigh: number;
   invalidation: number; target: number; riskReward: number;
+  flow?: FlowRead | null;
 };
 type ScannerData = {
   status: string; asOf: string; universe: number; scanned: number;
@@ -44,6 +56,16 @@ function compact(value: number | null) {
 }
 function pct(value: number | null, digits = 1) {
   return value === null ? "—" : `${value >= 0 ? "+" : ""}${value.toFixed(digits)}%`;
+}
+function flowLocationLabel(location: FlowRead["location"]) {
+  switch (location) {
+    case "ABOVE_VALUE": return "Above value";
+    case "AT_VALUE_HIGH": return "At value high";
+    case "INSIDE_VALUE": return "Inside value";
+    case "AT_VALUE_LOW": return "At value low";
+    case "BELOW_VALUE": return "Below value";
+    default: return "—";
+  }
 }
 
 export default function QuantLab({
@@ -184,6 +206,23 @@ export default function QuantLab({
               <div className="setup-metrics" style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 1, marginTop: 12, background: "var(--line)" }}>
                 {[["CLOSE", price(selected.close)], ["RSI", selected.rsi?.toFixed(0) ?? "—"], ["REL. VOLUME", selected.relativeVolume === null ? "—" : `${selected.relativeVolume.toFixed(1)}×`], ["MARKET CAP", compact(selected.marketCap)]].map(([label, value]) => <div key={label} style={{ padding: 11, background: "var(--panel)" }}><span style={{ color: "var(--muted)", fontSize: 7 }}>{label}</span><strong style={{ display: "block", marginTop: 5, fontSize: 10 }}>{value}</strong></div>)}
               </div>
+
+              {selected.flow && <div style={{ marginTop: 12, padding: 13, border: "1px solid var(--line)" }}>
+                <span style={{ color: "var(--muted)", fontSize: 7 }}>ORDER FLOW · DAILY-BAR PROXY</span>
+                <div className="setup-metrics" style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 10, marginTop: 9 }}>
+                  {[
+                    ["AUCTION", flowLocationLabel(selected.flow.location)],
+                    ["DELTA PROXY", selected.flow.cvdPct === null ? "—" : `${selected.flow.cvdPct >= 0 ? "+" : ""}${selected.flow.cvdPct.toFixed(1)}%`],
+                    ["VWAP DIST.", selected.flow.vwapSigma === null ? "—" : `${selected.flow.vwapSigma >= 0 ? "+" : ""}${selected.flow.vwapSigma.toFixed(1)}σ`],
+                    ["GAP BELOW", selected.flow.gapBelowPct === null ? "—" : `${selected.flow.gapBelowPct.toFixed(1)}%`],
+                  ].map(([label, value]) => <div key={label}><span style={{ color: "var(--muted)", fontSize: 7 }}>{label}</span><strong style={{ display: "block", marginTop: 5, fontSize: 10 }}>{value}</strong></div>)}
+                </div>
+                <p style={{ margin: "9px 0 0", color: "var(--muted)", font: "400 9px/1.5 var(--font-geist-sans)" }}>
+                  Auction location from a {selected.flow.asOf ? `${selected.flow.asOf} ` : ""}volume profile; delta and cumulative delta are close-location proxies, not exchange aggressor data. Cash equities have no open interest, so none is shown.
+                  {selected.flow.absorption === "SUPPLY" ? " Buying is being absorbed by supply." : selected.flow.absorption === "DEMAND" ? " Selling is being absorbed by demand." : ""}
+                  {selected.flow.blockLong ? ` Veto: ${selected.flow.blockReasons.join("; ")}.` : ""}
+                </p>
+              </div>}
             </div>}
           </div>
         )}

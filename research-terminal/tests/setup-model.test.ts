@@ -239,3 +239,21 @@ test("pullbacks are classified but never selected, and do not count as breadth",
   // The override still reaches it, so the backtest can measure the exclusion.
   assert.equal(pickLongs([pullback], "RISK ON", undefined, new Set()).length, 1);
 });
+
+test("a flow veto removes a name from the longs and from the regime breadth", () => {
+  const made = (ticker: string, score: number, flow?: { blockLong: boolean }): ScoredSetup & { ticker: string } => ({
+    ticker,
+    setup: "momentum",
+    score,
+    riskReward: 2,
+    flow,
+  });
+  const blocked = made("A", 90, { blockLong: true });
+  const clear = made("B", 89);
+  assert.deepEqual(pickLongs([blocked], "RISK ON"), []);
+  assert.deepEqual(pickLongs([blocked, clear], "RISK ON"), [clear]);
+  // A blocked name is not tradeable breadth, so it cannot inflate the regime.
+  assert.equal(regimeFor([blocked]), "RISK OFF");
+  // No read at all is not a veto: an unavailable feed never blocks.
+  assert.equal(pickLongs([made("C", 80)], "RISK ON").length, 1);
+});

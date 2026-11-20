@@ -2,6 +2,7 @@ import { fetchUpstream } from "@/lib/upstream";
 import { NextResponse } from "next/server";
 import { IDX_UNIVERSE } from "@/lib/idx-universe";
 import { classifyAll, type SetupFeatures } from "@/lib/setup-model";
+import { attachOrderFlow, orderFlowLine } from "@/lib/order-flow-server";
 import { readBreadth } from "@/lib/market-breadth";
 
 export const dynamic = "force-dynamic";
@@ -73,7 +74,17 @@ export async function GET() {
       .map((item: { d?: unknown[] }) => Object.fromEntries(COLUMNS.map((key, index) => [key, item.d?.[index] ?? null])) as RawRow)
       .map((row: RawRow) => toFeatures(row, sectors.get(text(row.name).replace("IDX:", "")) ?? "Other"));
 
-    const setups = classifyAll(features, { shortEligible: SHORT_ELIGIBLE });
+    const classified = classifyAll(features, { shortEligible: SHORT_ELIGIBLE });
+
+    // Order-flow evidence (location, delta proxy, VWAP extension, gaps) needs
+    // OHLCV history, which the TradingView scan does not return. It is attached
+    // only to names that qualified, and a missing history leaves `flow: null`
+    // rather than a fabricated neutral read.
+    const withFlow = await attachOrderFlow(classified);
+    const setups = withFlow.map((setup) => {
+      const line = orderFlowLine(setup.flow);
+      return line ? { ...setup, reasons: [line, ...setup.reasons].slice(0, 4) } : setup;
+    });
 
     return NextResponse.json({
       status: "live",

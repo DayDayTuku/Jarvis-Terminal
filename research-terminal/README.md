@@ -331,6 +331,34 @@ and PF 1.53 to 1.65; on the 2026 out-of-sample slice it moved +1.54%/1.86 to
 +2.32%/2.62 and cut max drawdown from −1.65% to −0.48%. The set is overridable,
 so `pnpm backtest` can measure re-including either cohort.
 
+**Order-flow evidence is a daily-bar proxy, not a tape.** `lib/order-flow.ts`
+implements the part of the session notes that IDX cash-equity data can support:
+a 60-session volume profile (POC/VAH/VAL), auction location, a close-location
+delta proxy and its cumulative sum, anchored VWAP dispersion, absorption (flow
+against price progress) and unfilled 3-bar gaps. It deliberately does **not**
+implement open interest or footprint: a stock has no outstanding contracts and
+the exchange publishes no aggressor flags, so producing either would be
+fabrication. Every field is nullable, and an unavailable history yields an
+`UNKNOWN` read that cannot veto anything.
+
+One rule survived the backtest and is on by default: a long is refused when
+price is more than **2.5 VWAP standard deviations above anchored VWAP**
+(`DEFAULT_ORDER_FLOW_POLICY`). On the 60-name replay it took 2y from 131 trades
+at +1.28% average / PF 1.67 to 128 at +1.36% / 1.73, and out-of-sample from 37 at
++2.32% / 2.67 to 38 at +2.54% / 2.86; the paired bootstrap favours it by a 0.3%
+(2y) and 0.5% (OOS) median terminal difference. That is a modest cap, not a
+proven edge. Location, absorption and a positive-CVD floor all failed at least
+one slice, so they stay off and remain advisory only. Compare them with:
+
+```bash
+pnpm backtest -- --limit=60 --years=2 --mc --mc-compare
+```
+
+The screener API returns a `flow` object per setup with the underlying numbers,
+and `/api/swing-setups` prepends a one-line summary to the pick reasons.
+`QuantLab` shows the same read under "ORDER FLOW · DAILY-BAR PROXY", with the
+proxy caveat and the veto reason printed rather than hidden.
+
 The regime that gates the count is **participation breadth**, not a count of the
 setups the score model happened to produce. `lib/market-breadth.ts` reads every
 scanned name — not only the qualified setups — and combines the share above

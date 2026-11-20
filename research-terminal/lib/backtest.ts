@@ -38,6 +38,7 @@ import {
   type SetupKey,
 } from "./setup-model.ts";
 import { signalsOf, type ScoreSignals } from "./score-model.ts";
+import { readOrderFlow, type OrderFlowPolicy } from "./order-flow.ts";
 import { applyBreadthHysteresis, readBreadth, type BreadthBands } from "./market-breadth.ts";
 
 export type BacktestBar = { date: string; open: number; high: number; low: number; close: number; volume: number };
@@ -96,6 +97,13 @@ export type BacktestPolicy = {
   regimeMode?: "setups" | "breadth";
   /** Thresholds for the breadth regime, so a calibration can be compared. */
   breadthBands?: BreadthBands;
+  /**
+   * Order-flow policy for NEW long picks. `undefined` leaves every setup without
+   * a flow read, which is the shipped behaviour and the control arm. A policy
+   * computes the daily-bar read and lets it veto a pick; the paired bootstrap
+   * then says whether the veto earned its place.
+   */
+  orderFlow?: OrderFlowPolicy;
 };
 
 export const DEFAULT_BACKTEST_POLICY: BacktestPolicy = {
@@ -225,7 +233,13 @@ function recommendationProxy(close: number, values: number[], index: number, rsi
 }
 
 /** Build the model's feature row for one ticker as of a bar index. */
-export function computeFeatures(ticker: string, bars: BacktestBar[], index: number, sector?: string): SetupFeatures {
+export function computeFeatures(
+  ticker: string,
+  bars: BacktestBar[],
+  index: number,
+  sector?: string,
+  orderFlow?: OrderFlowPolicy,
+): SetupFeatures {
   const closes = bars.map((bar) => bar.close);
   const close = bars[index].close;
   const volume = bars[index].volume;
@@ -256,6 +270,9 @@ export function computeFeatures(ticker: string, bars: BacktestBar[], index: numb
     recommendation: recommendationProxy(close, closes, index, rsiValue, ema20, ema50, sma200),
     marketCap: null,
     atr: atr(bars, index, 14),
+    // The read only needs the recent tail (profile/VWAP 60 sessions, plus room
+    // for the gap scan), so slice instead of rebuilding a 2-year window.
+    orderFlow: orderFlow ? readOrderFlow(bars.slice(Math.max(0, index - 89), index + 1), { policy: orderFlow }) : null,
   };
 }
 
@@ -599,7 +616,7 @@ export function runBacktest(input: BacktestInput): BacktestResult {
         if (bars[i].date <= scanDate) { index = i; break; }
       }
       if (index < 20) continue;
-      features.push(computeFeatures(ticker, bars, index, sectors.get(ticker)));
+      features.push(computeFeatures(ticker, bars, index, sectors.get(ticker), policy.orderFlow));
     }
     const classified = classifyAll(features, { shortEligible, policy: policy.plan, minTurnoverIdr: policy.minTurnoverIdr }).filter((setup) => setup.riskReward >= policy.minRiskReward);
     const scored = input.scoreWith

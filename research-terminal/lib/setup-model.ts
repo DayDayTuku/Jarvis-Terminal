@@ -17,6 +17,7 @@
 // Self-contained on purpose: the offline tests load this file directly under
 // Node's type-stripping loader, which does not resolve extensionless imports.
 import { scoreSignals } from "./score-model.ts";
+import type { OrderFlowRead } from "./order-flow.ts";
 
 // `isShortSetup` is the same one-liner as in lib/weekly-lifecycle.
 export function isShortSetup(item: { setup?: string } | null | undefined): boolean {
@@ -68,6 +69,12 @@ export type SetupFeatures = {
   recommendation: number | null;
   marketCap: number | null;
   atr: number | null;
+  /**
+   * Order-flow read as of the same bar. Optional: a caller with no history (the
+   * TradingView scan has no bars) leaves it absent and the setup simply carries
+   * no flow evidence. Never default it to a neutral-looking object.
+   */
+  orderFlow?: OrderFlowRead | null;
 };
 
 /** How the entry/stop/target are built. */
@@ -152,6 +159,8 @@ export type Setup = {
   measuredRiskReward: number;
   /** Distance from the signal close to the stop, in percent. */
   stopDistancePct: number;
+  /** Daily-bar order-flow evidence (location, delta proxy, VWAP, gaps). */
+  flow: OrderFlowRead | null;
 };
 
 function clamp(value: number): number {
@@ -327,6 +336,7 @@ export function classify(features: SetupFeatures, ctx: { shortEligible: Set<stri
     aboveLongTrend,
     nearHigh,
     nearLow,
+    flow: features.orderFlow ?? null,
   };
 
   // The fitted model's input shape (lib/score-model) is shared by the live
@@ -418,7 +428,15 @@ export function classifyAll(features: SetupFeatures[], ctx: { shortEligible: Set
 
 /** The minimum shape the selection rules need. Routes hold a lighter type than
  *  the full `Setup`, so the rules are generic over whatever carries these. */
-export type ScoredSetup = { setup: string; score: number; riskReward: number; sector?: string; ticker?: string };
+export type ScoredSetup = {
+  setup: string;
+  score: number;
+  riskReward: number;
+  sector?: string;
+  ticker?: string;
+  /** Evidence read for the name. `blockLong` excludes it from the week's longs. */
+  flow?: { blockLong: boolean } | null;
+};
 
 /**
  * Correlated exposure groups that cut across GICS sectors. The sector cap alone
@@ -490,7 +508,9 @@ export function exposureOf(ticker: string | undefined, sector?: string | null): 
 
 /** Market regime read from the breadth of the current scan. */
 export function regimeFor(setups: ScoredSetup[], excluded: ReadonlySet<string> = EXCLUDED_SETUPS): Regime {
-  const valid = setups.filter((item) => !isShortSetup(item) && item.riskReward >= 1.7 && !excluded.has(item.setup.toLowerCase()));
+  const valid = setups.filter(
+    (item) => !isShortSetup(item) && item.riskReward >= 1.7 && !excluded.has(item.setup.toLowerCase()) && !item.flow?.blockLong,
+  );
   const broad = valid.filter((item) => item.score >= 75).length;
   const strong = valid.filter((item) => item.score >= 85).length;
   return broad >= 5 ? "RISK ON" : broad >= 3 ? "EMERGING" : strong ? "NEUTRAL" : "RISK OFF";
@@ -554,6 +574,9 @@ export function pickLongs<T extends ScoredSetup>(
   const exposures = new Set<string>();
   return [...setups]
     .filter((item) => !isShortSetup(item) && !excluded.has(item.setup.toLowerCase()))
+    // Order-flow veto. It only fires when the read was produced under a policy
+    // that switched it on; a name with no read has `flow: null` and passes.
+    .filter((item) => !item.flow?.blockLong)
     .sort((a, b) => b.score - a.score || b.riskReward - a.riskReward)
     .filter((item) => item.score >= minimum && item.riskReward >= 1.7)
     .filter((item) => {
