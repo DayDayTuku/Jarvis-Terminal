@@ -42,6 +42,8 @@ type Setup = {
   nearLow?: boolean;
   reasons?: string[];
   caution?: string;
+  /** Daily-bar order-flow evidence from the screener. `blockLong` is a veto. */
+  flow?: { blockLong: boolean; blockReasons?: string[] } | null;
 };
 
 const isShort = (item: { setup: string }) => item.setup.toLowerCase().startsWith("short_");
@@ -291,6 +293,9 @@ export default function WeeklyShortlist({ setups, breadth }: { setups: Setup[]; 
           positionWeight: item.positionWeight,
           reasons: [item.intel.summary, ...(item.reasons ?? [])],
           caution: item.caution ?? "",
+          // Carried so the Friday lock can re-check the veto server-side. It is
+          // evidence from the same scan, not a fresh fetch.
+          flow: item.flow ?? null,
         })),
       ...shortRows.map((item) => ({
         ticker: item.ticker,
