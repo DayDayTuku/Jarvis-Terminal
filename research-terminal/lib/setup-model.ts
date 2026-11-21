@@ -566,6 +566,7 @@ export function pickLongs<T extends ScoredSetup>(
   regime: Regime,
   thresholds?: { minimum?: Partial<Record<Regime, number>>; maximum?: Partial<Record<Regime, number>> },
   excluded: ReadonlySet<string> = EXCLUDED_SETUPS,
+  skipTickers?: ReadonlySet<string>,
 ): T[] {
   if (regime === "RISK OFF") return [];
   const minimum = thresholds?.minimum?.[regime] ?? REGIME_MINIMUM[regime];
@@ -577,6 +578,10 @@ export function pickLongs<T extends ScoredSetup>(
     // Order-flow veto. It only fires when the read was produced under a policy
     // that switched it on; a name with no read has `flow: null` and passes.
     .filter((item) => !item.flow?.blockLong)
+    // Optional cool-off: a name that has been in the book for too many weeks in
+    // a row is skipped for this week. It stays tradeable breadth, just not a new
+    // entry.
+    .filter((item) => !skipTickers?.has(item.ticker ?? ""))
     .sort((a, b) => b.score - a.score || b.riskReward - a.riskReward)
     .filter((item) => item.score >= minimum && item.riskReward >= 1.7)
     .filter((item) => {

@@ -9,7 +9,7 @@ import {
   type PriceBar,
 } from "@/lib/weekly-lifecycle";
 import { buildLifecycle, carriedPositions, recentRunsBefore } from "@/lib/weekly-positions";
-import { pickLongs as pick, pickShort, positionWeight as weight, regimeFor, shortWeight } from "@/lib/setup-model";
+import { pickLongs as pick, pickShort, positionWeight as weight, regimeFor, shortWeight, EXCLUDED_SETUPS } from "@/lib/setup-model";
 import { applyBreadthHysteresis } from "@/lib/market-breadth";
 import { loadMacroExposure } from "@/lib/macro-risk";
 import { buildLiveQuantamentalMap } from "@/lib/quantamental-server";
@@ -27,7 +27,7 @@ import { YAHOO_HEADERS } from "@/lib/yahoo";
 
 export const maxDuration = 60;
 
-type Setup = { ticker:string; setup:string; score:number; close:number; sector?:string; entryLow:number; entryHigh:number; invalidation:number; target:number; riskReward:number; reasons?:string[]; caution?:string; change?:number|null; rsi?:number|null; relativeVolume?:number|null; distance20?:number|null; ema25?:number|null; ema50?:number|null; distance25?:number|null; baseSupport?:number|null; baseResistance?:number|null; trend?:boolean; aboveLongTrend?:boolean; nearHigh?:boolean; nearLow?:boolean };
+type Setup = { ticker:string; setup:string; score:number; close:number; sector?:string; entryLow:number; entryHigh:number; invalidation:number; target:number; riskReward:number; reasons?:string[]; caution?:string; flow?:{blockLong:boolean}|null; change?:number|null; rsi?:number|null; relativeVolume?:number|null; distance20?:number|null; ema25?:number|null; ema50?:number|null; distance25?:number|null; baseSupport?:number|null; baseResistance?:number|null; trend?:boolean; aboveLongTrend?:boolean; nearHigh?:boolean; nearLow?:boolean };
 type Candidate = { run_id?:string; ticker:string; setup:string; score:number; signal_close?:number; planned_entry_low:number; planned_entry_high:number; invalidation:number; hard_stop?:number; target_one?:number; position_weight:number };
 type Action = { run_id?:string; prior_run_id?:string|null; ticker:string; action:LifecycleActionName; previous_score:number|null; current_score:number|null; target_weight:number; theoretical_fill:number|null; entry_filled:boolean; target_reached:boolean; invalidated:boolean; reason:string };
 type Bar = PriceBar;
@@ -302,8 +302,20 @@ export async function GET(request:NextRequest) {
   const lock=guardLock(regime,macro.exposure,macro.indexChangePct);
   const macroLabel=formatMacroLabel(lock.exposure,macro.flags);
   const stamp="V6 JARVIS "+lock.regime+(shorts.length&&lock.exposure>0?" · OPTIONAL SHORT":"")+macroLabel+lock.suffix;
+  // Say why the book is empty instead of the generic "no qualified setup". A
+  // cash week is often a deliberate filter outcome, and the difference between
+  // "nothing qualified" and "three names were vetoed" is the whole story.
+  const excludedCount=setups.filter((item)=>EXCLUDED_SETUPS.has(String(item.setup).toLowerCase())).length;
+  const flowVetoed=setups.filter((item)=>item.flow?.blockLong).length;
+  const avoidCount=scoredLongs.filter((entry)=>entry.intel.stance==="AVOID").length;
+  const watchCount=scoredLongs.filter((entry)=>entry.intel.stance==="WATCH").length;
+  const emptyReason=!selected.length&&lock.exposure>0
+    ? setups.length===0
+      ? "No setup cleared the screener. Cash is intentional."
+      : `No actionable pick from ${setups.length} qualified setup${setups.length===1?"":"s"}: ${excludedCount} excluded by setup policy, ${flowVetoed} vetoed by daily-bar order flow, ${avoidCount} rated AVOID, ${watchCount} left at WATCH/0% weight. Cash is intentional.`
+    : null;
   // A 0%-exposure week is a recorded stand-aside, not "no qualified setup".
-  const baseNote=lock.note??(selected.length?(lock.exposure<=0?"Macro risk-off: the week stood aside at 0% deployed. Qualified setups are recorded but are not entered.":"Automated Friday Weekly Picks with lifecycle actions and an optional risk-capped short overlay."):"No qualified setup this week.");
+  const baseNote=lock.note??(selected.length?(lock.exposure<=0?"Macro risk-off: the week stood aside at 0% deployed. Qualified setups are recorded but are not entered.":"Automated Friday Weekly Picks with lifecycle actions and an optional risk-capped short overlay."):(emptyReason??"No qualified setup this week."));
   if(dryRun) return NextResponse.json({ok:true,dryRun:true,weekOf,regime:lock.regime,scannedRegime:regime,breadth:breadthScore,staleScan:lock.stale,macro,picks:selected.map((item)=>item.ticker)});
   const {data:priorRun}=await supabase.from("jarvis_weekly_runs").select("*").lt("week_of",weekOf).order("week_of",{ascending:false}).limit(1).maybeSingle();
   const {data:priorCandidates}=priorRun?await supabase.from("jarvis_weekly_candidates").select("*").eq("run_id",priorRun.id).order("rank"):{data:[]};

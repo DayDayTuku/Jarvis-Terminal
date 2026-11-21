@@ -38,7 +38,7 @@ import {
   type SetupKey,
 } from "./setup-model.ts";
 import { signalsOf, type ScoreSignals } from "./score-model.ts";
-import { readOrderFlow, type OrderFlowPolicy } from "./order-flow.ts";
+import { readOrderFlow, DEFAULT_ORDER_FLOW_POLICY, type OrderFlowPolicy } from "./order-flow.ts";
 import { applyBreadthHysteresis, readBreadth, type BreadthBands } from "./market-breadth.ts";
 
 export type BacktestBar = { date: string; open: number; high: number; low: number; close: number; volume: number };
@@ -90,27 +90,49 @@ export type BacktestPolicy = {
   /** Minimum average daily turnover in rupiah (overrides the shipped floor). */
   minTurnoverIdr?: number;
   /**
-   * How the weekly regime is read. "setups" is the shipped count-of-qualified-
-   * setups rule; "breadth" reads participation across the whole scan and applies
-   * the hysteresis buffer. Offline-only so the two can be compared.
+   * Maximum weeks in a row one ticker may be re-selected. Undefined means no
+   * cap. This is a concentration experiment: a name that stays in the book for
+   * many weeks can dominate net contribution even when weekly weights are small.
+   */
+  maxPickStreak?: number;
+  /**
+   * How the weekly regime is read. "breadth" is the live rule (participation
+   * across the whole scan, with hysteresis); "setups" is the legacy
+   * count-of-qualified-setups rule, kept for comparison.
    */
   regimeMode?: "setups" | "breadth";
   /** Thresholds for the breadth regime, so a calibration can be compared. */
   breadthBands?: BreadthBands;
   /**
-   * Order-flow policy for NEW long picks. `undefined` leaves every setup without
-   * a flow read, which is the shipped behaviour and the control arm. A policy
-   * computes the daily-bar read and lets it veto a pick; the paired bootstrap
-   * then says whether the veto earned its place.
+   * Order-flow policy for NEW long picks. The live scanner uses
+   * `DEFAULT_ORDER_FLOW_POLICY` (the 2.5σ extension veto), so the replay does
+   * too. Pass `ORDER_FLOW_OFF` for the control arm.
    */
   orderFlow?: OrderFlowPolicy;
 };
 
+/**
+ * The shipped defaults mirror the live weekly lock as closely as the offline
+ * replay can:
+ *
+ * - `regimeMode: "breadth"` — the cron and UI gate on participation breadth with
+ *   hysteresis. The setup-count regime remains available as a comparison arm.
+ * - `costPct: 0.4` — a round trip of roughly 0.15% commission each way plus the
+ *   0.1% IDX sell tax. Reporting gross returns made the model look ~0.4pp per
+ *   trade better than an executable result. Pass `costPct: 0` to see gross.
+ *
+ * A replay that is not net of costs, not using the live regime, or not applying
+ * the shipped flow veto is a different model; keeping these defaults explicit
+ * prevents that drift.
+ */
 export const DEFAULT_BACKTEST_POLICY: BacktestPolicy = {
   plan: DEFAULT_POLICY,
   minRiskReward: 1.7,
   scaleOut: false,
   maxHoldingDays: null,
+  regimeMode: "breadth",
+  costPct: 0.4,
+  orderFlow: DEFAULT_ORDER_FLOW_POLICY,
 };
 
 export type BacktestExitReason = "STOP" | "TARGET" | "SCALE" | "TIME" | "WEEK_END" | "NO_ENTRY";
@@ -608,6 +630,10 @@ export function runBacktest(input: BacktestInput): BacktestResult {
   let priorRegime: Regime | null = null;
   const regimeWeeks: Record<Regime, number> = { "RISK ON": 0, EMERGING: 0, NEUTRAL: 0, "RISK OFF": 0 };
 
+  // Consecutive-week selection streak, used only when `maxPickStreak` is set.
+  const pickStreak = new Map<string, number>();
+  const lastPickWeek = new Map<string, number>();
+
   scanDates.forEach((scanDate, weekIndex) => {
     const features: SetupFeatures[] = [];
     for (const [ticker, bars] of input.barsByTicker) {
@@ -633,7 +659,18 @@ export function runBacktest(input: BacktestInput): BacktestResult {
     priorRegime = regime;
     regimeWeeks[regime] += 1;
     const tradeThisWeek = (!policy.regimes || policy.regimes.includes(regime)) && marketOpen(scanDate);
-    const longs = tradeThisWeek ? pickLongs(scored, regime, input.thresholds, excluded) : [];
+    const cooling = new Set<string>();
+    if (policy.maxPickStreak !== undefined) {
+      for (const [ticker, streak] of pickStreak) {
+        if (streak >= policy.maxPickStreak && lastPickWeek.get(ticker) === weekIndex - 1) cooling.add(ticker);
+      }
+    }
+    const longs = tradeThisWeek ? pickLongs(scored, regime, input.thresholds, excluded, cooling) : [];
+    for (const setup of longs) {
+      const ticker = setup.ticker ?? "";
+      pickStreak.set(ticker, lastPickWeek.get(ticker) === weekIndex - 1 ? (pickStreak.get(ticker) ?? 0) + 1 : 1);
+      lastPickWeek.set(ticker, weekIndex);
+    }
     const shorts = tradeThisWeek ? pickShort(scored).filter((setup) => shortWeight(setup, longs, regime) >= 3) : [];
     // Macro overlay: shrink (or stand down) this week's NEW risk. Held positions
     // keep their size — defence applies to fresh exposure, not open trades.

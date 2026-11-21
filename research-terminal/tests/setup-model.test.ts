@@ -257,3 +257,17 @@ test("a flow veto removes a name from the longs and from the regime breadth", ()
   // No read at all is not a veto: an unavailable feed never blocks.
   assert.equal(pickLongs([made("C", 80)], "RISK ON").length, 1);
 });
+
+test("a ticker cool-off skips that name but still admits the next best", () => {
+  const made = (ticker: string, score: number, sector: string): ScoredSetup & { ticker: string } => ({
+    ticker,
+    setup: "momentum",
+    score,
+    riskReward: 2,
+    sector,
+  });
+  const a = made("A", 90, "Tech");
+  const b = made("B", 89, "Banks");
+  // A is still a valid setup; the cool-off is a selection rule, not a veto.
+  assert.deepEqual(pickLongs([a, b], "RISK ON", undefined, undefined, new Set(["A"])), [b]);
+});

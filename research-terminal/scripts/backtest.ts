@@ -10,7 +10,7 @@
 
 import { runBacktest, macroReadFor, stats, type BacktestPolicy, type BacktestResult, type BacktestBar, type MacroRead } from "../lib/backtest.ts";
 import { monteCarlo, compareVariants, type Distribution } from "../lib/monte-carlo.ts";
-import { ORDER_FLOW_OFF, type OrderFlowPolicy } from "../lib/order-flow.ts";
+import { DEFAULT_ORDER_FLOW_POLICY, ORDER_FLOW_OFF, type OrderFlowPolicy } from "../lib/order-flow.ts";
 import { MACRO_SYMBOLS, macroExposure, type MacroBar } from "../lib/macro-risk.ts";
 import { DEFAULT_POLICY, type Setup } from "../lib/setup-model.ts";
 import { loadUniverse, fetchBars, pool } from "./yahoo.ts";
@@ -106,7 +106,7 @@ function printMonteCarlo(baseline: BacktestResult, runs: Array<{ label: string; 
   const mc = monteCarlo(baseline.trades, { iterations: args.mcIterations, blockWeeks: args.mcBlock, seed: args.mcSeed });
   const week = mc.weekly.observed;
 
-  console.log("\nMonte Carlo robustness · baseline (live)");
+  console.log("\nMonte Carlo robustness · baseline (live, net)");
   console.log(
     `  weekly circular block bootstrap · ${mc.options.iterations} paths · ${mc.options.blockWeeks}-week blocks · seed ${mc.options.seed}`,
   );
@@ -144,7 +144,7 @@ function printMonteCarlo(baseline: BacktestResult, runs: Array<{ label: string; 
 
   if (!args.mcCompare) return;
 
-  const others = runs.filter((run) => run.label !== "baseline (live)");
+  const others = runs.filter((run) => run.label !== "baseline (live, net)");
   if (!others.length) return;
   console.log("\nPaired block bootstrap vs baseline (same weeks, same blocks)");
   console.log(
@@ -278,21 +278,21 @@ async function main(): Promise<void> {
   const flowPolicy = (patch: Partial<OrderFlowPolicy>): OrderFlowPolicy => ({ ...ORDER_FLOW_OFF, ...patch });
 
   const variants: Array<{ label: string; policy: Partial<BacktestPolicy>; scoreWith?: (setup: Setup) => number }> = [
-    { label: "baseline (live)", policy: {} },
+    // The default policy IS the live lock: breadth regime, 0.4% round-trip cost,
+    // and the 2.5σ order-flow veto. Everything below is measured against it.
+    { label: "baseline (live, net)", policy: {} },
+    { label: "gross (no costs)", policy: { costPct: 0 } },
+    { label: "flow off (net)", policy: { orderFlow: ORDER_FLOW_OFF } },
+    { label: "flow off + gross", policy: { orderFlow: ORDER_FLOW_OFF, costPct: 0 } },
+    { label: "setup-count regime (net)", policy: { regimeMode: "setups" } },
+    { label: "setup-count + gross", policy: { regimeMode: "setups", costPct: 0 } },
     { label: "with reversals + pullback", policy: { excludeSetups: [] } },
     { label: "with pullback (tactical)", policy: { excludeSetups: ["reversal"] } },
-    { label: "with pullback + costs", policy: { excludeSetups: ["reversal"], costPct: 0.4 } },
     { label: "rr >= 2.0", policy: { minRiskReward: 2 } },
     { label: "rr >= 2.5", policy: { minRiskReward: 2.5 } },
-    { label: "costs 0.4%", policy: { costPct: 0.4 } },
-    { label: "hold + costs", policy: { holdThroughDrops: true, costPct: 0.4 } },
-    { label: "hold + index>200d + costs", policy: { holdThroughDrops: true, marketSma: 200, costPct: 0.4 } },
-    { label: "atr stops + hold + costs", policy: { holdThroughDrops: true, plan: { ...DEFAULT_POLICY, stopMode: "atr" }, costPct: 0.4 } },
-    // --- Regime study: setup-count breadth vs participation breadth ---
-    // The live rule counts qualified setups; breadth reads every scanned name
-    // above its ribbon plus the advance/decline line and applies hysteresis.
-    { label: "breadth regime", policy: { regimeMode: "breadth" } },
-    { label: "breadth + costs 0.4%", policy: { regimeMode: "breadth", costPct: 0.4 } },
+    { label: "hold through drops", policy: { holdThroughDrops: true } },
+    { label: "hold + index>200d", policy: { holdThroughDrops: true, marketSma: 200 } },
+    { label: "atr stops + hold", policy: { holdThroughDrops: true, plan: { ...DEFAULT_POLICY, stopMode: "atr" } } },
     // --- Liquidity study: the shipped floor is Rp 20bn/day ---
     // Compared on the same names, so a looser floor shows what the extra trades
     // are worth rather than just adding rows.
@@ -304,25 +304,30 @@ async function main(): Promise<void> {
     // Daily-bar evidence only: auction location from a volume profile, a
     // close-location delta proxy, anchored VWAP extension and unfilled gaps.
     // There is no OI in a cash equity and no aggressor tape, so those parts of
-    // the session notes are deliberately absent.
-    { label: "flow: above value", policy: { orderFlow: flowPolicy({ requireAboveValue: true }) } },
-    { label: "flow: no absorption", policy: { orderFlow: flowPolicy({ vetoSupplyAbsorption: true }) } },
-    { label: "flow: not extended 2.5σ", policy: { orderFlow: flowPolicy({ maxExtensionSigma: 2.5 }) } },
-    { label: "flow: not extended 2.0σ", policy: { orderFlow: flowPolicy({ maxExtensionSigma: 2 }) } },
-    { label: "flow: not extended 3.0σ", policy: { orderFlow: flowPolicy({ maxExtensionSigma: 3 }) } },
-    { label: "flow: cvd >= 0", policy: { orderFlow: flowPolicy({ minCvdPct: 0 }) } },
-    { label: "flow: all", policy: { orderFlow: flowPolicy({ requireAboveValue: true, vetoSupplyAbsorption: true, maxExtensionSigma: 2.5 }) } },
-    { label: "flow: all + costs", policy: { orderFlow: flowPolicy({ requireAboveValue: true, vetoSupplyAbsorption: true, maxExtensionSigma: 2.5 }), costPct: 0.4 } },
+    // the session notes are deliberately absent. The baseline already includes
+    // the shipped 2.5σ cap; these rows add or replace one rule at a time.
+    { label: "flow: above value + 2.5σ", policy: { orderFlow: { ...DEFAULT_ORDER_FLOW_POLICY, requireAboveValue: true } } },
+    { label: "flow: no absorption + 2.5σ", policy: { orderFlow: { ...DEFAULT_ORDER_FLOW_POLICY, vetoSupplyAbsorption: true } } },
+    { label: "flow: 2.0σ", policy: { orderFlow: flowPolicy({ maxExtensionSigma: 2 }) } },
+    { label: "flow: 3.0σ", policy: { orderFlow: flowPolicy({ maxExtensionSigma: 3 }) } },
+    { label: "flow: cvd >= 0 + 2.5σ", policy: { orderFlow: { ...DEFAULT_ORDER_FLOW_POLICY, minCvdPct: 0 } } },
+    { label: "flow: all", policy: { orderFlow: { ...DEFAULT_ORDER_FLOW_POLICY, requireAboveValue: true, vetoSupplyAbsorption: true } } },
+    // --- Concentration study: cap consecutive weeks in the book ---
+    // The edge report showed one name at 21% (2y) and 31% (OOS) of net
+    // contribution. A streak cap is the simplest ex-ante way to limit that.
+    { label: "streak cap 2", policy: { maxPickStreak: 2 } },
+    { label: "streak cap 3", policy: { maxPickStreak: 3 } },
+    { label: "streak cap 4", policy: { maxPickStreak: 4 } },
     // --- Macro / regional overlay study, layered on the shipped policy ---
     // Judged on portfolio return AND drawdown in BOTH halves of the sample. The
     // "always 50%" row is the null: if a signal cannot beat plain deleveraging it
     // is not a timing signal at all.
-    { label: "macro: base 70% (shipped)", policy: { holdThroughDrops: true, costPct: 0.4, macro: shippedExposure } },
-    { label: "macro: base 60%", policy: { holdThroughDrops: true, costPct: 0.4, macro: (read) => macroExposure(macroSeries, read.date, 0.6).exposure } },
-    { label: "macro: base 50%", policy: { holdThroughDrops: true, costPct: 0.4, macro: (read) => macroExposure(macroSeries, read.date, 0.5).exposure } },
-    { label: "macro: base 80%", policy: { holdThroughDrops: true, costPct: 0.4, macro: (read) => macroExposure(macroSeries, read.date, 0.8).exposure } },
-    { label: "macro: base 100% (prev)", policy: { holdThroughDrops: true, costPct: 0.4, macro: (read) => macroExposure(macroSeries, read.date, 1).exposure } },
-    { label: "control: always 50%", policy: { holdThroughDrops: true, costPct: 0.4, macro: () => 0.5 } },
+    { label: "macro: base 70% (shipped)", policy: { holdThroughDrops: true, macro: shippedExposure } },
+    { label: "macro: base 60%", policy: { holdThroughDrops: true, macro: (read) => macroExposure(macroSeries, read.date, 0.6).exposure } },
+    { label: "macro: base 50%", policy: { holdThroughDrops: true, macro: (read) => macroExposure(macroSeries, read.date, 0.5).exposure } },
+    { label: "macro: base 80%", policy: { holdThroughDrops: true, macro: (read) => macroExposure(macroSeries, read.date, 0.8).exposure } },
+    { label: "macro: base 100% (prev)", policy: { holdThroughDrops: true, macro: (read) => macroExposure(macroSeries, read.date, 1).exposure } },
+    { label: "control: always 50%", policy: { holdThroughDrops: true, macro: () => 0.5 } },
   ];
 
   // The live model uses the fitted score re-trained on ribbon features, so the
@@ -339,7 +344,7 @@ async function main(): Promise<void> {
 
   const baseline = runs[0].result;
   console.log("\nRegime distribution:");
-  for (const run of runs.filter((item) => item.label === "baseline (live)" || item.label.startsWith("breadth"))) {
+  for (const run of runs.filter((item) => item.label === "baseline (live, net)" || item.label.startsWith("setup-count"))) {
     const weeks = run.result.regimeWeeks;
     console.log(`  ${run.label.padEnd(26)} ON=${String(weeks["RISK ON"]).padStart(2)}  EMERGING=${String(weeks.EMERGING).padStart(2)}  NEUTRAL=${String(weeks.NEUTRAL).padStart(2)}  OFF=${String(weeks["RISK OFF"]).padStart(2)}`);
   }
@@ -423,7 +428,7 @@ async function main(): Promise<void> {
       console.log(`  ${entry.bucket.padEnd(8)} n=${String(s.trades).padStart(3)}  win=${money(s.winRate, 0).padStart(3)}%  avg=${signed(s.avgReturn).padStart(8)}  avgR=${money(s.avgR).padStart(6)}`);
     }
   }
-  if (args.edge) printEdgeReport(baseline, "baseline (live)");
+  if (args.edge) printEdgeReport(baseline, "baseline (live, net)");
   if (args.mc) printMonteCarlo(baseline, runs, args);
   console.log("");
 }

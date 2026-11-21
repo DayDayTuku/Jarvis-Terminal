@@ -315,21 +315,28 @@ exposure group** (`pickLongs` / `exposureOf` in `lib/setup-model.ts`, enforced
 again in the Friday lock POST). The exposure groups catch the same bet across
 different GICS labels — for example AADI and ITMG are both coal, and TCPI is a
 coal transporter, so holding two of them doubles one commodity shock rather than
-diversifying it. This concentration cap cost return in the same 60-name, 2-year
-replay (+18.4% versus +27.8% without it, PF 1.59 versus 1.78, drawdown −3.39%
-versus −2.49%); the out-of-sample slice was +6.9% with a 1.86 profit factor and
-−1.65% drawdown. Because the cap was chosen after looking at that window, treat
-the drawdown improvement as partly in-sample.
+diversifying it. This concentration cap cost return in an earlier gross-of-cost replay
+(+18.4% versus +27.8% without it, PF 1.59 versus 1.78, drawdown −3.39%
+versus −2.49%); those figures predate the net-cost/parity defaults and should be
+read as directional. The out-of-sample slice was +6.9% with a 1.86 profit factor
+and −1.65% drawdown. Because the cap was chosen after looking at that window,
+treat the drawdown improvement as partly in-sample.
+
+An empty week now records **why** it was empty instead of the generic "no
+qualified setup": the lock note counts setup-policy exclusions (pullback /
+reversal), daily-bar order-flow vetoes, AVOID ratings and WATCH names left at 0%
+weight. Cash is still a valid outcome; the point is to show whether nothing
+qualified or something qualified and was deliberately filtered out.
 
 Two cohorts are **classified and shown but not selected**: counter-trend
 reversals and shallow-dip pullbacks (`EXCLUDED_SETUPS` in `lib/setup-model.ts`).
 Pullback was the only setup earning the CORE weight premium, yet it lost money
-per trade in every slice measured: 2-year full (n=23, −0.35%, PF 0.85), 2-year
-out-of-sample (n=11, −1.14%, PF 0.58) and 3-year full (n=38, −0.38%, PF 0.83).
-Removing it lifted the 2-year replay from +1.05% to +1.25% average trade return
-and PF 1.53 to 1.65; on the 2026 out-of-sample slice it moved +1.54%/1.86 to
-+2.32%/2.62 and cut max drawdown from −1.65% to −0.48%. The set is overridable,
-so `pnpm backtest` can measure re-including either cohort.
+per trade in every slice measured. On the live-equivalent net replay (breadth
+regime, 0.4% round-trip cost, 2.5σ veto), re-including it lowered the 2-year
+average trade return from +1.41% to +1.18% and the 2026 out-of-sample slice from
++2.95% to +1.91%; the paired bootstrap favours the exclusion in 70.8% (2y) and
+94.8% (OOS) of draws. The set is overridable, so `pnpm backtest` can measure
+re-including either cohort.
 
 **Order-flow evidence is a daily-bar proxy, not a tape.** `lib/order-flow.ts`
 implements the part of the session notes that IDX cash-equity data can support:
@@ -343,12 +350,15 @@ fabrication. Every field is nullable, and an unavailable history yields an
 
 One rule survived the backtest and is on by default: a long is refused when
 price is more than **2.5 VWAP standard deviations above anchored VWAP**
-(`DEFAULT_ORDER_FLOW_POLICY`). On the 60-name replay it took 2y from 131 trades
-at +1.28% average / PF 1.67 to 128 at +1.36% / 1.73, and out-of-sample from 37 at
-+2.32% / 2.67 to 38 at +2.54% / 2.86; the paired bootstrap favours it by a 0.3%
-(2y) and 0.5% (OOS) median terminal difference. That is a modest cap, not a
-proven edge. Location, absorption and a positive-CVD floor all failed at least
-one slice, so they stay off and remain advisory only. Compare them with:
+(`DEFAULT_ORDER_FLOW_POLICY`). On the live-equivalent net replay it moved 2y
+from 105 trades at +1.28% average / PF 1.68 / −3.31% drawdown to 102 at +1.41% /
+1.78 / −2.50%, and out-of-sample from 27 at +2.68% / 3.31 to 28 at +2.95% / 3.60.
+The paired bootstrap favours it in 53.4% (2y) and 65.8% (OOS) of draws, by a
+median +0.2 and +0.5 percentage points of terminal return. It survives costs, but
+it is still a modest cap, not a proven edge. A 2.0σ threshold is worse in both
+slices; 3.0σ never binds. Location, absorption and a positive-CVD floor all
+failed at least one slice, so they stay off and remain advisory only. Compare
+them with:
 
 ```bash
 pnpm backtest -- --limit=60 --years=2 --mc --mc-compare
@@ -371,12 +381,14 @@ only after the score clears a band by four points (60 / 45 / 30), with a
 collapse at or below 25 overriding the buffer. `GET /api/swing-setups` returns
 the components and `GET /api/v1/market-regime` exposes them to API clients.
 
-Breadth is more defensive than the setup count, and that is visible in the
-replay: +14.8% with a 1.89 profit factor and −2.41% drawdown, versus +16.4%,
-1.52 and −3.39% for the setup-count gate. The 2026 out-of-sample slice returned
-+4.4% (2.50, −1.13%) versus +6.9% (1.86, −1.65%). It gives up headline return to
-hold less risk in weak tape, and the bands were chosen on the same window, so
-the out-of-sample improvement is only partly independent.
+Breadth is more defensive than the setup count, and the live-equivalent net
+replay says so: 2y +12.0% with a 1.78 profit factor and −2.50% drawdown, versus
++12.0%, 1.46 and −3.52% for the setup-count gate. The 2026 out-of-sample slice
+returned +5.9% (3.60, −0.46%) versus +6.7% (2.42, −0.67%). Breadth gives up some
+headline return in the out-of-sample window to hold less risk in weak tape, and
+the paired bootstrap is split on terminal return; the improvement is in per-trade
+quality and drawdown, not raw return. The bands were chosen on the same window,
+so the out-of-sample result is only partly independent.
 
 `GET /api/quantamental?scope=full` scans all 236 `IDX_UNIVERSE` tickers so the
 weekly technical shortlist never loses a name to the curated 5-per-sector cap.
@@ -484,6 +496,36 @@ publishes both tables to the Actions run summary — including the Monte Carlo
 robustness and paired variant comparison — and keeps the raw output as a
 90-day artifact. The score is not re-fitted automatically: after a manual
 `pnpm fit-score`, update `OOS_FROM` in that workflow to the new training split.
+
+### Backtest parity with the live lock
+
+The replay defaults now match the weekly lock instead of flattering it:
+`regimeMode: "breadth"`, `costPct: 0.4` (≈0.15% commission each way plus the
+0.1% IDX sell tax) and the shipped 2.5σ order-flow veto. On the 60-name slice:
+
+| Arm | Trades | Avg/trade | PF | Total | Max DD |
+|---|---:|---:|---:|---:|---:|
+| Live-equivalent, net (2y) | 102 | +1.41% | 1.78 | +12.0% | −2.50% |
+| Same, gross of costs | 102 | +1.81% | 2.13 | +15.6% | −1.91% |
+| Setup-count regime, net (2y) | 128 | +0.95% | 1.46 | +12.0% | −3.52% |
+| Live-equivalent, net (OOS) | 28 | +2.95% | 3.60 | +5.9% | −0.46% |
+| Same, gross of costs (OOS) | 28 | +3.35% | 4.33 | +6.8% | −0.39% |
+| Setup-count regime, net (OOS) | 38 | +2.14% | 2.42 | +6.7% | −0.67% |
+
+Costs take roughly 3.6pp off the 2-year total and bag the PF from 2.13 to 1.78.
+Every variant comparison now runs against the net baseline; `gross (no costs)`
+and `setup-count` remain explicit rows.
+
+Two candidate improvements were measured and **not shipped**:
+
+- **Hold through drops** looks much stronger in this replay (+26.6% 2y, +7.1%
+  OOS), but it holds positions for up to 60 sessions. The replay compounds
+  weekly contributions without a cash or position-count constraint, so those
+  overlapping positions are not executable as shown. It needs a capital-
+  constrained simulation before it can be trusted.
+- **Consecutive-week caps** (2/3/4 weeks) changed almost nothing and were
+  slightly worse in both slices. The edge report's concentration is a diagnostic,
+  not something a weekly cool-off fixes.
 
 ### Monte Carlo robustness
 

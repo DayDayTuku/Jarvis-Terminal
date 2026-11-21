@@ -1,7 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { stopTrigger, targetTrigger, tradeOutcome, type PriceBar, type PriorPosition } from "../lib/weekly-lifecycle.ts";
-import { computeFeatures, macroReadFor, runBacktest, simulateTrade, stats, type BacktestBar } from "../lib/backtest.ts";
+import { computeFeatures, DEFAULT_BACKTEST_POLICY, macroReadFor, runBacktest, simulateTrade, stats, type BacktestBar } from "../lib/backtest.ts";
+import { DEFAULT_ORDER_FLOW_POLICY } from "../lib/order-flow.ts";
 
 const bar = (date: string, open: number, high: number, low: number, close: number): PriceBar => ({ date, open, high, low, close });
 const round = (value: number | null, digits = 2) => (value === null ? null : Number(value.toFixed(digits)));
@@ -31,8 +32,15 @@ const project = (outcome: {
   rMultiple: round(outcome.rMultiple, 4),
 });
 
-test("DEFAULT policy simulation is identical to tradeOutcome", () => {
-  const scenarios: PriceBar[][] = [
+test("the replay defaults mirror the live weekly lock", () => {
+  // A backtest that uses a different regime or zero costs is a different model.
+  assert.equal(DEFAULT_BACKTEST_POLICY.regimeMode, "breadth");
+  assert.equal(DEFAULT_BACKTEST_POLICY.costPct, 0.4);
+  assert.equal(DEFAULT_BACKTEST_POLICY.orderFlow, DEFAULT_ORDER_FLOW_POLICY);
+  assert.equal(DEFAULT_BACKTEST_POLICY.orderFlow?.maxExtensionSigma, 2.5);
+});
+
+test("DEFAULT policy simulation is identical to tradeOutcome", () => {  const scenarios: PriceBar[][] = [
     [bar("2026-01-05", 990, 1005, 985, 1000), bar("2026-01-06", 1000, 1020, 995, 1010), bar("2026-01-07", 1010, 1090, 1005, 1085)],
     [bar("2026-01-05", 990, 1005, 985, 1000), bar("2026-01-06", 995, 1000, 930, 940)],
     [bar("2026-01-05", 1100, 1110, 1050, 1060)], // never fills the 980-1000 range
